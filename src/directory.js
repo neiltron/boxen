@@ -185,6 +185,46 @@ export class Directory extends DurableObject {
     return Object.fromEntries(Object.entries(stored).filter(([k]) => SECRET_KEYS.includes(k)));
   }
 
+  // GitHub lookups for the create form, with the fleet's GitHub token.
+  async github(path) {
+    const { GH_TOKEN } = await this.secrets();
+    const res = await fetch(`https://api.github.com${path}`, {
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "pi-durable-sessions",
+        ...(GH_TOKEN ? { authorization: `Bearer ${GH_TOKEN}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`GitHub ${res.status}: ${(await res.json().catch(() => ({}))).message ?? res.statusText}`);
+    return res.json();
+  }
+
+  // Repos the token can see, newest push first.
+  // ponytail: first 300 only; search the API instead if that runs out.
+  async githubRepos() {
+    if (!(await this.secrets()).GH_TOKEN) throw new Error("Add a GitHub token in Providers to list your repos");
+    const repos = [];
+    for (let page = 1; page <= 3; page++) {
+      const batch = await this.github(`/user/repos?sort=pushed&per_page=100&page=${page}&affiliation=owner,collaborator,organization_member`);
+      repos.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return repos.map((r) => ({
+      fullName: r.full_name, cloneUrl: r.clone_url, pushedAt: r.pushed_at,
+      defaultBranch: r.default_branch, private: r.private,
+    }));
+  }
+
+  // A repo's branches, default first. Public repos work without a token.
+  async githubBranches(fullName) {
+    const [repo, branches] = await Promise.all([
+      this.github(`/repos/${fullName}`),
+      this.github(`/repos/${fullName}/branches?per_page=100`),
+    ]);
+    const names = branches.map((b) => b.name).filter((n) => n !== repo.default_branch);
+    return { defaultBranch: repo.default_branch, branches: [repo.default_branch, ...names] };
+  }
+
   async defaultAgent() {
     return (await this.state.storage.get("agent")) ?? {};
   }

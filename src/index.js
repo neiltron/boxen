@@ -86,6 +86,12 @@ export default {
         const row = await env.ARTIFACTS.getByName("main").get(art[1], Number(url.searchParams.get("v")) || undefined);
         return row ? json(row) : json({ error: "no such artifact" }, 404);
       }
+      if (url.pathname === "/api/github/repos") return json(await env.DIRECTORY.getByName("main").githubRepos());
+      if (url.pathname === "/api/github/branches") {
+        const repo = url.searchParams.get("repo") ?? "";
+        if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return json({ error: "repo must be owner/name" }, 400);
+        return json(await env.DIRECTORY.getByName("main").githubBranches(repo));
+      }
       if (url.pathname === "/api/secrets") {
         const directory = env.DIRECTORY.getByName("main");
         if (request.method === "POST") return json({ keys: await directory.setSecrets(await request.json()) });

@@ -125,3 +125,22 @@ export const setApiKey = (provider: string, key: string) => post<AuthStatus>(`/a
 export type SecretKey = "GH_TOKEN" | "LINEAR_API_KEY";
 export const listSecrets = () => get<{ keys: SecretKey[] }>("/api/secrets");
 export const setSecret = (key: SecretKey, value: string) => post<{ keys: SecretKey[] }>("/api/secrets", { [key]: value });
+
+// GitHub lookups for the create form (Directory cell, the fleet's GitHub token).
+export interface Repo {
+  fullName: string;
+  cloneUrl: string;
+  pushedAt: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+export const fetchRepos = () => get<Repo[]>("/api/github/repos");
+export const fetchBranches = (fullName: string) =>
+  get<{ defaultBranch: string; branches: string[] }>(`/api/github/branches?repo=${encodeURIComponent(fullName)}`);
+
+// owner/name for a GitHub URL (https, ssh, or git@), else null.
+export function githubRepo(url: string): string | null {
+  const m = url.trim().match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}

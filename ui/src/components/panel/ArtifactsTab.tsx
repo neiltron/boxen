@@ -2,12 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeftIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { ArtifactView } from "@/components/panel/ArtifactView";
 import { getArtifact, listArtifacts, searchArtifacts, type Artifact, type ArtifactSummary } from "@/lib/api";
-import { cn } from "@/lib/utils";
-
-function ago(ts: number) {
-  const s = (Date.now() - ts) / 1000;
-  return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
-}
+import { ago, cn } from "@/lib/utils";
 
 // This session's artifacts, or a search across every session's. Served by
 // the Artifacts cell, so they open even while the sandbox sleeps.

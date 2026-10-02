@@ -3,17 +3,9 @@ import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProvidersSheet } from "@/components/ProvidersSheet";
+import { BranchField, RepoField } from "@/components/RepoField";
 import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
-import { cn } from "@/lib/utils";
-
-function ago(ts?: number): string {
-  if (!ts) return "";
-  const s = Math.max(0, (Date.now() - ts) / 1000);
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
+import { ago, cn } from "@/lib/utils";
 
 const statusDot: Record<string, string> = {
   running: "bg-green-500 animate-pulse",
@@ -57,8 +49,8 @@ export function Sidebar({
           className="space-y-2 border-y border-border p-3"
           onSubmit={(e) => { e.preventDefault(); create(); }}
         >
-          <Input placeholder="https://github.com/owner/repo (optional)" value={repo} onChange={(e) => setRepo(e.target.value)} autoFocus className="font-mono text-xs" />
-          {repo.trim() && <Input placeholder="branch (default)" value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono text-xs" />}
+          <RepoField value={repo} onChange={(v) => { setRepo(v); setBranch(""); }} />
+          {repo.trim() && <BranchField repo={repo} value={branch} onChange={setBranch} />}
           <Input placeholder={repo.trim() ? "name (repo name)" : "session name"} value={name} onChange={(e) => setName(e.target.value)} />
           <Button type="submit" size="sm" className="w-full">Create</Button>
         </form>
