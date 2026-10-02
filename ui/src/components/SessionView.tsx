@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Panel, Split, Stage, View, ViewType, Workspace, type WorkspaceHandle } from "@danfessler/trellis-react";
+import "@danfessler/trellis/style.css";
 import { ChatView } from "@/components/ChatView";
-import { Panel, PANEL_TABS, type PanelTab } from "@/components/panel/Panel";
-import { PanelContext } from "@/components/panel/panel-context";
+import { PANEL_VIEWS } from "@/components/panel/Panel";
+import { SessionContext, useSessionContext, type PanelView } from "@/components/panel/session-context";
 import { useSession } from "@/hooks/useSession";
 import type { ChatModel } from "@/lib/events";
 
@@ -19,28 +21,36 @@ function artifactSaves(model: ChatModel): string[] {
   return ids;
 }
 
-// Per-viewer layout prefs; storage can be unavailable (private windows).
-function load<T>(key: string, fallback: T): T {
-  try { const v = localStorage.getItem(key); return v === null ? fallback : (JSON.parse(v) as T); } catch { return fallback; }
-}
-function save(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* not persisted */ }
+function Chat({ onTogglePanel }: { onTogglePanel: () => void }) {
+  return <ChatView session={useSessionContext().session} onTogglePanel={onTogglePanel} />;
 }
 
-// One session's WebSocket, shared by the chat and the panel beside it.
+// One session's WebSocket shared by a Trellis workspace: the chat on the
+// stage, and the panel views beside it in a resizable, dockable group. The
+// layout persists per viewer (localStorage); bump `version` when the default
+// layout changes.
 export function SessionView({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
-  const [panelOpen, setPanelOpen] = useState(() => load("pids.panel", true));
-  const [tab, setTab] = useState<PanelTab>(() => {
-    const t = load<string>("pids.tab", "events");
-    return (PANEL_TABS as readonly string[]).includes(t) ? (t as PanelTab) : "events";
-  });
-
+  const ws = useRef<WorkspaceHandle>(null);
   const [artifact, setArtifact] = useState<string | null>(null);
-  const open = (t: PanelTab, artifactId?: string) => {
-    setPanelOpen(true);
-    setTab(t);
+
+  const restore = (viewId: string) => {
+    const hidden = ws.current?.getSnapshot().hidden.find((h) => h.views.some((v) => v.id === viewId));
+    if (hidden) ws.current?.restore(hidden.panelId);
+  };
+  const open = (view: PanelView, artifactId?: string) => {
+    restore(view);
+    ws.current?.focus(view);
     if (artifactId) setArtifact(artifactId);
+  };
+  // Hides every panel holding a panel view, or brings them all back.
+  const togglePanel = () => {
+    const snap = ws.current?.getSnapshot();
+    if (!snap) return;
+    const ids = new Set<string>(PANEL_VIEWS.map((v) => v.id));
+    const hidden = snap.hidden.filter((h) => h.views.some((v) => ids.has(v.id)));
+    if (hidden.length) hidden.forEach((h) => ws.current?.restore(h.panelId));
+    else snap.views.filter((v) => ids.has(v.id)).forEach((v) => ws.current?.hide(v.id));
   };
 
   // A save that arrives live (not in the joining snapshot) opens in the panel.
@@ -53,23 +63,26 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   });
 
   return (
-    <PanelContext.Provider value={{ open }}>
-    <div className="flex h-full min-w-0">
-      <div className="min-w-0 flex-1">
-        <ChatView
-          session={session} panelOpen={panelOpen}
-          onTogglePanel={() => { setPanelOpen(!panelOpen); save("pids.panel", !panelOpen); }}
-        />
-      </div>
-      {panelOpen && (
-        <aside className="hidden h-full w-[min(44rem,46vw)] shrink-0 border-l border-border md:block">
-          <Panel
-            sessionId={sessionId} session={session} tab={tab} onTab={(t) => { setTab(t); save("pids.tab", t); }}
-            artifact={artifact} onArtifact={setArtifact} artifactRefresh={saves.length}
-          />
-        </aside>
-      )}
-    </div>
-    </PanelContext.Provider>
+    <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, artifactRefresh: saves.length, open }}>
+      <Workspace
+        ref={ws} storageKey="pids.layout" version={1} label="Session"
+        navigation={false} floating={false} className="pids-workspace h-full"
+      >
+        <ViewType id="chat" tabbar="never" closable={false} singleton scaling={false}>
+          <Chat onTogglePanel={togglePanel} />
+        </ViewType>
+        {PANEL_VIEWS.map(({ id, title, Content }) => (
+          <ViewType key={id} id={id} title={title} singleton closable={false} scaling={false} minSize={{ width: 320, height: 160 }}>
+            <Content />
+          </ViewType>
+        ))}
+        <Split weights={[3, 2]}>
+          <Stage><View type="chat" id="chat" /></Stage>
+          <Panel>
+            {PANEL_VIEWS.map(({ id }) => <View key={id} type={id} id={id} />)}
+          </Panel>
+        </Split>
+      </Workspace>
+    </SessionContext.Provider>
   );
 }

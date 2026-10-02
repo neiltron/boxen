@@ -166,3 +166,26 @@
     @apply bg-background text-foreground;
     }
 }
+/* Trellis workspace on shadcn tokens: flush panes, our borders and colors,
+   so light/dark follow the .dark class. */
+.pids-workspace {
+  --trellis-bg: var(--border);
+  --trellis-stage: var(--background);
+  --trellis-panel: var(--background);
+  --trellis-tabbar: var(--background);
+  --trellis-text: var(--foreground);
+  --trellis-text-muted: var(--muted-foreground);
+  --trellis-border: var(--border);
+  --trellis-accent: var(--primary);
+  --trellis-accent-contrast: var(--primary-foreground);
+  --trellis-tab-active: var(--muted);
+  --trellis-tab-hover: var(--accent);
+  --trellis-menu: var(--popover);
+  --trellis-menu-hover: var(--accent);
+  --trellis-focus-ring: var(--ring);
+  --trellis-font: var(--font-sans);
+  --trellis-font-size: 12px;
+  --trellis-gap: 1px;
+  --trellis-radius: 0px;
+  --trellis-tab-radius: 6px;
+}

@@ -64,9 +64,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
   );
 }
 
-export function ChatView({ session, panelOpen, onTogglePanel }: {
-  session: SessionHandle; panelOpen: boolean; onTogglePanel: () => void;
-}) {
+export function ChatView({ session, onTogglePanel }: { session: SessionHandle; onTogglePanel: () => void }) {
   const { model, meta, ready, send } = session;
   const [draft, setDraft] = useState("");
 
@@ -87,7 +85,7 @@ export function ChatView({ session, panelOpen, onTogglePanel }: {
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
         <Button
           variant="ghost" size="icon-sm" className="ml-auto"
-          aria-label={panelOpen ? "Hide panel" : "Show panel"} aria-pressed={panelOpen}
+          aria-label="Show or hide the panel"
           onClick={onTogglePanel}
         >
           <SidebarSimpleIcon className="size-4 -scale-x-100" />

@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import {
   CaretRightIcon, TerminalIcon, FileTextIcon, PencilSimpleIcon,
   WrenchIcon, CircleNotchIcon, CheckIcon, XIcon, ShapesIcon, ArrowSquareOutIcon,
 } from "@phosphor-icons/react";
-import { usePanel } from "@/components/panel/panel-context";
+import { SessionContext } from "@/components/panel/session-context";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/lib/events";
 
@@ -28,7 +28,7 @@ function argsPreview(block: ToolBlock): string {
 
 export function ToolCallBlock({ block }: { block: ToolBlock }) {
   const [open, setOpen] = useState(false);
-  const panel = usePanel();
+  const panel = useContext(SessionContext);
   const artifactId = (block.details as { artifactId?: string } | undefined)?.artifactId;
   const Icon = toolIcon(block.name);
   const preview = argsPreview(block);
@@ -47,8 +47,8 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
         {artifactId && (
           <span
             role="link" tabIndex={0}
-            onClick={(e) => { e.stopPropagation(); panel.open("artifacts", artifactId); }}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); panel.open("artifacts", artifactId); } }}
+            onClick={(e) => { e.stopPropagation(); panel?.open("artifacts", artifactId); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); panel?.open("artifacts", artifactId); } }}
             className="flex shrink-0 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
           >
             open <ArrowSquareOutIcon className="size-3" />
