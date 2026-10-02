@@ -49,6 +49,7 @@ export default {
           cwd: repo ? `/workspace/${repo.split("/").pop().replace(/\.git$/, "")}` : "/workspace",
           repo,
           branch: body.branch?.trim() || undefined,
+          titled: !!body.name, // an explicit name stands; otherwise the first message titles it
           createdAt: Date.now(),
         };
         await env.SESSION.getByName(meta.id).init(meta);
