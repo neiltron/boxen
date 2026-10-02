@@ -167,8 +167,9 @@
     }
 }
 /* Trellis workspace on shadcn tokens: flush panes, our borders and colors,
-   so light/dark follow the .dark class. */
-.pids-workspace {
+   so light/dark follow the .dark class. Trellis declares its defaults on its
+   own .trellis element, so set them there (on the wrapper they'd be shadowed). */
+.pids-workspace .trellis {
   --trellis-bg: var(--border);
   --trellis-stage: var(--background);
   --trellis-panel: var(--background);
