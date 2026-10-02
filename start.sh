@@ -1,7 +1,7 @@
 #!/bin/bash
-# Launch pi-durable-sessions: rustfs (shared, :9000) → celld 0.6.1 node (:8093),
-# then seed the model login from ~/.pi/agent. Needs a Docker daemon for the
-# per-session Sandbox containers. UI is separate: npm run ui (http://localhost:5176)
+# Launch pi-durable-sessions: rustfs (shared, :9000) → celld 0.6.1 node (:8093).
+# Needs a Docker daemon for the per-session Sandbox containers.
+# UI is separate: npm run ui (http://localhost:5176), then sign in from the sidebar.
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.local/bin:$PATH"
@@ -32,19 +32,6 @@ if ! nc -z 127.0.0.1 8093 2>/dev/null; then
 fi
 wait_port 8093
 
-# Missing credentials only; pass --force-auth to overwrite after a host re-login.
-force=""; [[ "${1:-}" == --force-auth ]] && force="?force"
-python3 - "$force" <<'PY'
-import json, os, sys, urllib.request
-home = os.path.expanduser("~/.pi/agent")
-creds = json.load(open(f"{home}/auth.json"))
-s = json.load(open(f"{home}/settings.json"))
-agent = {"model": {"provider": s["defaultProvider"], "modelId": s["defaultModel"]}}
-if s.get("defaultThinkingLevel"): agent["thinkingLevel"] = s["defaultThinkingLevel"]
-req = urllib.request.Request(f"http://127.0.0.1:8093/api/auth{sys.argv[1]}", method="POST",
-  data=json.dumps({"credentials": creds, "agent": agent}).encode(), headers={"content-type": "application/json"})
-print("auth seeded:", urllib.request.urlopen(req).read().decode())
-PY
 
 echo
 echo "pi-durable-sessions is up:"

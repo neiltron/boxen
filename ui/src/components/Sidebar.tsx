@@ -2,7 +2,8 @@ import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createSession, type SessionMeta } from "@/lib/api";
+import { AuthControl } from "@/components/AuthControl";
+import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function ago(ts?: number): string {
@@ -21,8 +22,9 @@ const statusDot: Record<string, string> = {
 };
 
 export function Sidebar({
-  sessions, selected, onSelect,
+  auth, sessions, selected, onSelect,
 }: {
+  auth: AuthStatus | null;
   sessions: SessionMeta[];
   selected: string | null;
   onSelect: (id: string) => void;
@@ -70,9 +72,6 @@ export function Sidebar({
             <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm">{s.name}</span>
-              <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                {s.cwd.split("/").slice(-2).join("/")}
-              </span>
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">{ago(s.lastActivity)}</span>
           </button>
@@ -83,6 +82,7 @@ export function Sidebar({
           </div>
         )}
       </nav>
+      <AuthControl auth={auth} />
     </aside>
   );
 }

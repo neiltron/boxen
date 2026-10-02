@@ -50,10 +50,14 @@ export default {
         await env.SESSION.getByName(meta.id).init(meta);
         return json(meta);
       }
-      // Login + default agent, seeded by start.sh from ~/.pi/agent.
-      if (url.pathname === "/api/auth" && request.method === "POST") {
+      // Model sign-in, run by the Directory cell: start → open url → paste redirect.
+      const auth = url.pathname.match(/^\/api\/auth\/(login|finish|logout)$/);
+      if (auth && request.method === "POST") {
         const body = await request.json();
-        return json(await env.DIRECTORY.getByName("main").seed({ ...body, force: url.searchParams.has("force") }));
+        const directory = env.DIRECTORY.getByName("main");
+        if (auth[1] === "login") return json(await directory.loginStart(body.provider));
+        if (auth[1] === "finish") return json(await directory.loginFinish(body.redirectUrl));
+        return json(await directory.logout(body.provider));
       }
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);

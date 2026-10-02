@@ -24,14 +24,30 @@ export type ChatItem =
   | { kind: "assistant"; seq: number; blocks: Block[]; streaming: boolean }
   | { kind: "system"; seq: number; text: string; level: "info" | "error" };
 
+export interface AgentState {
+  model?: { provider: string; modelId: string };
+  thinkingLevel?: string;
+}
+
+export interface LoggedEvent {
+  n: number;
+  ts: number;
+  ev: { type: string } & Record<string, unknown>;
+}
+
 export interface ChatModel {
   items: ChatItem[];
   running: boolean;
   seq: number; // local React keys; the cell no longer numbers events
+  agent: AgentState;
+  log: LoggedEvent[]; // raw events for the Events tab, newest last
+  logged: number;
 }
 
+const LOG_LIMIT = 1000;
+
 export function emptyModel(): ChatModel {
-  return { items: [], running: false, seq: 0 };
+  return { items: [], running: false, seq: 0, agent: {}, log: [], logged: 0 };
 }
 
 function currentAssistant(m: ChatModel): Extract<ChatItem, { kind: "assistant" }> | null {
@@ -110,9 +126,12 @@ function endAssistant(m: ChatModel, msg: any) {
 }
 
 export function applyEvent(m: ChatModel, ev: any): void {
+  m.log.push({ n: m.logged++, ts: Date.now(), ev });
+  if (m.log.length > LOG_LIMIT) m.log.splice(0, m.log.length - LOG_LIMIT);
   switch (ev.type) {
     case "snapshot": {
-      Object.assign(m, emptyModel());
+      Object.assign(m, { items: [], running: false, seq: 0 });
+      m.agent = ev.agent ?? {};
       for (const entry of ev.entries) for (const msg of entry.model ?? []) applyMessage(m, msg, false);
       m.running = !!ev.run;
       if (ev.generation?.message) applyMessage(m, ev.generation.message, true);
@@ -125,6 +144,10 @@ export function applyEvent(m: ChatModel, ev: any): void {
       }
       return;
     }
+
+    case "agent_changed":
+      m.agent = ev.agent ?? {};
+      return;
 
     case "run_start":
       m.running = true;

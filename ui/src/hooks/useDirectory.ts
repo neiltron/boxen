@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { WS_BASE, type SessionMeta } from "@/lib/api";
+import { WS_BASE, type AuthStatus, type SessionMeta } from "@/lib/api";
 
-// Live session list from the Directory cell.
-export function useDirectory(): SessionMeta[] {
+// Live session list and sign-in status from the Directory cell.
+export function useDirectory(): { sessions: SessionMeta[]; auth: AuthStatus | null } {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -18,7 +19,7 @@ export function useDirectory(): SessionMeta[] {
       ws.onopen = () => ws?.send(JSON.stringify({ type: "sub" }));
       ws.onmessage = (e) => {
         const m = JSON.parse(e.data);
-        if (m.type === "sessions") setSessions(m.sessions);
+        if (m.type === "sessions") { setSessions(m.sessions); setAuth(m.auth ?? null); }
       };
       ws.onclose = () => {
         if (!closed) retry = setTimeout(connect, 2000);
@@ -33,5 +34,5 @@ export function useDirectory(): SessionMeta[] {
     };
   }, []);
 
-  return sessions;
+  return { sessions, auth };
 }

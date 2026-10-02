@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { WS_BASE, type SessionMeta } from "@/lib/api";
+import { WS_BASE, type ModelInfo, type SessionMeta } from "@/lib/api";
 import { applyEvent, emptyModel, type ChatModel } from "@/lib/events";
 
 // One WebSocket to the Session cell: a snapshot of the conversation, then
@@ -10,6 +10,7 @@ export function useSession(id: string | null) {
   const [version, setVersion] = useState(0);
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [ready, setReady] = useState(false);
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -39,6 +40,8 @@ export function useSession(id: string | null) {
         } else if (m.type === "error") {
           applyEvent(modelRef.current, m);
           setVersion((v) => v + 1);
+        } else if (m.type === "models") {
+          setModels(m.models);
         } else if (m.type === "meta") {
           setMeta(m.meta);
         } else if (m.type === "ready") {
@@ -64,5 +67,7 @@ export function useSession(id: string | null) {
     wsRef.current?.send(JSON.stringify(cmd));
   }, []);
 
-  return { model: modelRef.current, version, meta, ready, send };
+  return { model: modelRef.current, version, meta, ready, send, models };
 }
+
+export type SessionHandle = ReturnType<typeof useSession>;

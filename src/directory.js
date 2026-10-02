@@ -1,8 +1,14 @@
 // Directory — singleton registry cell the sidebar reads. Session cells report
 // registrations, renames, and status changes here; subscribers get the full
-// list pushed over WebSocket (throttled). It also holds the model login and
-// default agent every Session cell runs with, seeded from the host's pi config.
+// list pushed over WebSocket (throttled). It also owns the model login: the
+// sign-in runs here, and every Session cell reads (and refreshes) credentials
+// through it. The login is the fleet's own, never copied from the host's pi.
 import { DurableObject } from "cloudflare:workers";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { directoryCredentials } from "./credentials.js";
+
+// The model a fresh login starts sessions on, per provider.
+const DEFAULT_MODELS = { openai: "gpt-6-astra", "openai-codex": "gpt-6-astra" };
 
 export class Directory extends DurableObject {
   constructor(state, env) {
@@ -17,6 +23,7 @@ export class Directory extends DurableObject {
       provider TEXT PRIMARY KEY, json TEXT)`);
     this.sockets = [];
     this.flushTimer = null;
+    this.login = null; // { abort, answer, done } while a sign-in waits on the browser
   }
 
   async register({ id, name, cwd, createdAt }) {
@@ -43,17 +50,56 @@ export class Directory extends DurableObject {
     this.notify();
   }
 
-  // Seeds missing credentials only, unless forced: once a cell has refreshed
-  // an OAuth token, the host's copy may already be spent.
-  async seed({ credentials = {}, agent, force = false }) {
-    for (const [provider, credential] of Object.entries(credentials)) {
-      this.sql.exec(`INSERT ${force ? "OR REPLACE" : "OR IGNORE"} INTO credentials VALUES (?,?)`,
-        provider, JSON.stringify(credential));
-    }
-    if (agent && (force || !(await this.state.storage.get("agent")))) {
-      await this.state.storage.put("agent", agent);
-    }
-    return { providers: (await this.credentialList()).map((c) => c.providerId) };
+  // Starts an OAuth sign-in and resolves with what the browser must do: open
+  // `url`, then paste back the 127.0.0.1:1455 redirect it lands on (nothing
+  // listens there; the cell finishes the exchange with the pasted URL).
+  async loginStart(provider) {
+    this.login?.abort.abort();
+    const abort = new AbortController();
+    const login = { abort, answer: null };
+    this.login = login;
+    const deviceId = (await this.state.storage.get("deviceId")) ?? crypto.randomUUID();
+    await this.state.storage.put("deviceId", deviceId);
+    const models = builtinModels({ credentials: directoryCredentials(this) });
+    const step = Promise.withResolvers();
+    const interaction = {
+      signal: abort.signal,
+      notify: (ev) => {
+        if (ev.type === "auth_url") step.resolve({ url: ev.url });
+        else if (ev.type === "device_code") step.resolve({ url: ev.verificationUri, code: ev.userCode });
+      },
+      prompt: () => new Promise((resolve) => { login.answer = resolve; }),
+    };
+    login.done = models.login(provider, "oauth", interaction, { getDeviceId: () => deviceId })
+      .then(async () => {
+        if (!(await this.state.storage.get("agent")) && DEFAULT_MODELS[provider]) {
+          await this.state.storage.put("agent", { model: { provider, modelId: DEFAULT_MODELS[provider] }, thinkingLevel: "high" });
+        }
+        this.notify();
+      })
+      .finally(() => { if (this.login === login) this.login = null; });
+    login.done.catch(() => {});
+    return Promise.race([step.promise, login.done.then(() => ({ done: true }))]);
+  }
+
+  async loginFinish(redirectUrl) {
+    const login = this.login;
+    if (!login?.answer) throw new Error("no sign-in is waiting; start again");
+    login.answer(redirectUrl);
+    await login.done;
+    return this.authStatus();
+  }
+
+  async logout(provider) {
+    await this.deleteCredential(provider);
+    const agent = await this.state.storage.get("agent");
+    if (agent?.model?.provider === provider) await this.state.storage.delete("agent");
+    this.notify();
+    return this.authStatus();
+  }
+
+  async authStatus() {
+    return { providers: (await this.credentialList()).map((c) => c.providerId), agent: await this.defaultAgent() };
   }
 
   async defaultAgent() {
@@ -100,7 +146,7 @@ export class Directory extends DurableObject {
     let cmd;
     try { cmd = JSON.parse(raw); } catch { return; }
     if (cmd.type === "sub") {
-      try { ws.send(JSON.stringify({ type: "sessions", sessions: await this.list() })); } catch {}
+      try { ws.send(JSON.stringify({ type: "sessions", sessions: await this.list(), auth: await this.authStatus() })); } catch {}
     }
   }
 
@@ -111,7 +157,7 @@ export class Directory extends DurableObject {
     if (this.flushTimer) return;
     this.flushTimer = setTimeout(async () => {
       this.flushTimer = null;
-      const msg = JSON.stringify({ type: "sessions", sessions: await this.list() });
+      const msg = JSON.stringify({ type: "sessions", sessions: await this.list(), auth: await this.authStatus() });
       this.sockets = this.sockets.filter((ws) => {
         try { ws.send(msg); return true; } catch { return false; }
       });

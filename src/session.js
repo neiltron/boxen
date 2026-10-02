@@ -6,6 +6,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { getSandbox } from "@cloudflare/sandbox";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createRegistry, defineExtension, Harness, section, watchEvents } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
@@ -57,13 +58,14 @@ export class Session extends DurableObject {
     const meta = await this.meta();
     const directory = this.env.DIRECTORY.getByName("main");
     const sandbox = getSandbox(this.env.Sandbox, meta.id);
+    const models = builtinModels({ credentials: directoryCredentials(directory) });
     const registry = createRegistry();
     registry.install(CodingTools);
     registry.install(Prompt);
     const harness = await Harness.open(
       await SqliteStorage.open(new CellSqlite(this.state.storage)),
       {
-        models: builtinModels({ credentials: directoryCredentials(directory) }),
+        models,
         registry,
         env: ({ cwd }) => sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? WORKSPACE),
       },
@@ -72,7 +74,7 @@ export class Session extends DurableObject {
     const root = await harness.root(ctx, { agent: { ...(await directory.defaultAgent()), cwd: WORKSPACE } });
     const status = await watchEvents(harness, root.id, ctx);
     status.start(async (events) => this.track(meta.id, events));
-    return { harness, root };
+    return { harness, root, models };
   }
 
   // Browser WebSocket. Nothing is sent during the upgrade (Safari drops
@@ -117,6 +119,16 @@ export class Session extends DurableObject {
       if (cmd.type === "prompt" || cmd.type === "steer") {
         const { root } = await this.open();
         await root.submit({ type: "input", content: cmd.message, whenBusy: "steer" }, ctx);
+      } else if (cmd.type === "models") {
+        const { models } = await this.open();
+        const list = (await models.getAvailable()).map((m) => ({
+          provider: m.provider, id: m.id, name: m.name, thinkingLevels: getSupportedThinkingLevels(m),
+        }));
+        ws.send(JSON.stringify({ type: "models", models: list }));
+      } else if (cmd.type === "configure") {
+        // Applies from the next model request; a running turn keeps its model.
+        const { root } = await this.open();
+        await root.configure({ model: cmd.model, thinkingLevel: cmd.thinkingLevel }, ctx);
       } else if (cmd.type === "abort") {
         const { root } = await this.open();
         await root.abort(ctx);

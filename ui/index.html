@@ -3,8 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ui</title>
+    <!-- maximum-scale=1 stops iOS Safari's focus-zoom on inputs (pinch zoom
+         still works — iOS ignores the cap for user gestures). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>pi sessions</title>
+    <!-- Applies the theme before first paint, so a dark session doesn't flash
+         light while the module bundle loads. Mirrors src/lib/theme.ts. -->
+    <script>
+      const stored = localStorage.getItem("pids.theme");
+      const isDark = stored === "dark"
+        || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    </script>
   </head>
   <body>
     <div id="root"></div>

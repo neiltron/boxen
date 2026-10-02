@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PaperPlaneRightIcon, StopIcon, CaretDownIcon, BrainIcon } from "@phosphor-icons/react";
+import { PaperPlaneRightIcon, StopIcon, CaretDownIcon, BrainIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import {
   MessageScrollerProvider, MessageScroller, MessageScrollerViewport,
   MessageScrollerContent, MessageScrollerItem, MessageScrollerButton,
@@ -8,8 +8,13 @@ import { Message, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent } from "@/components/ui/marker";
 import { Button } from "@/components/ui/button";
+import {
+  InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea,
+} from "@/components/ui/input-group";
+import { Markdown } from "@/components/Markdown";
+import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
-import { useSession } from "@/hooks/useSession";
+import type { SessionHandle } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 import type { Block, ChatItem } from "@/lib/events";
 
@@ -39,9 +44,9 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
               {item.blocks.map((b, i) => {
                 if (b.kind === "text") {
                   return (
-                    <div key={i} className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {b.text}
-                      {b.streaming && <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-foreground/60 align-text-bottom" />}
+                    <div key={i}>
+                      <Markdown text={b.text} />
+                      {b.streaming && <span className="inline-block h-4 w-2 animate-pulse bg-foreground/60 align-text-bottom" />}
                     </div>
                   );
                 }
@@ -59,10 +64,11 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
   );
 }
 
-export function ChatView({ sessionId }: { sessionId: string }) {
-  const { model, version, meta, ready, send } = useSession(sessionId);
+export function ChatView({ session, panelOpen, onTogglePanel }: {
+  session: SessionHandle; panelOpen: boolean; onTogglePanel: () => void;
+}) {
+  const { model, meta, ready, send } = session;
   const [draft, setDraft] = useState("");
-  void version;
 
   const submit = () => {
     const text = draft.trim();
@@ -78,15 +84,14 @@ export function ChatView({ sessionId }: { sessionId: string }) {
           "size-2 shrink-0 rounded-full",
           model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",
         )} />
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{meta?.name ?? "…"}</div>
-          <div className="truncate font-mono text-xs text-muted-foreground">{meta?.cwd}</div>
-        </div>
-        {model.running && (
-          <Button variant="outline" size="sm" className="ml-auto" onClick={() => send({ type: "abort" })}>
-            <StopIcon className="size-3.5" /> Stop
-          </Button>
-        )}
+        <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
+        <Button
+          variant="ghost" size="icon-sm" className="ml-auto"
+          aria-label={panelOpen ? "Hide panel" : "Show panel"} aria-pressed={panelOpen}
+          onClick={onTogglePanel}
+        >
+          <SidebarSimpleIcon className="size-4 -scale-x-100" />
+        </Button>
       </header>
 
       <MessageScrollerProvider>
@@ -125,25 +130,46 @@ export function ChatView({ sessionId }: { sessionId: string }) {
         </MessageScroller>
       </MessageScrollerProvider>
 
-      <footer className="border-t border-border p-3">
-        <form
-          className="mx-auto flex w-full max-w-3xl items-end gap-2"
-          onSubmit={(e) => { e.preventDefault(); submit(); }}
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-            }}
-            rows={Math.min(6, draft.split("\n").length)}
-            placeholder={model.running ? "Steer the running agent…" : "Message pi…"}
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            disabled={!ready}
-          />
-          <Button type="submit" size="icon" disabled={!ready || !draft.trim()}>
-            <PaperPlaneRightIcon className="size-4" />
-          </Button>
+      <footer className="p-3 pt-1.5">
+        <form className="mx-auto w-full max-w-3xl" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+          <InputGroup className="rounded-2xl">
+            <InputGroupTextarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              enterKeyHint="enter"
+              onKeyDown={(e) => {
+                // Touch keyboards keep Return for newlines; the Send button submits.
+                if (e.key === "Enter" && !e.shiftKey
+                  && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229
+                  && !window.matchMedia("(pointer: coarse)").matches) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              rows={1}
+              placeholder={model.running ? "Steer the running agent…" : "Message pi…"}
+              className="max-h-44 min-h-0 py-2.5 text-base [field-sizing:content] sm:text-sm"
+              disabled={!ready}
+            />
+            <InputGroupAddon align="block-end" className="gap-1.5 pb-1 pt-0">
+              <ModelPicker session={session} />
+              {model.running && (
+                <InputGroupButton
+                  type="button" variant="outline" size="icon-sm" className="ml-auto rounded-full"
+                  aria-label="Stop the agent" onClick={() => send({ type: "abort" })}
+                >
+                  <StopIcon className="size-3.5" />
+                </InputGroupButton>
+              )}
+              <InputGroupButton
+                type="submit" variant="default" size="icon-sm"
+                className={cn("rounded-full", !model.running && "ml-auto")}
+                aria-label="Send" disabled={!ready || !draft.trim()}
+              >
+                <PaperPlaneRightIcon className="size-3.5" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
         </form>
       </footer>
     </div>

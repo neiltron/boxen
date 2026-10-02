@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import {
   MessageScroller as MessageScrollerPrimitive,
@@ -73,7 +71,12 @@ function MessageScrollerItem({
       data-slot="message-scroller-item"
       scrollAnchor={scrollAnchor}
       className={cn(
-        "min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]",
+        // content-visibility:auto removed from the stock component: with large
+        // messages (pasted logs, tool output) the 10rem size estimate is so far
+        // off that rendering items in/out lurches the scroll position — wheel
+        // down could move the view up. Our transcripts are small enough to
+        // render fully.
+        "min-w-0 shrink-0",
         className
       )}
       {...props}
