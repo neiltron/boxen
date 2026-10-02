@@ -49,8 +49,8 @@ npm install && npm run deploy   # bundles the worker, saves the sandbox image to
 npm run ui                      # http://localhost:5176
 ```
 
-After editing `src/`, run `npm run deploy`. 0.6.1 nodes pick up a new version
-without a restart.
+After editing `src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
+in about 15 seconds without a restart, so sandboxes keep their disks.
 
 ## Notes
 

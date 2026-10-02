@@ -46,4 +46,4 @@ echo
 echo "pi-durable-sessions is up:"
 echo "  api    http://127.0.0.1:8093/api/sessions"
 echo "  ui     npm run ui   →  http://localhost:5176"
-echo "  (after editing src/: npm run deploy, then ./stop.sh && ./start.sh)"
+echo "  (after editing src/: ./deploy.sh — no restart needed)"
