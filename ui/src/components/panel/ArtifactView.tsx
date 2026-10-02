@@ -11,13 +11,18 @@ function frameDoc(a: Artifact): string {
   if (a.kind === "html") return a.content;
   if (a.kind === "svg") return `${frameBase}${a.content}`;
   // Mermaid renders inside the sandboxed frame, from the CDN, so the app
-  // bundle stays small and diagram code never runs in the app's origin.
-  const source = a.content.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
-  return `${frameBase}<pre class="mermaid">${source}</pre>
+  // bundle stays small and diagram code never runs in the app's origin. The
+  // source goes in as a JSON string: mermaid reads DOM text via innerHTML,
+  // which would re-escape labels like <br/> and arrows like -->.
+  const source = JSON.stringify(a.content).replaceAll("<", "\\u003c");
+  return `${frameBase}<div id="out"></div>
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "default" });
+  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
+  const out = document.getElementById("out");
+  try { out.innerHTML = (await mermaid.render("diagram", ${source})).svg; }
+  catch (e) { out.textContent = String(e.message ?? e); }
 </script>`;
 }
 
