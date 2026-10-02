@@ -24,11 +24,23 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   `ExecutionEnv` onto it: read, write, edit, and bash with streamed output.
   Container disk is ephemeral: the transcript survives a restart, but
   `/workspace` does not.
-- **Directory cell**: the session list as before, plus the model login and
-  default model (`src/credentials.js` is the pi-ai `CredentialStore`).
-  `start.sh` seeds both from `~/.pi/agent`.
-- **ui/**: unchanged apart from the reducer (`src/lib/events.ts`), which now
-  folds pi-durable agent events. Run `node events.check.ts` from `ui/` to check it.
+- **Directory cell**: the session list, plus model providers. Any pi-ai
+  provider can take an API key or its own sign-in (Providers, bottom of the
+  sidebar); credentials live here (`src/credentials.js` is the pi-ai
+  `CredentialStore`), never copied from the host's pi. OAuth sign-ins
+  redirect to loopback ports, which `ui/vite.config.ts` forwards to the cell;
+  pasting the redirect address is the fallback from another machine.
+- **Artifacts cell**: what the agent's `artifact` tool shows in the panel
+  (markdown, html, svg, mermaid, code), versioned and full-text searchable,
+  readable while sandboxes sleep.
+- **ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
+  Changes, Preview, Terminal, and Events views. The reducer
+  (`src/lib/events.ts`) folds pi-durable agent events; run
+  `node events.check.ts` from `ui/` to check it.
+- **Repos**: a session can start from a repo URL; the cell clones it into the
+  sandbox (again if the container lost its disk). `GH_TOKEN` and
+  `LINEAR_API_KEY` from a gitignored `.env` go into each sandbox command's
+  env, and the prompt includes the repo's AGENTS.md.
 
 ## What went away
 
@@ -45,7 +57,7 @@ prototype uses `~/.local/bin/celld-0.6.1`; the other prototypes stay on 0.3.0.
 
 ```sh
 npm install && npm run deploy   # bundles the worker, saves the sandbox image to the bucket
-./start.sh                      # rustfs (:9000) + celld (:8093) + auth seed
+./start.sh                      # rustfs (:9000) + celld (:8093) + .env tokens
 npm run ui                      # http://localhost:5176
 ```
 
@@ -54,14 +66,15 @@ in about 15 seconds without a restart, so sandboxes keep their disks.
 
 ## Notes
 
-- **OAuth refresh.** The cell holds its own copy of your `~/.pi/agent/auth.json`
-  login. OpenAI rotates refresh tokens, so whichever side refreshes first
-  (host pi or the cell) leaves the other with a spent token. Re-login on the
-  host, then `./start.sh --force-auth`.
 - **Runtime shims** (`src/index.js`): pi-ai's OAuth flows are registered
   statically (`registerBunOAuthFlows`), and `atob` is patched to accept
   unpadded base64url JWTs.
-- **Prompt.** A one-line preamble plus the cwd. No AGENTS.md, skills, or MCP:
-  pi-durable's `CodingTools` are just the four tools.
+- **celld I/O belongs to the request that started it.** A fetch begun in a
+  continuation of a finished request never completes, so multi-step flows
+  (sign-in) keep their first request open as a stream.
+- **One shell per sandbox.** The Sandbox SDK runs commands in a long-lived
+  shell; each command is wrapped in `bash -c` so an `exit` can't kill it.
+- **Prompt.** A preamble, the cwd, and the repo's AGENTS.md. No skills or MCP
+  yet: pi-durable's `CodingTools` are the four tools, plus `artifact`.
 - celld builds images for `linux/amd64` by default, so on Apple silicon the
   sandbox runs under emulation (`CELLD_CONTAINER_PLATFORM` overrides it; untried).
