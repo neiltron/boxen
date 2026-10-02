@@ -64,6 +64,36 @@ npm run ui                      # http://localhost:5176
 After editing `src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
+## Terminal
+
+The panel's Terminal view uses ghostty-web and `GET /api/session/:id/terminal`
+(WebSocket). It attaches to a dedicated SDK session, `terminal-<id>`, in the
+same sandbox as the agent, initially in the repo's cwd (or `/workspace`).
+Reconnects and other browsers attach to that same shell; terminal `exit`
+doesn't kill the agent's exec shell. A dropped connection retries up to ten
+times with backoff; the toolbar button retries manually. An explicit shell
+exit or PTY error stops automatic retries.
+
+The view fits after Trellis attaches and sizes it. App theme changes recreate
+the renderer and reattach to the shell: ghostty-web 0.4.0 cannot fully update
+WASM theme colors in place. Reconnection uses the SDK's PTY buffer replay,
+not a separately persisted terminal transcript.
+
+Browser smoke test (after deploying the worker and starting the UI):
+
+1. Open Terminal in a repo session; check `pwd`, typing, paste, Unicode,
+   ANSI colors, and Ctrl-C. Try a session without a repo too.
+2. Run `stty size`; resize, dock, hide/show, and switch tabs. Check that the
+   first render isn't blank and a full-screen program fits the new size.
+3. Switch light/dark themes and reconnect; check that the shell's cwd and
+   variables survive. Disconnect/reconnect the network and watch the status.
+4. Run `exit`, then use Reconnect. Send the agent a bash task to confirm its
+   shell still works. Switch sessions and check that output doesn't leak.
+
+Offline route checks: `node --experimental-vm-modules terminal.check.mjs`.
+These mock the SDK/Harness boundaries; they do not test celld's upgrade
+transport or the container's PTY implementation.
+
 ## Notes
 
 - **Runtime shims** (`src/index.js`): pi-ai's OAuth flows are registered
