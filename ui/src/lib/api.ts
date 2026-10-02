@@ -110,3 +110,14 @@ export const listArtifacts = (session: string) => get<ArtifactSummary[]>(`/api/a
 export const searchArtifacts = (q: string) => get<ArtifactSummary[]>(`/api/artifacts?q=${encodeURIComponent(q)}`);
 export const getArtifact = (id: string, version?: number) =>
   get<Artifact>(`/api/artifacts/${id}${version ? `?v=${version}` : ""}`);
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  apiKey: { name: string } | null;
+  oauth: { name: string; label: string } | null;
+  connected: "api_key" | "oauth" | null;
+}
+
+export const listProviders = () => get<ProviderInfo[]>("/api/providers");
+export const setApiKey = (provider: string, key: string) => post<AuthStatus>(`/api/providers/${provider}/key`, { key });

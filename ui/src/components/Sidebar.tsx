@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AuthControl } from "@/components/AuthControl";
+import { ProvidersSheet } from "@/components/ProvidersSheet";
 import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -93,7 +93,7 @@ export function Sidebar({
           </div>
         )}
       </nav>
-      <AuthControl auth={auth} />
+      <ProvidersSheet auth={auth} />
     </aside>
   );
 }

@@ -100,15 +100,39 @@ export class Directory extends DurableObject {
       prompt: () => new Promise((resolve) => { login.answer = resolve; }),
     };
     login.done = models.login(provider, "oauth", interaction, { getDeviceId: () => deviceId })
-      .then(async () => {
-        if (!(await this.state.storage.get("agent")) && DEFAULT_MODELS[provider]) {
-          await this.state.storage.put("agent", { model: { provider, modelId: DEFAULT_MODELS[provider] }, thinkingLevel: "high" });
-        }
-        this.notify();
-      })
+      .then(() => this.connected(models, provider))
       .finally(() => { if (this.login === login) this.login = null; });
     login.done.catch(() => {});
     return Promise.race([step.promise, login.done.then(() => ({ done: true }))]);
+  }
+
+  // Every provider pi-ai ships, how it can authenticate, and whether this
+  // fleet has a credential for it.
+  async providers() {
+    const stored = new Map((await this.credentialList()).map((c) => [c.providerId, c.type]));
+    return builtinModels({ credentials: directoryCredentials(this) }).getProviders().map((p) => ({
+      id: p.id,
+      name: p.name,
+      apiKey: p.auth.apiKey ? { name: p.auth.apiKey.name } : null,
+      oauth: p.auth.oauth ? { name: p.auth.oauth.name, label: p.auth.oauth.loginLabel ?? `Sign in` } : null,
+      connected: stored.get(p.id) ?? null,
+    }));
+  }
+
+  async setApiKey(provider, key) {
+    await this.setCredential(provider, { type: "api_key", key });
+    await this.connected(builtinModels({ credentials: directoryCredentials(this) }), provider);
+    return this.authStatus();
+  }
+
+  // After a provider connects: give new sessions a model if none is set yet.
+  async connected(models, provider) {
+    if (!(await this.state.storage.get("agent"))) {
+      const available = await models.getAvailable(provider);
+      const modelId = DEFAULT_MODELS[provider] ?? available[0]?.id;
+      if (modelId) await this.state.storage.put("agent", { model: { provider, modelId }, thinkingLevel: "high" });
+    }
+    this.notify();
   }
 
   async loginFinish(redirectUrl) {

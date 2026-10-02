@@ -54,6 +54,11 @@ export default {
         await env.SESSION.getByName(meta.id).init(meta);
         return json(meta);
       }
+      if (url.pathname === "/api/providers") return json(await env.DIRECTORY.getByName("main").providers());
+      const key = url.pathname.match(/^\/api\/providers\/([\w.-]+)\/key$/);
+      if (key && request.method === "POST") {
+        return json(await env.DIRECTORY.getByName("main").setApiKey(key[1], (await request.json()).key));
+      }
       // Model sign-in, run by the Directory cell: start → open url → paste redirect.
       const auth = url.pathname.match(/^\/api\/auth\/(login|finish|logout)$/);
       if (auth?.[1] === "login") return env.DIRECTORY.getByName("main").fetch(request);
