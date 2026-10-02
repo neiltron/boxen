@@ -72,7 +72,9 @@ view, enter its port and press Go/Enter, or use **Find listening ports** and
 pick one. The last applied port is saved per session in localStorage; reload
 remounts the iframe, and the adjacent link opens the same URL in a new tab.
 Ports must be 1024–65535 except **3000**, the Sandbox control server; run Next
-on e.g. 3001 instead.
+on e.g. 3001 instead. On macOS celld can only reach ports the image declares
+with `EXPOSE` (see `Dockerfile`: 3001 4000 4173 4321 5000 5173 5174 8000 8080
+8787 8888); a new image applies to new containers.
 
 The UI's own dev server is **http://localhost:5176**. The iframe goes straight
 to celld at **http://p<port>-<sessionId>.localhost:8093/**, not through Vite's
