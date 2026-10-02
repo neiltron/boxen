@@ -53,6 +53,32 @@ export class Directory extends DurableObject {
     this.notify();
   }
 
+  // POST /api/auth/login streams NDJSON: first what the browser must do
+  // ({url}), then {done} or {error}. The response stays open for the whole
+  // sign-in because I/O here belongs to the request that started it: a token
+  // exchange begun under a finished request never completes.
+  loginStream(provider) {
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+    const send = (msg) => writer.write(encoder.encode(`${JSON.stringify(msg)}\n`)).catch(() => {});
+    const keepalive = setInterval(() => send({}), 15000);
+    (async () => {
+      try {
+        const step = await this.loginStart(provider);
+        await send(step);
+        if (!step.done) await this.login?.done;
+        await send({ done: true });
+      } catch (e) {
+        await send({ error: e.message });
+      } finally {
+        clearInterval(keepalive);
+        writer.close().catch(() => {});
+      }
+    })();
+    return new Response(readable, { headers: { "content-type": "application/x-ndjson" } });
+  }
+
   // Starts an OAuth sign-in and resolves with what the browser must do: open
   // `url`, then paste back the 127.0.0.1:1455 redirect it lands on (nothing
   // listens there; the cell finishes the exchange with the pasted URL).
@@ -149,6 +175,9 @@ export class Directory extends DurableObject {
   // arrive before its side of the handshake settles. The client sends "sub"
   // once its socket is open, and the snapshot goes back as a normal message.
   async fetch(request) {
+    if (new URL(request.url).pathname === "/api/auth/login") {
+      return this.loginStream((await request.json()).provider);
+    }
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("websocket upgrade required", { status: 426 });
     }

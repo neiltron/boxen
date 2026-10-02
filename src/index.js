@@ -56,10 +56,10 @@ export default {
       }
       // Model sign-in, run by the Directory cell: start → open url → paste redirect.
       const auth = url.pathname.match(/^\/api\/auth\/(login|finish|logout)$/);
+      if (auth?.[1] === "login") return env.DIRECTORY.getByName("main").fetch(request);
       if (auth && request.method === "POST") {
         const body = await request.json();
         const directory = env.DIRECTORY.getByName("main");
-        if (auth[1] === "login") return json(await directory.loginStart(body.provider));
         if (auth[1] === "finish") return json(await directory.loginFinish(body.redirectUrl));
         return json(await directory.logout(body.provider));
       }
@@ -80,8 +80,9 @@ export default {
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);
       }
-      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/ws$/);
-      if (m) return env.SESSION.getByName(m[1]).fetch(request);
+      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff)$/);
+      if (m?.[2] === "ws") return env.SESSION.getByName(m[1]).fetch(request);
+      if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
       return json({ error: "unknown route" }, 404);
     } catch (e) {
       return json({ error: e.message }, 500);

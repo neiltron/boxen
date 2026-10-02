@@ -50,7 +50,37 @@ async function post<T>(path: string, body: object): Promise<T> {
 }
 
 // Sign-in runs in the Directory cell: open `url`, then paste the redirect back.
-export const startLogin = (provider: string) => post<{ url?: string; code?: string; done?: boolean }>("/api/auth/login", { provider });
+type LoginStep = { url?: string; code?: string; done?: boolean; error?: string };
+
+// The response stays open for the whole sign-in (see Directory.loginStream):
+// resolves with the first step, then reports the outcome through `onEnd`.
+export async function startLogin(provider: string, onEnd: (end: LoginStep) => void): Promise<LoginStep> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+  if (!res.ok || !res.body) throw new Error(`sign-in failed: ${res.status}`);
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  const next = async (): Promise<LoginStep> => {
+    for (;;) {
+      const nl = buf.indexOf("\n");
+      if (nl >= 0) {
+        const msg = JSON.parse(buf.slice(0, nl)) as LoginStep;
+        buf = buf.slice(nl + 1);
+        if (Object.keys(msg).length) return msg; // {} lines are keepalives
+        continue;
+      }
+      const { value, done } = await reader.read();
+      if (done) return { error: "sign-in ended without an answer" };
+      buf += value;
+    }
+  };
+  const first = await next();
+  if (first.url) void next().then(onEnd);
+  return first;
+}
 export const finishLogin = (redirectUrl: string) => post<AuthStatus>("/api/auth/finish", { redirectUrl });
 export const logout = (provider: string) => post<AuthStatus>("/api/auth/logout", { provider });
 

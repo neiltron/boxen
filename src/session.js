@@ -140,6 +140,27 @@ export class Session extends DurableObject {
     await this.note(root, `cloned into ${meta.cwd}`);
   }
 
+  // The working tree against HEAD, untracked files included. A throwaway
+  // index marks them intent-to-add, so the agent's own index is untouched.
+  async diff() {
+    const meta = await this.meta();
+    const { workspace } = await this.open();
+    await workspace;
+    const env = sandboxEnv(getSandbox(this.env.Sandbox, meta.id), `sandbox:${meta.id}`, meta.cwd);
+    let out = "";
+    const script = [
+      `cd ${shellQuote(meta.cwd)} || exit 3`,
+      `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 4`,
+      `idx=$(mktemp); cp "$(git rev-parse --git-dir)/index" "$idx" 2>/dev/null`,
+      `GIT_INDEX_FILE=$idx git add -A -N . 2>/dev/null && GIT_INDEX_FILE=$idx git diff HEAD --no-color --no-ext-diff; s=$?; rm -f "$idx"; exit $s`,
+    ].join("\n");
+    const r = await env.exec(script, { onOutput: (t) => { out += t; } }, ctx);
+    if (!r.ok) throw r.error;
+    if (r.value.exitCode === 4 || r.value.exitCode === 3) return { repo: false, patch: "" };
+    if (r.value.exitCode !== 0) throw new Error(out.trim().split("\n").at(-1) || `git diff exited ${r.value.exitCode}`);
+    return { repo: true, patch: out };
+  }
+
   // A durable line in the transcript that the model never sees.
   note(root, text, level = "info") {
     return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);

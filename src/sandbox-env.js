@@ -96,7 +96,9 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
     // ponytail: no output spill file; the Harness already keeps the tail the model sees.
     async exec(command, options = {}, context) {
       try {
-        const r = await sandbox.exec(command, {
+        // The SDK runs commands in one long-lived shell per sandbox, where an
+        // `exit` would kill it; a fresh bash per command, as the Node env does.
+        const r = await sandbox.exec(`bash -c ${shellQuote(command)}`, {
           cwd: options.cwd ?? env.cwd,
           env: { ...secretEnv(secrets), ...options.env },
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,

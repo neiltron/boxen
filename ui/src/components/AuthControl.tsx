@@ -41,7 +41,12 @@ export function AuthControl({ auth }: { auth: AuthStatus | null }) {
       {!url ? (
         <Button size="sm" className="w-full" disabled={busy}
           onClick={() => run(async () => {
-            const step = await startLogin(PROVIDER);
+            const step = await startLogin(PROVIDER, (end) => {
+              if (end.error) setError(end.error);
+              setUrl(null);
+              setPasted("");
+            });
+            if (step.error) throw new Error(step.error);
             if (step.url) setUrl(step.url);
           })}>
           Sign in with ChatGPT
@@ -59,7 +64,7 @@ export function AuthControl({ auth }: { auth: AuthStatus | null }) {
             placeholder="http://127.0.0.1:1455/auth/callback?code=…" className="font-mono text-xs" />
           <div className="flex gap-2">
             <Button size="sm" className="flex-1" disabled={busy || !pasted.trim()}
-              onClick={() => run(async () => { await finishLogin(pasted.trim()); setUrl(null); setPasted(""); })}>
+              onClick={() => run(async () => { await finishLogin(pasted.trim()); })}>
               {busy ? "Finishing…" : "Finish sign-in"}
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setUrl(null); setPasted(""); }}>Cancel</Button>
