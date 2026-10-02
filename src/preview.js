@@ -9,8 +9,28 @@ export function validPreviewPort(port) {
   return Number.isInteger(port) && port >= 1024 && port <= 65535 && port !== 3000;
 }
 
-export async function proxyPreview(request, sandbox, port) {
+// The SDK's containerFetch waits up to 90s for a port that isn't listening,
+// then reports the container's state as stale. Check first, from a short
+// per-sandbox cache so an app's burst of asset requests costs one exec.
+// ponytail: per-isolate cache; a stale "listening" lets one request wait.
+const listening = new Map(); // sandbox id → { at, ports }
+
+async function isListening(sandbox, id, port) {
+  const hit = listening.get(id);
+  if (hit && Date.now() - hit.at < 3000 && hit.ports.includes(port)) return true;
+  const ports = await listeningPorts(sandbox);
+  listening.set(id, { at: Date.now(), ports });
+  return ports.includes(port);
+}
+
+export async function proxyPreview(request, sandbox, port, id) {
   try {
+    if (!await isListening(sandbox, id, port)) {
+      return new Response(`Nothing is listening on port ${port} in this sandbox.\nStart the app on 0.0.0.0 and reload.`, {
+        status: 502,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
     // Return the actual streaming/upgrade Response: celld ties I/O to this
     // request's lifetime. Don't read the body or start a background proxy.
     if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
@@ -25,7 +45,9 @@ export async function proxyPreview(request, sandbox, port) {
     }
     return await sandbox.containerFetch(new Request(request, { redirect: "manual" }), port);
   } catch (e) {
-    return new Response(`Preview unavailable on port ${port}: ${e.message}\nStart the app on 0.0.0.0 and reload.`, {
+    // On macOS celld reaches only ports the image EXPOSEs (see Dockerfile).
+    return new Response(`Preview unavailable on port ${port}: ${e.message}\nStart the app on 0.0.0.0 and reload. ` +
+      `On macOS, use an exposed port: 3001 4000 4173 4321 5000 5173 5174 8000 8080 8787 8888.`, {
       status: 502,
       headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });

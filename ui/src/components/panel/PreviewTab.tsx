@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ArrowClockwiseIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { fetchListeningPorts } from "@/lib/api";
 
@@ -36,6 +36,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     setInput(next);
     setNonce((n) => n + 1);
     try { localStorage.setItem(`pids.previewPort.${sessionId}`, next); } catch { /* not persisted */ }
+    void scan();
   }
 
   async function scan() {
@@ -45,6 +46,11 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
     catch (e) { setError((e as Error).message); }
     finally { setScanning(false); }
   }
+
+  // Scan on open. The iframe loads only a port that's listening: a request to
+  // a quiet port makes the SDK wait 90s and mark the container's state stale.
+  useEffect(() => { void scan(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const live = ports?.includes(Number(port)) ?? false;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -78,9 +84,15 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
         {ports?.length === 0 && <span>No app ports listening.</span>}
         {error && <span role="status" className="text-destructive">{error}</span>}
       </div>
-      <iframe key={`${url}:${nonce}`} src={url} title={`Session preview on port ${port}`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
-        className="min-h-0 w-full flex-1 border-0 bg-white" />
+      {live ? (
+        <iframe key={`${url}:${nonce}`} src={url} title={`Session preview on port ${port}`}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+          className="min-h-0 w-full flex-1 border-0 bg-white" />
+      ) : (
+        <p className="px-3 py-8 text-center text-xs text-muted-foreground">
+          {ports === null ? "Checking listening ports…" : `Nothing is listening on ${port}. Start the app on 0.0.0.0, then Find listening ports.`}
+        </p>
+      )}
     </div>
   );
 }

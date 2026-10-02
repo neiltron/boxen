@@ -42,7 +42,9 @@ export default {
       const preview = previewTarget(request.headers.get("host") ?? "");
       if (preview) {
         if (!validPreviewPort(preview.port)) return new Response("Preview ports must be 1024–65535, excluding 3000.", { status: 400 });
-        return proxyPreview(request, getSandbox(env.Sandbox, preview.id), preview.port);
+        // Only existing sessions: any UUID-shaped host would otherwise boot a sandbox.
+        if (!await env.SESSION.getByName(preview.id).meta()) return new Response("no such session", { status: 404 });
+        return proxyPreview(request, getSandbox(env.Sandbox, preview.id), preview.port, preview.id);
       }
       if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
       if (url.pathname === "/api/sessions" && request.method === "GET") {

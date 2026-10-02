@@ -16,6 +16,21 @@ for (const port of [0, 1023, 3000, 65536]) {
   assert.equal(validPreviewPort(previewTarget(`p${port}-${id}.localhost:8093`).port), false);
 }
 
+// A sandbox whose /proc/net/tcp shows `ports` listening (proxyPreview checks first).
+const listeningOn = (...ports) => ({
+  async exec() {
+    return { success: true, stdout: ports.map((p, i) => `${i}: 00000000:${p.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 0A`).join("\n") };
+  },
+});
+
+// A quiet port answers at once instead of waiting on the SDK's 90s port check.
+const quiet = await proxyPreview(new Request(`http://${host}/`), {
+  ...listeningOn(8000),
+  async containerFetch() { throw new Error("must not be called for a quiet port"); },
+}, 5173, "quiet-sandbox");
+assert.equal(quiet.status, 502);
+assert.match(await quiet.text(), /Nothing is listening on port 5173/);
+
 // Host routing leaves app paths, headers, bodies, statuses and redirects alone.
 for (const method of ["GET", "POST", "OPTIONS"]) {
   const request = new Request(`http://${host}/api/app?q=hello%20world`, {
@@ -23,6 +38,7 @@ for (const method of ["GET", "POST", "OPTIONS"]) {
   });
   const response = new Response("upstream", { status: 307, headers: { location: "/login" } });
   const result = await proxyPreview(request, {
+    ...listeningOn(5173),
     async containerFetch(forwarded, port) {
       assert.equal(port, 5173);
       assert.equal(forwarded.url, request.url);
@@ -33,7 +49,7 @@ for (const method of ["GET", "POST", "OPTIONS"]) {
       if (method === "POST") assert.equal(await forwarded.text(), "payload");
       return response;
     },
-  }, 5173);
+  }, 5173, `http-${method}`);
   assert.equal(result, response);
 }
 const upgrade = new Request(`http://${host}/hmr?token=abc`, {
@@ -42,6 +58,7 @@ const upgrade = new Request(`http://${host}/hmr?token=abc`, {
 // Node's Response cannot construct status 101; identity verifies no wrapping.
 const upgraded = { status: 101, webSocket: {} };
 assert.equal(await proxyPreview(upgrade, {
+  ...listeningOn(5173),
   async wsConnect(request, port) {
     assert.equal(request.url, upgrade.url);
     assert.equal(request.headers.get("connection"), "Upgrade");
@@ -52,10 +69,11 @@ assert.equal(await proxyPreview(upgrade, {
     assert.equal(port, 5173);
     return upgraded;
   },
-}, 5173), upgraded);
+}, 5173, "ws"), upgraded);
 const failed = await proxyPreview(new Request(`http://${host}/`), {
+  ...listeningOn(5173),
   async containerFetch() { throw new Error("connection refused"); },
-}, 5173);
+}, 5173, "failing");
 assert.equal(failed.status, 502);
 assert.match(await failed.text(), /connection refused/);
 
