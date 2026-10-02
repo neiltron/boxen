@@ -114,7 +114,10 @@ export class Session extends DurableObject {
       },
       ctx,
     );
-    const root = await harness.root(ctx, { agent: { ...(await directory.defaultAgent()), cwd: meta.cwd } });
+    const defaults = await directory.defaultAgent();
+    const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
+    // A session made before any provider was connected starts without a model.
+    if (!(await root.agent(ctx)).model && defaults.model) await root.configure(defaults, ctx);
     const status = await watchEvents(harness, root.id, ctx);
     status.start(async (events) => this.track(meta.id, events));
     const opened = { harness, root, models };
