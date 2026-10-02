@@ -101,7 +101,8 @@ export default {
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);
       }
-      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff)$/);
+      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff|terminal)$/);
+      if (m?.[2] === "terminal" && request.method === "GET") return await env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "ws") return env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
       return json({ error: "unknown route" }, 404);

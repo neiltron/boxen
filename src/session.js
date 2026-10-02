@@ -164,6 +164,27 @@ export class Session extends DurableObject {
     return { repo: true, patch: out };
   }
 
+  async terminal(request) {
+    const meta = await this.meta();
+    if (!meta) return new Response("no such session", { status: 404 });
+    const { workspace, root } = await this.open();
+    await workspace;
+    const sandbox = getSandbox(this.env.Sandbox, meta.id);
+    // The container can lose its disk while the Harness stays open.
+    await this.ensureWorkspace(meta, sandbox, root, this.env.DIRECTORY.getByName("main"));
+    const id = `terminal-${meta.id}`;
+    // Keep the interactive shell separate from the agent's exec shell. Reuse
+    // it on reconnect, but recreate it (with cwd) after the container restarts.
+    try {
+      await sandbox.createSession({ id, cwd: meta.cwd });
+    } catch (e) {
+      if (e.code !== "SESSION_ALREADY_EXISTS" && e.name !== "SessionAlreadyExistsError") throw e;
+    }
+    const session = await sandbox.getSession(id);
+    // Return this request's upgrade unchanged: celld owns I/O per request.
+    return session.terminal(request, { cols: 80, rows: 24, shell: "/bin/bash" });
+  }
+
   // A durable line in the transcript that the model never sees.
   note(root, text, level = "info") {
     return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);
@@ -175,6 +196,7 @@ export class Session extends DurableObject {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("websocket upgrade required", { status: 426 });
     }
+    if (new URL(request.url).pathname.endsWith("/terminal")) return this.terminal(request);
     const pair = new WebSocketPair();
     this.state.acceptWebSocket(pair[0]);
     return new Response(null, { status: 101, webSocket: pair[1] });
