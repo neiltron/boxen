@@ -41,10 +41,13 @@ export default {
       }
       if (url.pathname === "/api/sessions" && request.method === "POST") {
         const body = await request.json();
+        const repo = body.repo?.trim() || undefined;
         const meta = {
           id: crypto.randomUUID(),
-          name: body.name || "untitled",
-          cwd: "/workspace",
+          name: body.name || repo?.split("/").pop()?.replace(/\.git$/, "") || "untitled",
+          cwd: repo ? `/workspace/${repo.split("/").pop().replace(/\.git$/, "")}` : "/workspace",
+          repo,
+          branch: body.branch?.trim() || undefined,
           createdAt: Date.now(),
         };
         await env.SESSION.getByName(meta.id).init(meta);
@@ -58,6 +61,9 @@ export default {
         if (auth[1] === "login") return json(await directory.loginStart(body.provider));
         if (auth[1] === "finish") return json(await directory.loginFinish(body.redirectUrl));
         return json(await directory.logout(body.provider));
+      }
+      if (url.pathname === "/api/secrets" && request.method === "POST") {
+        return json({ keys: await env.DIRECTORY.getByName("main").setSecrets(await request.json()) });
       }
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);

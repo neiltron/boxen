@@ -9,16 +9,18 @@ export interface SessionMeta {
   id: string;
   name: string;
   cwd: string;
+  repo?: string;
+  branch?: string;
   status?: string;
   createdAt: number;
   lastActivity?: number;
 }
 
-export async function createSession(name: string): Promise<SessionMeta> {
+export async function createSession(input: { name: string; repo?: string; branch?: string }): Promise<SessionMeta> {
   const res = await fetch(`${API_BASE}/api/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(input),
   });
   if (!res.ok) throw new Error(`create failed: ${res.status}`);
   return res.json();

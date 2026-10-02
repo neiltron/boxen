@@ -31,11 +31,15 @@ export function Sidebar({
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("");
 
   const create = async () => {
-    const meta = await createSession(name.trim() || "untitled");
+    const meta = await createSession({ name: name.trim(), repo: repo.trim(), branch: branch.trim() });
     setCreating(false);
     setName("");
+    setRepo("");
+    setBranch("");
     onSelect(meta.id);
   };
 
@@ -53,7 +57,9 @@ export function Sidebar({
           className="space-y-2 border-y border-border p-3"
           onSubmit={(e) => { e.preventDefault(); create(); }}
         >
-          <Input placeholder="session name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <Input placeholder="https://github.com/owner/repo (optional)" value={repo} onChange={(e) => setRepo(e.target.value)} autoFocus className="font-mono text-xs" />
+          {repo.trim() && <Input placeholder="branch (default)" value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono text-xs" />}
+          <Input placeholder={repo.trim() ? "name (repo name)" : "session name"} value={name} onChange={(e) => setName(e.target.value)} />
           <Button type="submit" size="sm" className="w-full">Create</Button>
         </form>
       )}
@@ -72,6 +78,11 @@ export function Sidebar({
             <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm">{s.name}</span>
+              {s.repo && (
+                <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                  {s.repo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "")}{s.branch ? `@${s.branch}` : ""}
+                </span>
+              )}
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">{ago(s.lastActivity)}</span>
           </button>

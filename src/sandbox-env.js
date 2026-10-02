@@ -26,9 +26,23 @@ function normalize(path) {
 
 const resolve = (cwd, path) => normalize(path.startsWith("/") ? path : `${cwd}/${path}`);
 
-const shellQuote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
+export const shellQuote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
 
-export function sandboxEnv(sandbox, id, cwd) {
+// Per-command env for the session's tokens: nothing is written into the
+// container. GitHub HTTPS URLs pick up GH_TOKEN through a one-off git config.
+export function secretEnv(secrets) {
+  const env = { ...secrets };
+  if (secrets.GH_TOKEN) {
+    Object.assign(env, {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `url.https://x-access-token:${secrets.GH_TOKEN}@github.com/.insteadOf`,
+      GIT_CONFIG_VALUE_0: "https://github.com/",
+    });
+  }
+  return env;
+}
+
+export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
   const unsupported = (name) => async () => err(new FileError("not_supported", `${name} is not available in the sandbox`));
   const env = {
     id,
@@ -84,7 +98,7 @@ export function sandboxEnv(sandbox, id, cwd) {
       try {
         const r = await sandbox.exec(command, {
           cwd: options.cwd ?? env.cwd,
-          env: options.env,
+          env: { ...secretEnv(secrets), ...options.env },
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,
           stream: options.onOutput !== undefined,
           onOutput: (_stream, data) => options.onOutput?.(data, context),

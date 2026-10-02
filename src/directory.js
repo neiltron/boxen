@@ -19,6 +19,9 @@ export class Directory extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sessions(
       id TEXT PRIMARY KEY, name TEXT, cwd TEXT, status TEXT,
       createdAt INT, lastActivity INT)`);
+    for (const col of ["repo", "branch"]) {
+      try { this.sql.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`); } catch { /* already there */ }
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS credentials(
       provider TEXT PRIMARY KEY, json TEXT)`);
     this.sockets = [];
@@ -26,11 +29,11 @@ export class Directory extends DurableObject {
     this.login = null; // { abort, answer, done } while a sign-in waits on the browser
   }
 
-  async register({ id, name, cwd, createdAt }) {
+  async register({ id, name, cwd, repo, branch, createdAt }) {
     this.sql.exec(
-      `INSERT OR REPLACE INTO sessions(id, name, cwd, status, createdAt, lastActivity)
-       VALUES (?,?,?,?,?,?)`,
-      id, name, cwd, "idle", createdAt, createdAt,
+      `INSERT OR REPLACE INTO sessions(id, name, cwd, repo, branch, status, createdAt, lastActivity)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      id, name, cwd, repo ?? null, branch ?? null, "idle", createdAt, createdAt,
     );
     this.notify();
   }
@@ -100,6 +103,19 @@ export class Directory extends DurableObject {
 
   async authStatus() {
     return { providers: (await this.credentialList()).map((c) => c.providerId), agent: await this.defaultAgent() };
+  }
+
+  // Tokens every sandbox command gets (GH_TOKEN, LINEAR_API_KEY), posted by
+  // start.sh. Empty values remove a key.
+  async setSecrets(secrets) {
+    const merged = { ...(await this.secrets()), ...secrets };
+    for (const [k, v] of Object.entries(merged)) if (!v) delete merged[k];
+    await this.state.storage.put("secrets", merged);
+    return Object.keys(merged);
+  }
+
+  async secrets() {
+    return (await this.state.storage.get("secrets")) ?? {};
   }
 
   async defaultAgent() {

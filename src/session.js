@@ -13,7 +13,7 @@ import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { CellSqlite } from "./cell-sqlite.js";
 import { directoryCredentials } from "./credentials.js";
-import { sandboxEnv } from "./sandbox-env.js";
+import { sandboxEnv, shellQuote } from "./sandbox-env.js";
 
 const WORKSPACE = "/workspace";
 
@@ -21,9 +21,20 @@ const Prompt = defineExtension({
   name: "prompt",
   sections: [
     section("preamble", () =>
-      "You are pi, a coding agent working in a Linux sandbox. Use the tools to inspect and change files and run commands. Be concise.",
+      "You are pi, a coding agent working in a Linux sandbox (Ubuntu, with git, gh, node, bun, python3, rg). " +
+      "Use the tools to inspect and change files and run commands. GH_TOKEN is set when the user configured one, " +
+      "so git push and gh work against GitHub. Be concise.",
       { tag: false }),
     section("cwd", (input) => input.env?.cwd),
+    // The repo's own instructions, re-read each request (unchanged text keeps the cache warm).
+    section("project_instructions", async ({ env }, context) => {
+      if (!env) return undefined;
+      for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+        const file = await env.readTextFile(`${env.cwd}/${name}`, context);
+        if (file.ok) return file.value;
+      }
+      return undefined;
+    }),
   ],
 });
 
@@ -67,14 +78,39 @@ export class Session extends DurableObject {
       {
         models,
         registry,
-        env: ({ cwd }) => sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? WORKSPACE),
+        env: async ({ cwd }) => sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? meta.cwd, await directory.secrets()),
       },
       ctx,
     );
-    const root = await harness.root(ctx, { agent: { ...(await directory.defaultAgent()), cwd: WORKSPACE } });
+    const root = await harness.root(ctx, { agent: { ...(await directory.defaultAgent()), cwd: meta.cwd } });
     const status = await watchEvents(harness, root.id, ctx);
     status.start(async (events) => this.track(meta.id, events));
-    return { harness, root, models };
+    const opened = { harness, root, models };
+    opened.workspace = this.ensureWorkspace(meta, sandbox, root, directory).catch((e) =>
+      this.note(root, `workspace setup failed: ${e.message}`, "error"));
+    return opened;
+  }
+
+  // Clones the session's repo when the container doesn't have it: at creation,
+  // and again after the container lost its disk.
+  async ensureWorkspace(meta, sandbox, root, directory) {
+    if (!meta.repo) return;
+    const env = sandboxEnv(sandbox, `sandbox:${meta.id}`, WORKSPACE, await directory.secrets());
+    if ((await env.exists(`${meta.cwd}/.git`, ctx)).value) return;
+    await this.note(root, `cloning ${meta.repo}${meta.branch ? ` (${meta.branch})` : ""}…`);
+    let output = "";
+    const branch = meta.branch ? `--branch ${shellQuote(meta.branch)} ` : "";
+    const result = await env.exec(`git clone ${branch}${shellQuote(meta.repo)} ${shellQuote(meta.cwd)}`,
+      { onOutput: (text) => { output += text; } }, ctx);
+    if (!result.ok || result.value.exitCode !== 0) {
+      throw new Error(output.trim().split("\n").at(-1) || (result.ok ? `exit ${result.value.exitCode}` : result.error.message));
+    }
+    await this.note(root, `cloned into ${meta.cwd}`);
+  }
+
+  // A durable line in the transcript that the model never sees.
+  note(root, text, level = "info") {
+    return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);
   }
 
   // Browser WebSocket. Nothing is sent during the upgrade (Safari drops
@@ -117,7 +153,8 @@ export class Session extends DurableObject {
     try {
       if (cmd.type === "sub") return await this.subscribe(ws);
       if (cmd.type === "prompt" || cmd.type === "steer") {
-        const { root } = await this.open();
+        const { root, workspace } = await this.open();
+        await workspace;
         await root.submit({ type: "input", content: cmd.message, whenBusy: "steer" }, ctx);
       } else if (cmd.type === "models") {
         const { models } = await this.open();

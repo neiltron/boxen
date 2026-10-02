@@ -125,6 +125,11 @@ function endAssistant(m: ChatModel, msg: any) {
   }
 }
 
+// Session setup lines (cloning, failures) the cell writes into the transcript.
+function applyNote(m: ChatModel, entry: any) {
+  if (entry?.kind === "app.note") push(m, { kind: "system", level: entry.data?.level ?? "info", text: entry.data?.text ?? "" });
+}
+
 export function applyEvent(m: ChatModel, ev: any): void {
   m.log.push({ n: m.logged++, ts: Date.now(), ev });
   if (m.log.length > LOG_LIMIT) m.log.splice(0, m.log.length - LOG_LIMIT);
@@ -132,7 +137,10 @@ export function applyEvent(m: ChatModel, ev: any): void {
     case "snapshot": {
       Object.assign(m, { items: [], running: false, seq: 0 });
       m.agent = ev.agent ?? {};
-      for (const entry of ev.entries) for (const msg of entry.model ?? []) applyMessage(m, msg, false);
+      for (const entry of ev.entries) {
+        applyNote(m, entry);
+        for (const msg of entry.model ?? []) applyMessage(m, msg, false);
+      }
       m.running = !!ev.run;
       if (ev.generation?.message) applyMessage(m, ev.generation.message, true);
       for (const slot of ev.tools ?? []) {
@@ -144,6 +152,10 @@ export function applyEvent(m: ChatModel, ev: any): void {
       }
       return;
     }
+
+    case "entry_appended":
+      applyNote(m, ev.entry);
+      return;
 
     case "agent_changed":
       m.agent = ev.agent ?? {};

@@ -32,6 +32,15 @@ if ! nc -z 127.0.0.1 8093 2>/dev/null; then
 fi
 wait_port 8093
 
+# Tokens for sandbox commands, from a gitignored .env (GH_TOKEN, LINEAR_API_KEY).
+# Use narrowly scoped tokens: the agent can read them inside its sandbox.
+if [[ -f .env ]]; then
+  set -a; source .env; set +a
+  curl -sf -X POST http://127.0.0.1:8093/api/secrets -H content-type:application/json \
+    -d "{\"GH_TOKEN\":\"${GH_TOKEN:-}\",\"LINEAR_API_KEY\":\"${LINEAR_API_KEY:-}\"}" >/dev/null \
+    && echo "sandbox tokens loaded from .env"
+fi
+
 
 echo
 echo "pi-durable-sessions is up:"

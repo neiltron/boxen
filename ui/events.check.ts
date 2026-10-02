@@ -37,4 +37,11 @@ applyEvent(m, { type: "message_end", entry: { model: [{ role: "assistant", conte
 applyEvent(m, { type: "run_end" });
 assert.equal(m.running, false);
 assert.deepEqual(m.items.at(-1), { kind: "system", level: "error", text: "boom", seq: 4 });
+
+// Setup notes show as system lines, live and from a snapshot.
+applyEvent(m, { type: "entry_appended", entry: { kind: "app.note", data: { text: "cloned", level: "info" } } });
+assert.equal((m.items.at(-1) as any).text, "cloned");
+const fresh = emptyModel();
+applyEvent(fresh, { type: "snapshot", entries: [{ kind: "app.note", data: { text: "cloning x…" } }], tools: [] });
+assert.deepEqual(fresh.items.map((i) => i.kind), ["system"]);
 console.log("events.check ok");
