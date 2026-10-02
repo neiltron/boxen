@@ -145,3 +145,6 @@ export function githubRepo(url: string): string | null {
   const m = url.trim().match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
+
+// The session's working tree against HEAD, untracked files included.
+export const fetchDiff = (sessionId: string) => get<{ repo: boolean; patch: string }>(`/api/session/${sessionId}/diff`);
