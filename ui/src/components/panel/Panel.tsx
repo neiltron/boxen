@@ -2,11 +2,8 @@ import { ArtifactsTab } from "@/components/panel/ArtifactsTab";
 import { ChangesTab } from "@/components/panel/ChangesTab";
 import { EventsTab } from "@/components/panel/EventsTab";
 import { PreviewTab } from "@/components/panel/PreviewTab";
+import { TerminalTab } from "@/components/panel/TerminalTab";
 import { useSessionContext, type PanelView } from "@/components/panel/session-context";
-
-function Soon({ what }: { what: string }) {
-  return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{what}</div>;
-}
 
 function Artifacts() {
   const { sessionId, artifact, setArtifact, artifactRefresh } = useSessionContext();
@@ -40,6 +37,6 @@ export const PANEL_VIEWS: { id: PanelView; title: string; Content: () => React.R
   { id: "artifacts", title: "Artifacts", Content: Artifacts },
   { id: "changes", title: "Changes", Content: Changes },
   { id: "preview", title: "Preview", Content: Preview },
-  { id: "terminal", title: "Terminal", Content: () => <Soon what="Terminal" /> },
+  { id: "terminal", title: "Terminal", Content: TerminalTab },
   { id: "events", title: "Events", Content: Events },
 ];
