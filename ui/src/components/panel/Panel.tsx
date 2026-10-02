@@ -1,6 +1,7 @@
 import { ArtifactsTab } from "@/components/panel/ArtifactsTab";
 import { ChangesTab } from "@/components/panel/ChangesTab";
 import { EventsTab } from "@/components/panel/EventsTab";
+import { PreviewTab } from "@/components/panel/PreviewTab";
 import { useSessionContext, type PanelView } from "@/components/panel/session-context";
 
 function Soon({ what }: { what: string }) {
@@ -25,6 +26,11 @@ function Changes() {
   return <ChangesTab sessionId={sessionId} refresh={done} />;
 }
 
+function Preview() {
+  const { sessionId } = useSessionContext();
+  return <PreviewTab key={sessionId} sessionId={sessionId} />;
+}
+
 function Events() {
   return <EventsTab model={useSessionContext().session.model} />;
 }
@@ -33,7 +39,7 @@ function Events() {
 export const PANEL_VIEWS: { id: PanelView; title: string; Content: () => React.ReactNode }[] = [
   { id: "artifacts", title: "Artifacts", Content: Artifacts },
   { id: "changes", title: "Changes", Content: Changes },
-  { id: "preview", title: "Preview", Content: () => <Soon what="Preview" /> },
+  { id: "preview", title: "Preview", Content: Preview },
   { id: "terminal", title: "Terminal", Content: () => <Soon what="Terminal" /> },
   { id: "events", title: "Events", Content: Events },
 ];

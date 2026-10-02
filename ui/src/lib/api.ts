@@ -148,3 +148,4 @@ export function githubRepo(url: string): string | null {
 
 // The session's working tree against HEAD, untracked files included.
 export const fetchDiff = (sessionId: string) => get<{ repo: boolean; patch: string }>(`/api/session/${sessionId}/diff`);
+export const fetchListeningPorts = (sessionId: string) => get<{ ports: number[] }>(`/api/session/${sessionId}/ports`);

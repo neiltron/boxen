@@ -7,6 +7,8 @@
 //                     │ model calls straight from the cell
 //                     └ register/touch/credentials → Directory cell ⇄ WS ⇄ sidebar
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { getSandbox } from "@cloudflare/sandbox";
+import { previewTarget, validPreviewPort, proxyPreview, listeningPorts } from "./preview.js";
 
 // pi-ai loads OAuth flows through a dynamic import the bundle can't follow;
 // this registers them statically, the way pi's Bun binary does.
@@ -34,9 +36,15 @@ function json(data, status = 200) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
-
     try {
+      // Host routing must precede API routing and even OPTIONS: those paths
+      // and preflights belong to the app, not this worker.
+      const preview = previewTarget(request.headers.get("host") ?? "");
+      if (preview) {
+        if (!validPreviewPort(preview.port)) return new Response("Preview ports must be 1024–65535, excluding 3000.", { status: 400 });
+        return proxyPreview(request, getSandbox(env.Sandbox, preview.id), preview.port);
+      }
+      if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
       if (url.pathname === "/api/sessions" && request.method === "GET") {
         return json(await env.DIRECTORY.getByName("main").list());
       }
@@ -101,7 +109,11 @@ export default {
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);
       }
-      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff)$/);
+      const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff|ports)$/);
+      if (m?.[2] === "ports" && request.method === "GET") {
+        if (!await env.SESSION.getByName(m[1]).meta()) return json({ error: "no such session" }, 404);
+        return json({ ports: await listeningPorts(getSandbox(env.Sandbox, m[1])) });
+      }
       if (m?.[2] === "ws") return env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
       return json({ error: "unknown route" }, 404);

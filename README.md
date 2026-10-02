@@ -64,6 +64,28 @@ npm run ui                      # http://localhost:5176
 After editing `src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
+## Preview
+
+Start the session's app in its sandbox, listening on `0.0.0.0` (for example,
+Vite with `npm run dev -- --host 0.0.0.0 --port 5173`). In the panel's Preview
+view, enter its port and press Go/Enter, or use **Find listening ports** and
+pick one. The last applied port is saved per session in localStorage; reload
+remounts the iframe, and the adjacent link opens the same URL in a new tab.
+Ports must be 1024–65535 except **3000**, the Sandbox control server; run Next
+on e.g. 3001 instead.
+
+The UI's own dev server is **http://localhost:5176**. The iframe goes straight
+to celld at **http://p<port>-<sessionId>.localhost:8093/**, not through Vite's
+API proxy. Host routing preserves absolute asset paths, app `/api` routes,
+and WebSocket upgrades for HMR. This is a local, plain-HTTP preview: celld
+must be on the browser's machine. App framing restrictions (CSP or
+X-Frame-Options) are preserved; use the new-tab link if embedding is blocked.
+
+Run `node preview.check.js` for proxy/port checks without a container. On a
+running stack, also check absolute assets in the Network tab, edit a source
+file to confirm HMR, and switch sessions/reload the UI to check port recall.
+Try port 3000 and 65536 directly in the preview host: both should return 400.
+
 ## Notes
 
 - **Runtime shims** (`src/index.js`): pi-ai's OAuth flows are registered
