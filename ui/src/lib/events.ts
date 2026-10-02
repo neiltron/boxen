@@ -17,6 +17,7 @@ export type Block =
       output: string;
       isError: boolean;
       state: ToolState;
+      details?: unknown;
     };
 
 export type ChatItem =
@@ -108,6 +109,7 @@ function applyMessage(m: ChatModel, msg: any, streaming: boolean) {
       b.output = textOf(msg.content);
       b.isError = !!msg.isError;
       b.state = "done";
+      b.details = msg.details;
     }
   }
 }
@@ -236,6 +238,7 @@ export function applyEvent(m: ChatModel, ev: any): void {
       if (b) {
         if (msg) b.output = textOf(msg.content);
         b.isError = msg ? !!msg.isError : true;
+        b.details = msg?.details;
         b.state = "done";
       }
       return;

@@ -11,10 +11,12 @@
     "bindings": [
       { "name": "DIRECTORY", "class_name": "Directory" },
       { "name": "SESSION", "class_name": "Session" },
-      { "name": "Sandbox", "class_name": "Sandbox" }
+      { "name": "Sandbox", "class_name": "Sandbox" },
+      { "name": "ARTIFACTS", "class_name": "Artifacts" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["Directory", "Session", "Sandbox"] }
+    { "tag": "v1", "new_sqlite_classes": ["Directory", "Session", "Sandbox"] },
+    { "tag": "v2", "new_sqlite_classes": ["Artifacts"] }
   ]
 }

@@ -53,3 +53,30 @@ async function post<T>(path: string, body: object): Promise<T> {
 export const startLogin = (provider: string) => post<{ url?: string; code?: string; done?: boolean }>("/api/auth/login", { provider });
 export const finishLogin = (redirectUrl: string) => post<AuthStatus>("/api/auth/finish", { redirectUrl });
 export const logout = (provider: string) => post<AuthStatus>("/api/auth/logout", { provider });
+
+export interface ArtifactSummary {
+  id: string;
+  session: string;
+  title: string;
+  kind: "markdown" | "html" | "svg" | "mermaid" | "code";
+  language?: string | null;
+  version: number;
+  updatedAt: number;
+  snippet?: string;
+}
+
+export interface Artifact extends ArtifactSummary {
+  content: string;
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? `${path}: ${res.status}`);
+  return data;
+}
+
+export const listArtifacts = (session: string) => get<ArtifactSummary[]>(`/api/artifacts?session=${session}`);
+export const searchArtifacts = (q: string) => get<ArtifactSummary[]>(`/api/artifacts?q=${encodeURIComponent(q)}`);
+export const getArtifact = (id: string, version?: number) =>
+  get<Artifact>(`/api/artifacts/${id}${version ? `?v=${version}` : ""}`);

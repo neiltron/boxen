@@ -1,5 +1,6 @@
 import { Tabs } from "radix-ui";
 import type { SessionHandle } from "@/hooks/useSession";
+import { ArtifactsTab } from "@/components/panel/ArtifactsTab";
 import { EventsTab } from "@/components/panel/EventsTab";
 
 export const PANEL_TABS = ["artifacts", "changes", "preview", "terminal", "events"] as const;
@@ -15,7 +16,10 @@ function Soon({ what }: { what: string }) {
 
 // Full-height panel beside the chat: everything about the session that is
 // not the conversation itself.
-export function Panel({ session, tab, onTab }: { session: SessionHandle; tab: PanelTab; onTab: (t: PanelTab) => void }) {
+export function Panel({ sessionId, session, tab, onTab, artifact, onArtifact, artifactRefresh }: {
+  sessionId: string; session: SessionHandle; tab: PanelTab; onTab: (t: PanelTab) => void;
+  artifact: string | null; onArtifact: (id: string | null) => void; artifactRefresh: number;
+}) {
   return (
     <Tabs.Root value={tab} onValueChange={(v) => onTab(v as PanelTab)} className="flex h-full min-h-0 flex-col">
       <Tabs.List className="flex shrink-0 gap-1 border-b border-border px-2 py-1.5">
@@ -28,7 +32,9 @@ export function Panel({ session, tab, onTab }: { session: SessionHandle; tab: Pa
           </Tabs.Trigger>
         ))}
       </Tabs.List>
-      <Tabs.Content value="artifacts" className="min-h-0 flex-1"><Soon what="Artifacts" /></Tabs.Content>
+      <Tabs.Content value="artifacts" className="min-h-0 flex-1">
+        <ArtifactsTab sessionId={sessionId} selected={artifact} onSelect={onArtifact} refresh={artifactRefresh} />
+      </Tabs.Content>
       <Tabs.Content value="changes" className="min-h-0 flex-1"><Soon what="Changes" /></Tabs.Content>
       <Tabs.Content value="preview" className="min-h-0 flex-1"><Soon what="Preview" /></Tabs.Content>
       <Tabs.Content value="terminal" className="min-h-0 flex-1"><Soon what="Terminal" /></Tabs.Content>

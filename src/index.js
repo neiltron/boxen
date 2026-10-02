@@ -17,6 +17,7 @@ globalThis.atob = (s) => strictAtob(String(s).replace(/-/g, "+").replace(/_/g, "
   .padEnd(Math.ceil(String(s).length / 4) * 4, "="));
 
 export { Sandbox } from "@cloudflare/sandbox";
+export { Artifacts } from "./artifacts.js";
 export { Directory } from "./directory.js";
 export { Session } from "./session.js";
 
@@ -61,6 +62,17 @@ export default {
         if (auth[1] === "login") return json(await directory.loginStart(body.provider));
         if (auth[1] === "finish") return json(await directory.loginFinish(body.redirectUrl));
         return json(await directory.logout(body.provider));
+      }
+      // Artifacts: ?session= lists one session's, ?q= searches all of them.
+      if (url.pathname === "/api/artifacts") {
+        const artifacts = env.ARTIFACTS.getByName("main");
+        const q = url.searchParams.get("q");
+        return json(q ? await artifacts.search(q) : await artifacts.list(url.searchParams.get("session")));
+      }
+      const art = url.pathname.match(/^\/api\/artifacts\/([\w-]+)$/);
+      if (art) {
+        const row = await env.ARTIFACTS.getByName("main").get(art[1], Number(url.searchParams.get("v")) || undefined);
+        return row ? json(row) : json({ error: "no such artifact" }, 404);
       }
       if (url.pathname === "/api/secrets" && request.method === "POST") {
         return json({ keys: await env.DIRECTORY.getByName("main").setSecrets(await request.json()) });

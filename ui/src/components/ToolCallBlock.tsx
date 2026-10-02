@@ -1,14 +1,16 @@
 import { useState } from "react";
 import {
   CaretRightIcon, TerminalIcon, FileTextIcon, PencilSimpleIcon,
-  WrenchIcon, CircleNotchIcon, CheckIcon, XIcon,
+  WrenchIcon, CircleNotchIcon, CheckIcon, XIcon, ShapesIcon, ArrowSquareOutIcon,
 } from "@phosphor-icons/react";
+import { usePanel } from "@/components/panel/panel-context";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/lib/events";
 
 type ToolBlock = Extract<Block, { kind: "tool" }>;
 
 function toolIcon(name: string) {
+  if (name === "artifact") return ShapesIcon;
   if (name.includes("bash")) return TerminalIcon;
   if (name.includes("read") || name.includes("grep") || name.includes("find")) return FileTextIcon;
   if (name.includes("edit") || name.includes("write")) return PencilSimpleIcon;
@@ -18,7 +20,7 @@ function toolIcon(name: string) {
 function argsPreview(block: ToolBlock): string {
   const args = (block.args ?? {}) as Record<string, unknown>;
   const first =
-    args.command ?? args.path ?? args.file_path ?? args.pattern ?? args.url;
+    args.command ?? args.path ?? args.file_path ?? args.pattern ?? args.url ?? args.title;
   if (typeof first === "string") return first;
   const s = block.argsText || JSON.stringify(args);
   return s === "{}" ? "" : s;
@@ -26,6 +28,8 @@ function argsPreview(block: ToolBlock): string {
 
 export function ToolCallBlock({ block }: { block: ToolBlock }) {
   const [open, setOpen] = useState(false);
+  const panel = usePanel();
+  const artifactId = (block.details as { artifactId?: string } | undefined)?.artifactId;
   const Icon = toolIcon(block.name);
   const preview = argsPreview(block);
 
@@ -40,6 +44,16 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium">{block.name}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{preview}</span>
+        {artifactId && (
+          <span
+            role="link" tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); panel.open("artifacts", artifactId); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); panel.open("artifacts", artifactId); } }}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+          >
+            open <ArrowSquareOutIcon className="size-3" />
+          </span>
+        )}
         {block.state === "done" ? (
           block.isError
             ? <XIcon className="size-3.5 shrink-0 text-destructive" />

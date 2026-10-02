@@ -6,11 +6,13 @@
 import { DurableObject } from "cloudflare:workers";
 import { getSandbox } from "@cloudflare/sandbox";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { Type } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { createRegistry, defineExtension, Harness, section, watchEvents } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, section, watchEvents } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { ARTIFACT_KINDS } from "./artifacts.js";
 import { CellSqlite } from "./cell-sqlite.js";
 import { directoryCredentials } from "./credentials.js";
 import { sandboxEnv, shellQuote } from "./sandbox-env.js";
@@ -37,6 +39,35 @@ const Prompt = defineExtension({
     }),
   ],
 });
+
+// Shows something in the panel beside the chat. Saves are versioned in the
+// Artifacts cell; the UI opens the artifact from this call's details.
+function artifactExtension(artifacts, session) {
+  const tool = defineTool({
+    name: "artifact",
+    description:
+      "Show the user a document or visual in the panel beside the chat: a plan, an explainer, a report, " +
+      "a diagram, a chart, a small interactive demo. Kinds: markdown; html (a complete page; inline CSS/JS, " +
+      "CDN scripts allowed, runs sandboxed); svg; mermaid (diagram source); code (set language). " +
+      "Pass the id of an artifact you made earlier to revise it instead of creating another. " +
+      "Prefer this over long chat replies for anything the user will want to look at or come back to.",
+    parameters: Type.Object({
+      id: Type.Optional(Type.String({ description: "Existing artifact id, to update it" })),
+      title: Type.String(),
+      kind: Type.Union(ARTIFACT_KINDS.map((k) => Type.Literal(k))),
+      language: Type.Optional(Type.String({ description: "For kind code" })),
+      content: Type.String(),
+    }),
+    execute: async (args) => {
+      const saved = await artifacts.save({ ...args, session });
+      return {
+        content: [{ type: "text", text: `Artifact ${saved.id} v${saved.version} is showing in the panel.` }],
+        details: { artifactId: saved.id, version: saved.version, title: args.title, kind: args.kind },
+      };
+    },
+  });
+  return defineExtension({ name: "artifacts", tools: [tool] });
+}
 
 export class Session extends DurableObject {
   constructor(state, env) {
@@ -73,6 +104,7 @@ export class Session extends DurableObject {
     const registry = createRegistry();
     registry.install(CodingTools);
     registry.install(Prompt);
+    registry.install(artifactExtension(this.env.ARTIFACTS.getByName("main"), meta.id));
     const harness = await Harness.open(
       await SqliteStorage.open(new CellSqlite(this.state.storage)),
       {
