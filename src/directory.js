@@ -181,7 +181,8 @@ export class Directory extends DurableObject {
   }
 
   async secrets() {
-    return (await this.state.storage.get("secrets")) ?? {};
+    const stored = (await this.state.storage.get("secrets")) ?? {};
+    return Object.fromEntries(Object.entries(stored).filter(([k]) => SECRET_KEYS.includes(k)));
   }
 
   async defaultAgent() {
