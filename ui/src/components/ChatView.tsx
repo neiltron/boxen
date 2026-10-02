@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { PaperPlaneRightIcon, StopIcon, CaretDownIcon, BrainIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import {
   MessageScrollerProvider, MessageScroller, MessageScrollerViewport,
@@ -68,11 +68,24 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
   const { model, meta, ready, send } = session;
   const [draft, setDraft] = useState("");
 
+  // Stick to the end while the reader is there. The scroller's own follow
+  // mode drops out when content shrinks (a finished tool card loses its live
+  // output tail, the browser clamps scrollTop, and that reads as scrolling
+  // up), so "at end" is tracked from scroll positions and re-applied after
+  // every render.
+  const viewport = useRef<HTMLDivElement>(null);
+  const atEnd = useRef(true);
+  useLayoutEffect(() => {
+    const v = viewport.current;
+    if (v && atEnd.current) v.scrollTop = v.scrollHeight;
+  });
+
   const submit = () => {
     const text = draft.trim();
     if (!text) return;
     send({ type: "prompt", message: text });
     setDraft("");
+    atEnd.current = true; // your own message brings the view back to the end
   };
 
   return (
@@ -92,12 +105,18 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
         </Button>
       </header>
 
-      <MessageScrollerProvider>
+      <MessageScrollerProvider autoScroll>
         <MessageScroller className="flex-1">
-          <MessageScrollerViewport>
+          <MessageScrollerViewport
+            ref={viewport}
+            onScroll={(e) => {
+              const v = e.currentTarget;
+              atEnd.current = v.scrollHeight - v.scrollTop - v.clientHeight < 32;
+            }}
+          >
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4 px-4 py-6">
               {model.items.map((item) => (
-                <MessageScrollerItem key={item.seq} scrollAnchor={item.kind === "user"}>
+                <MessageScrollerItem key={item.seq}>
                   {item.kind === "user" && (
                     <Message align="end">
                       <MessageContent>
