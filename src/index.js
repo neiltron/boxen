@@ -54,6 +54,13 @@ export default {
         await env.SESSION.getByName(meta.id).init(meta);
         return json(meta);
       }
+      if (url.pathname === "/api/auth/callback") {
+        const { ok, message } = await env.DIRECTORY.getByName("main").loginCallback(url.searchParams.get("u") ?? "");
+        const html = `<!doctype html><meta charset="utf-8"><title>pi sessions</title>
+<body style="font:15px system-ui;display:grid;place-items:center;height:90vh;color-scheme:light dark">
+<p>${message.replace(/[<&]/g, (c) => (c === "<" ? "&lt;" : "&amp;"))}</p>${ok ? "<script>setTimeout(() => close(), 1500)</script>" : ""}`;
+        return new Response(html, { status: ok ? 200 : 400, headers: { "content-type": "text/html; charset=utf-8" } });
+      }
       if (url.pathname === "/api/providers") return json(await env.DIRECTORY.getByName("main").providers());
       const key = url.pathname.match(/^\/api\/providers\/([\w.-]+)\/key$/);
       if (key && request.method === "POST") {

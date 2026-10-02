@@ -143,6 +143,17 @@ export class Directory extends DurableObject {
     return this.authStatus();
   }
 
+  // The provider's redirect, forwarded from the loopback port it targets
+  // (see ui/vite.config.ts). Same as pasting it, minus the pasting.
+  async loginCallback(redirectUrl) {
+    try {
+      await this.loginFinish(redirectUrl);
+      return { ok: true, message: "Signed in. You can close this tab." };
+    } catch (e) {
+      return { ok: false, message: `Sign-in failed: ${e.message}` };
+    }
+  }
+
   async logout(provider) {
     await this.deleteCredential(provider);
     const agent = await this.state.storage.get("agent");
