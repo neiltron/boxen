@@ -86,8 +86,10 @@ export default {
         const row = await env.ARTIFACTS.getByName("main").get(art[1], Number(url.searchParams.get("v")) || undefined);
         return row ? json(row) : json({ error: "no such artifact" }, 404);
       }
-      if (url.pathname === "/api/secrets" && request.method === "POST") {
-        return json({ keys: await env.DIRECTORY.getByName("main").setSecrets(await request.json()) });
+      if (url.pathname === "/api/secrets") {
+        const directory = env.DIRECTORY.getByName("main");
+        if (request.method === "POST") return json({ keys: await directory.setSecrets(await request.json()) });
+        return json({ keys: Object.keys(await directory.secrets()) }); // names only, never values
       }
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);

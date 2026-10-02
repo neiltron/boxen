@@ -32,13 +32,18 @@ if ! nc -z 127.0.0.1 8093 2>/dev/null; then
 fi
 wait_port 8093
 
-# Tokens for sandbox commands, from a gitignored .env (GH_TOKEN, LINEAR_API_KEY).
-# Use narrowly scoped tokens: the agent can read them inside its sandbox.
+# Tokens for sandbox commands, from an optional gitignored .env (GH_TOKEN,
+# LINEAR_API_KEY); the Providers sheet sets them too. Only keys .env actually
+# sets are sent, so it never clears one set in the UI.
 if [[ -f .env ]]; then
-  set -a; source .env; set +a
-  curl -sf -X POST http://127.0.0.1:8093/api/secrets -H content-type:application/json \
-    -d "{\"GH_TOKEN\":\"${GH_TOKEN:-}\",\"LINEAR_API_KEY\":\"${LINEAR_API_KEY:-}\"}" >/dev/null \
-    && echo "sandbox tokens loaded from .env"
+  python3 - <<'PY'
+import json, re, urllib.request
+vals = dict(re.findall(r"^[ \t]*(GH_TOKEN|LINEAR_API_KEY)[ \t]*=[ \t]*['\"]?([^'\"\n]+)", open(".env").read(), re.M))
+if vals:
+    urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8093/api/secrets", method="POST",
+        data=json.dumps(vals).encode(), headers={"content-type": "application/json"}))
+    print("sandbox tokens loaded from .env:", ", ".join(vals))
+PY
 fi
 
 

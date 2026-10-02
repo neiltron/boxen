@@ -121,3 +121,7 @@ export interface ProviderInfo {
 
 export const listProviders = () => get<ProviderInfo[]>("/api/providers");
 export const setApiKey = (provider: string, key: string) => post<AuthStatus>(`/api/providers/${provider}/key`, { key });
+
+export type SecretKey = "GH_TOKEN" | "LINEAR_API_KEY";
+export const listSecrets = () => get<{ keys: SecretKey[] }>("/api/secrets");
+export const setSecret = (key: SecretKey, value: string) => post<{ keys: SecretKey[] }>("/api/secrets", { [key]: value });

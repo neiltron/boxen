@@ -7,6 +7,9 @@ import { DurableObject } from "cloudflare:workers";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { directoryCredentials } from "./credentials.js";
 
+// Tokens sandbox commands may get (see secretEnv in sandbox-env.js).
+const SECRET_KEYS = ["GH_TOKEN", "LINEAR_API_KEY"];
+
 // The model a fresh login starts sessions on, per provider.
 const DEFAULT_MODELS = { openai: "gpt-6-astra", "openai-codex": "gpt-6-astra" };
 
@@ -169,6 +172,8 @@ export class Directory extends DurableObject {
   // Tokens every sandbox command gets (GH_TOKEN, LINEAR_API_KEY), posted by
   // start.sh. Empty values remove a key.
   async setSecrets(secrets) {
+    const unknown = Object.keys(secrets).filter((k) => !SECRET_KEYS.includes(k));
+    if (unknown.length) throw new Error(`unknown token ${unknown.join(", ")}; expected ${SECRET_KEYS.join(" or ")}`);
     const merged = { ...(await this.secrets()), ...secrets };
     for (const [k, v] of Object.entries(merged)) if (!v) delete merged[k];
     await this.state.storage.put("secrets", merged);

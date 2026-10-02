@@ -4,12 +4,59 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
-  finishLogin, listProviders, logout, setApiKey, startLogin,
-  type AuthStatus, type ProviderInfo,
+  finishLogin, listProviders, listSecrets, logout, setApiKey, setSecret, startLogin,
+  type AuthStatus, type ProviderInfo, type SecretKey,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Pending = { provider: string; url: string; code?: string };
+
+const TOKENS: { key: SecretKey; label: string; hint: string }[] = [
+  { key: "GH_TOKEN", label: "GitHub", hint: "Repo suggestions, private clones, git push, gh" },
+  { key: "LINEAR_API_KEY", label: "Linear", hint: "For the agent's Linear API calls" },
+];
+
+// Tokens every sandbox command gets in its env. The agent can read them, so
+// use narrowly scoped ones. Values never come back from the server.
+function SandboxTokens({ open }: { open: boolean }) {
+  const [set, setSet] = useState<SecretKey[]>([]);
+  const [drafts, setDrafts] = useState<Partial<Record<SecretKey, string>>>({});
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open) listSecrets().then((r) => setSet(r.keys), (e: Error) => setError(e.message));
+  }, [open]);
+
+  const save = async (key: SecretKey, value: string) => {
+    setError("");
+    try {
+      setSet((await setSecret(key, value)).keys);
+      setDrafts((d) => ({ ...d, [key]: "" }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-border px-4 py-3 text-xs">
+      <div className="font-medium">Sandbox tokens</div>
+      {TOKENS.map(({ key, label, hint }) => (
+        <form key={key} className="space-y-1" onSubmit={(e) => { e.preventDefault(); void save(key, drafts[key]?.trim() ?? ""); }}>
+          <div className="flex items-center gap-2">
+            <span className={cn("size-2 shrink-0 rounded-full", set.includes(key) ? "bg-green-500" : "bg-muted-foreground/30")} />
+            <span>{label}</span>
+            <span className="truncate text-muted-foreground">{hint}</span>
+          </div>
+          <div className="flex gap-2">
+            <Input type="password" autoComplete="off" value={drafts[key] ?? ""} placeholder={set.includes(key) ? "set — paste to replace" : key}
+              onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} className="text-xs" />
+            <Button size="sm" type="submit" disabled={!drafts[key]?.trim()}>Save</Button>
+            {set.includes(key) && <Button size="sm" type="button" variant="ghost" onClick={() => void save(key, "")}>Clear</Button>}
+          </div>
+        </form>
+      ))}
+      {error && <p className="text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 // Model providers this fleet can use: any pi-ai provider, by API key or by
 // its own sign-in. Credentials live in the Directory cell, never copied
@@ -125,6 +172,7 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
             </div>
           ))}
         </div>
+        <SandboxTokens open={open} />
       </SheetContent>
     </Sheet>
   );
