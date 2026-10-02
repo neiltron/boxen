@@ -16,7 +16,8 @@ export interface SessionMeta {
   lastActivity?: number;
 }
 
-export async function createSession(input: { name: string; repo?: string; branch?: string }): Promise<SessionMeta> {
+// Named after the repo (or "untitled") until the first message titles it.
+export async function createSession(input: { name?: string; repo?: string; branch?: string }): Promise<SessionMeta> {
   const res = await fetch(`${API_BASE}/api/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },

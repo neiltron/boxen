@@ -209,9 +209,11 @@ export class Session extends DurableObject {
     try {
       if (cmd.type === "sub") return await this.subscribe(ws);
       if (cmd.type === "prompt" || cmd.type === "steer") {
-        const { root, workspace } = await this.open();
+        const { root, workspace, models } = await this.open();
         await workspace;
         await root.submit({ type: "input", content: cmd.message, whenBusy: "steer" }, ctx);
+        // Awaited here: a cell's I/O must belong to a live request or event.
+        if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
       } else if (cmd.type === "models") {
         const { models } = await this.open();
         const list = (await models.getAvailable()).map((m) => ({
@@ -226,17 +228,39 @@ export class Session extends DurableObject {
         const { root } = await this.open();
         await root.abort(ctx);
       } else if (cmd.type === "rename") {
-        const meta = await this.meta();
-        const updated = { ...meta, name: cmd.name };
-        await this.state.storage.put("meta", updated);
-        await this.env.DIRECTORY.getByName("main").rename({ id: meta.id, name: cmd.name });
-        for (const sock of this.streams.keys()) {
-          try { sock.send(JSON.stringify({ type: "meta", meta: updated })); } catch {}
-        }
+        await this.rename(cmd.name);
       }
     } catch (e) {
       try { ws.send(JSON.stringify({ type: "error", error: e.message })); } catch {}
     }
+  }
+
+  // A manual rename also counts as the title, so autoTitle leaves it alone.
+  async rename(name) {
+    const meta = await this.meta();
+    const updated = { ...meta, name, titled: true };
+    await this.state.storage.put("meta", updated);
+    await this.env.DIRECTORY.getByName("main").rename({ id: meta.id, name });
+    for (const sock of this.streams.keys()) {
+      try { sock.send(JSON.stringify({ type: "meta", meta: updated })); } catch {}
+    }
+  }
+
+  // Names the session from its first message, once, with the session's own
+  // model at its lowest reasoning level. Failures keep the starting name.
+  async autoTitle(models, root, text) {
+    await this.state.storage.put("meta", { ...(await this.meta()), titled: true });
+    const ref = (await root.agent(ctx)).model;
+    const model = ref && models.getModel(ref.provider, ref.modelId);
+    if (!model) return;
+    const reply = await models.completeSimple(model, {
+      systemPrompt: "Write a title of 2 to 6 words for a coding session that starts with the user's message. " +
+        "Reply with the title only: no quotes, no trailing punctuation.",
+      messages: [{ role: "user", content: text.slice(0, 2000), timestamp: Date.now() }],
+    }, { reasoning: getSupportedThinkingLevels(model)[0] });
+    const title = reply.content.filter((c) => c.type === "text").map((c) => c.text).join(" ")
+      .replace(/["'`*]/g, "").replace(/[.!?:]+$/, "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (reply.stopReason !== "error" && title) await this.rename(title);
   }
 
   async track(id, events) {

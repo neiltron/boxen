@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ProvidersSheet } from "@/components/ProvidersSheet";
 import { BranchField, RepoField } from "@/components/RepoField";
 import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
@@ -22,14 +21,12 @@ export function Sidebar({
   onSelect: (id: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
 
   const create = async () => {
-    const meta = await createSession({ name: name.trim(), repo: repo.trim(), branch: branch.trim() });
+    const meta = await createSession({ repo: repo.trim(), branch: branch.trim() });
     setCreating(false);
-    setName("");
     setRepo("");
     setBranch("");
     onSelect(meta.id);
@@ -51,7 +48,6 @@ export function Sidebar({
         >
           <RepoField value={repo} onChange={(v) => { setRepo(v); setBranch(""); }} />
           {repo.trim() && <BranchField repo={repo} value={branch} onChange={setBranch} />}
-          <Input placeholder={repo.trim() ? "name (repo name)" : "session name"} value={name} onChange={(e) => setName(e.target.value)} />
           <Button type="submit" size="sm" className="w-full">Create</Button>
         </form>
       )}
