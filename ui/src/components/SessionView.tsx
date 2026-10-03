@@ -4,6 +4,7 @@ import "@danfessler/trellis/style.css";
 import { ChatView } from "@/components/ChatView";
 import { PANEL_VIEWS } from "@/components/panel/Panel";
 import { SessionContext, useSessionContext, type PanelView } from "@/components/panel/session-context";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useSession } from "@/hooks/useSession";
 import type { ChatModel } from "@/lib/events";
 
@@ -28,9 +29,12 @@ function Chat({ onTogglePanel }: { onTogglePanel: () => void }) {
 // One session's WebSocket shared by a Trellis workspace: the chat on the
 // stage, and the panel views beside it in a resizable, dockable group. The
 // layout persists per viewer (localStorage); bump `version` when the default
-// layout changes.
+// layout changes. Phones get their own layout, stored under its own key so
+// neither overwrites the other: the panel below the chat, hidden at first.
 export function SessionView({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
+  const mobile = useIsMobile();
+  const storageKey = mobile ? "pids.layout.mobile" : "pids.layout";
   const ws = useRef<WorkspaceHandle>(null);
   const [artifact, setArtifact] = useState<string | null>(null);
 
@@ -53,6 +57,17 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     else snap.views.filter((v) => ids.has(v.id)).forEach((v) => ws.current?.hide(v.id));
   };
 
+  // A phone's first visit starts with the chat alone. Trellis has no hidden
+  // state in its initial layout, so check for a saved one before Trellis
+  // writes it, and hide the panel once the handle arrives.
+  const [fresh] = useState(() => {
+    try { return mobile && localStorage.getItem(storageKey) === null; } catch { return false; }
+  });
+  const attach = (handle: WorkspaceHandle | null) => {
+    ws.current = handle;
+    if (handle && fresh) handle.hide("panel");
+  };
+
   // A save that arrives live (not in the joining snapshot) opens in the panel.
   const saves = artifactSaves(session.model);
   const seen = useRef<number | null>(null);
@@ -65,7 +80,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   return (
     <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, artifactRefresh: saves.length, open }}>
       <Workspace
-        ref={ws} storageKey="pids.layout" version={1} label="Session"
+        key={storageKey} ref={attach} storageKey={storageKey} version={1} label="Session"
         navigation={false} floating={false} className="pids-workspace h-full"
       >
         <ViewType id="chat" tabbar="never" closable={false} singleton scaling={false}>
@@ -76,9 +91,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             <Content />
           </ViewType>
         ))}
-        <Split weights={[3, 2]}>
+        <Split axis={mobile ? "y" : "x"} weights={[3, 2]}>
           <Stage><View type="chat" id="chat" /></Stage>
-          <Panel>
+          <Panel id="panel">
             {PANEL_VIEWS.map(({ id }) => <View key={id} type={id} id={id} />)}
           </Panel>
         </Split>

@@ -8,6 +8,7 @@ import { Message, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent } from "@/components/ui/marker";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea,
 } from "@/components/ui/input-group";
@@ -90,7 +91,8 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+      <header className="flex items-center gap-2 border-b border-border px-2 py-2.5 sm:gap-3">
+        <SidebarTrigger className="shrink-0" />
         <span className={cn(
           "size-2 shrink-0 rounded-full",
           model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",

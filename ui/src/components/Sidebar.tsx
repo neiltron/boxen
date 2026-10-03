@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { Sidebar as SidebarRoot, useSidebar } from "@/components/ui/sidebar";
 import { ProvidersSheet } from "@/components/ProvidersSheet";
 import { BranchField, RepoField } from "@/components/RepoField";
 import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
@@ -20,20 +21,28 @@ export function Sidebar({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  const { isMobile, setOpenMobile } = useSidebar();
   const [creating, setCreating] = useState(false);
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
+
+  // On a phone the sidebar is a drawer over the session it just opened, so
+  // picking one dismisses it; on desktop it stays open.
+  const select = (id: string) => {
+    onSelect(id);
+    if (isMobile) setOpenMobile(false);
+  };
 
   const create = async () => {
     const meta = await createSession({ repo: repo.trim(), branch: branch.trim() });
     setCreating(false);
     setRepo("");
     setBranch("");
-    onSelect(meta.id);
+    select(meta.id);
   };
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-muted/20">
+    <SidebarRoot collapsible="offcanvas">
       <div className="flex items-center justify-between px-3 py-2.5">
         <span className="text-sm font-semibold tracking-tight">pi sessions</span>
         <Button variant="ghost" size="icon-sm" onClick={() => setCreating(!creating)}>
@@ -57,7 +66,7 @@ export function Sidebar({
           <button
             key={s.id}
             type="button"
-            onClick={() => onSelect(s.id)}
+            onClick={() => select(s.id)}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-muted",
               selected === s.id && "bg-muted",
@@ -82,6 +91,6 @@ export function Sidebar({
         )}
       </nav>
       <ProvidersSheet auth={auth} />
-    </aside>
+    </SidebarRoot>
   );
 }
