@@ -84,7 +84,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
   const submit = () => {
     const text = draft.trim();
     if (!text) return;
-    send({ type: "prompt", message: text });
+    send({ type: "prompt", message: text, requestId: crypto.randomUUID() });
     setDraft("");
     atEnd.current = true; // your own message brings the view back to the end
   };

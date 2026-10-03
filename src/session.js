@@ -83,6 +83,7 @@ export class Session extends DurableObject {
     await this.state.storage.put("meta", meta);
     await this.env.DIRECTORY.getByName("main").register(meta);
     await this.open();
+    this.workspace().catch(() => {}); // clone now rather than on the first tool call
     return meta;
   }
 
@@ -90,9 +91,12 @@ export class Session extends DurableObject {
     return (await this.state.storage.get("meta")) ?? null;
   }
 
-  // Opening the Harness also resumes whatever the last process left running.
+  // The live Harness. Every open also resumes the run the last one left
+  // unfinished: Harness.open() alone leaves the scheduler paused.
   open() {
-    this.opening ??= this.openHarness().catch((e) => { this.opening = null; throw e; });
+    this.opening ??= (this.closing ?? Promise.resolve())
+      .then(() => this.openHarness())
+      .catch((e) => { this.opening = null; throw e; });
     return this.opening;
   }
 
@@ -110,45 +114,115 @@ export class Session extends DurableObject {
       {
         models,
         registry,
-        env: async ({ cwd }) => sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? meta.cwd, await directory.secrets()),
+        // Built per tool call, so a container that lost its disk since the
+        // last call gets its files back before the tool runs.
+        env: async ({ cwd }) => {
+          await this.workspace();
+          return sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? meta.cwd, await directory.secrets());
+        },
+        onReport: (e) => this.report(e),
       },
       ctx,
     );
-    const defaults = await directory.defaultAgent();
-    const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
-    // A session made before any provider was connected starts without a model.
-    if (!(await root.agent(ctx)).model && defaults.model) await root.configure(defaults, ctx);
-    const status = await watchEvents(harness, root.id, ctx);
-    status.start(async (events) => this.track(meta.id, events));
-    const opened = { harness, root, models };
-    opened.workspace = this.ensureWorkspace(meta, sandbox, root, directory).catch((e) =>
-      this.note(root, `workspace setup failed: ${e.message}`, "error"));
-    return opened;
+    try {
+      const defaults = await directory.defaultAgent();
+      const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
+      // A session made before any provider was connected starts without a model.
+      if (!(await root.agent(ctx)).model && defaults.model) await root.configure(defaults, ctx);
+      const status = await watchEvents(harness, root.id, ctx);
+      status.start(async (events) => this.track(meta.id, events));
+      harness.resume();
+      return { harness, root, models, status };
+    } catch (e) {
+      await harness.close(ctx).catch(() => {});
+      throw e;
+    }
   }
 
-  // Clones the session's repo when the container doesn't have it: at creation,
-  // and again after the container lost its disk.
-  async ensureWorkspace(meta, sandbox, root, directory) {
-    if (!meta.repo) return;
-    const env = sandboxEnv(sandbox, `sandbox:${meta.id}`, WORKSPACE, await directory.secrets());
-    if ((await env.exists(`${meta.cwd}/.git`, ctx)).value) return;
-    await this.note(root, `cloning ${meta.repo}${meta.branch ? ` (${meta.branch})` : ""}…`);
+  // A commit that fails after storage admission poisons the Harness for
+  // good; pi-durable only reports it. Replace it with a fresh one over the
+  // same storage. The poisoned one can't commit again, so a slow close
+  // can't overlap writes with its successor.
+  report(e) {
+    console.error(`session ${this.state.id}: harness report`, describe(e));
+    if (poisoned(e)) this.reopen();
+  }
+
+  reopen() {
+    if (this.closing) return this.closing;
+    const old = this.opening;
+    this.opening = null;
+    this.closing = (async () => {
+      const opened = await old?.catch(() => null);
+      if (!opened) return;
+      opened.status.stop();
+      for (const stream of this.streams.values()) stream.stop();
+      this.streams.clear();
+      await Promise.race([opened.harness.close(ctx).catch(() => {}), sleep(30_000)]);
+      // Browsers reconnect and subscribe to the new Harness.
+      for (const ws of this.state.getWebSockets()) { try { ws.close(4000, "session reopened"); } catch {} }
+    })().finally(() => { this.closing = null; });
+    // The alarm opens the new Harness, which resumes the interrupted run.
+    return this.closing.then(() => this.state.storage.setAlarm(Date.now()));
+  }
+
+  // Set while a run goes, so a cell that restarts mid-run (node restart,
+  // self-fence after sleep) reopens and resumes it with no browser attached.
+  // The handler holds the run's I/O to a live event until the run ends,
+  // then checkpoints the workspace. celld redelivers an alarm that runs
+  // long (about every 15s), so redeliveries join the one already watching.
+  alarm() {
+    this.watching ??= this.watchRun().finally(() => { this.watching = null; });
+    return this.watching;
+  }
+
+  async watchRun() {
+    const meta = await this.meta();
+    if (!meta) return;
+    const { harness } = await this.open();
+    try {
+      const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
+      if (!idle) return void await this.state.storage.setAlarm(Date.now());
+    } catch (e) {
+      if (poisoned(e)) return void await this.reopen();
+      throw e;
+    }
+    await this.setStatus(meta.id, "idle");
+    await getSandbox(this.env.Sandbox, meta.id).checkpoint();
+  }
+
+  // The session's files in whatever container is current: restored from the
+  // last checkpoint after the container lost its disk, cloned the first time.
+  // Concurrent tool calls share one preparation.
+  workspace() {
+    this.preparing ??= this.prepareWorkspace().finally(() => { this.preparing = null; });
+    return this.preparing;
+  }
+
+  async prepareWorkspace() {
+    const meta = await this.meta();
+    const sandbox = getSandbox(this.env.Sandbox, meta.id);
+    if ((await sandbox.prepare()) === "restored") await this.note("restored the workspace from its last checkpoint");
+    if (!meta.repo || (await sandbox.exists(`${meta.cwd}/.git`)).exists) return;
+    await this.note(`cloning ${meta.repo}${meta.branch ? ` (${meta.branch})` : ""}…`);
+    const env = sandboxEnv(sandbox, `sandbox:${meta.id}`, WORKSPACE, await this.env.DIRECTORY.getByName("main").secrets());
     let output = "";
     const branch = meta.branch ? `--branch ${shellQuote(meta.branch)} ` : "";
     const result = await env.exec(`git clone ${branch}${shellQuote(meta.repo)} ${shellQuote(meta.cwd)}`,
       { onOutput: (text) => { output += text; } }, ctx);
     if (!result.ok || result.value.exitCode !== 0) {
-      throw new Error(output.trim().split("\n").at(-1) || (result.ok ? `exit ${result.value.exitCode}` : result.error.message));
+      const error = output.trim().split("\n").at(-1) || (result.ok ? `exit ${result.value.exitCode}` : result.error.message);
+      await this.note(`workspace setup failed: ${error}`, "error");
+      throw new Error(error);
     }
-    await this.note(root, `cloned into ${meta.cwd}`);
+    await this.note(`cloned into ${meta.cwd}`);
   }
 
   // The working tree against HEAD, untracked files included. A throwaway
   // index marks them intent-to-add, so the agent's own index is untouched.
   async diff() {
     const meta = await this.meta();
-    const { workspace } = await this.open();
-    await workspace;
+    await this.workspace();
     const env = sandboxEnv(getSandbox(this.env.Sandbox, meta.id), `sandbox:${meta.id}`, meta.cwd);
     let out = "";
     const script = [
@@ -167,11 +241,8 @@ export class Session extends DurableObject {
   async terminal(request) {
     const meta = await this.meta();
     if (!meta) return new Response("no such session", { status: 404 });
-    const { workspace, root } = await this.open();
-    await workspace;
+    await this.workspace();
     const sandbox = getSandbox(this.env.Sandbox, meta.id);
-    // The container can lose its disk while the Harness stays open.
-    await this.ensureWorkspace(meta, sandbox, root, this.env.DIRECTORY.getByName("main"));
     const id = `terminal-${meta.id}`;
     // Keep the interactive shell separate from the agent's exec shell. Reuse
     // it on reconnect, but recreate it (with cwd) after the container restarts.
@@ -186,7 +257,9 @@ export class Session extends DurableObject {
   }
 
   // A durable line in the transcript that the model never sees.
-  note(root, text, level = "info") {
+  async note(text, level = "info") {
+    if (this.closing) return; // the closing Harness waits on whoever is noting
+    const { root } = await this.open();
     return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);
   }
 
@@ -231,9 +304,9 @@ export class Session extends DurableObject {
     try {
       if (cmd.type === "sub") return await this.subscribe(ws);
       if (cmd.type === "prompt" || cmd.type === "steer") {
-        const { root, workspace, models } = await this.open();
-        await workspace;
-        await root.submit({ type: "input", content: cmd.message, whenBusy: "steer" }, ctx);
+        const { root, models } = await this.open();
+        // A retry with the same requestId finds the first submission.
+        await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx);
         // Awaited here: a cell's I/O must belong to a live request or event.
         if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
       } else if (cmd.type === "models") {
@@ -253,6 +326,8 @@ export class Session extends DurableObject {
         await this.rename(cmd.name);
       }
     } catch (e) {
+      console.error(`session ${this.state.id}: ${cmd.type} failed`, describe(e));
+      if (poisoned(e)) this.reopen();
       try { ws.send(JSON.stringify({ type: "error", error: e.message })); } catch {}
     }
   }
@@ -291,6 +366,11 @@ export class Session extends DurableObject {
       if (ev.type === "run_start") status = "running";
       else if (ev.type === "run_end") status = "idle";
     }
+    if (status === "running") await this.state.storage.setAlarm(Date.now());
+    await this.setStatus(id, status);
+  }
+
+  async setStatus(id, status) {
     const now = Date.now();
     if (status && status !== this.status) {
       this.status = status;
@@ -302,3 +382,13 @@ export class Session extends DurableObject {
     }
   }
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const causes = (e) => (e ? [e, ...causes(e.cause)] : []);
+
+// ponytail: matches pi-durable's message; use a typed check if it exports one.
+const poisoned = (e) => causes(e).some((c) => /Session is poisoned/.test(c?.message));
+
+// The whole cause chain, so a log shows the failure that poisoned the Harness.
+const describe = (e) => causes(e).map((c) => c?.stack ?? String(c)).join("\ncaused by: ");

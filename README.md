@@ -16,14 +16,19 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
 - **Session cell** (`src/session.js`): opens a Harness on `CellSqlite`
   (`src/cell-sqlite.js`, pi-durable's SQLite facade over `storage.sql`).
   Transcript, streamed partials, tool output, and the queue are committed
-  there, so a restart resumes mid-turn. Each WebSocket gets its own
+  there. While a run goes, an alarm stays set, so after a node restart or
+  self-fence the cell reopens the Harness and resumes the run with no
+  browser attached. A Harness poisoned by a failed commit is closed and
+  reopened over the same storage, and browsers reconnect to it. Each WebSocket gets its own
   `watchEvents()` stream (a snapshot, then deltas), which replaces the old
   event log and replay. A prompt sent while the agent works becomes a steer.
 - **Sandbox** (`@cloudflare/sandbox`, image in `Dockerfile`): one Linux
   container per session. `src/sandbox-env.js` maps pi-durable's
   `ExecutionEnv` onto it: read, write, edit, and bash with streamed output.
-  Container disk is ephemeral: the transcript survives a restart, but
-  `/workspace` does not.
+  The container's disk dies with it, so `src/sandbox.js` checkpoints
+  `/workspace` (minus `node_modules`) to the `BACKUP_BUCKET` binding after
+  each run and before idle sleep, and restores it into a fresh container
+  before the next tool call. Running processes are not restored.
 - **Directory cell**: the session list, plus model providers. Any pi-ai
   provider can take an API key or its own sign-in (Providers, bottom of the
   sidebar); credentials live here (`src/credentials.js` is the pi-ai
@@ -38,7 +43,7 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   (`src/lib/events.ts`) folds pi-durable agent events; run
   `node events.check.ts` from `ui/` to check it.
 - **Repos**: a session can start from a repo URL; the cell clones it into the
-  sandbox (again if the container lost its disk). `GH_TOKEN` and
+  sandbox once; later containers get it back from the checkpoint. `GH_TOKEN` and
   `LINEAR_API_KEY` from a gitignored `.env` go into each sandbox command's
   env, and the prompt includes the repo's AGENTS.md.
 

@@ -7,6 +7,8 @@
   "containers": [
     { "class_name": "Sandbox", "image": "./Dockerfile", "instance_type": "basic", "max_instances": 8 }
   ],
+  // Workspace checkpoints (src/sandbox.js), kept in the fleet bucket.
+  "r2_buckets": [{ "binding": "BACKUP_BUCKET", "bucket_name": "pds-backups" }],
   "durable_objects": {
     "bindings": [
       { "name": "DIRECTORY", "class_name": "Directory" },
