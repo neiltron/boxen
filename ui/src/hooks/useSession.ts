@@ -49,7 +49,10 @@ export function useSession(id: string | null) {
           setVersion((v) => v + 1);
         }
       };
+      // Also how the server hands over a reopened session: reconnect and
+      // take its fresh snapshot.
       ws.onclose = () => {
+        setReady(false);
         if (!closed) retry = setTimeout(connect, 2000);
       };
     };

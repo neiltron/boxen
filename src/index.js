@@ -18,7 +18,7 @@ const strictAtob = globalThis.atob;
 globalThis.atob = (s) => strictAtob(String(s).replace(/-/g, "+").replace(/_/g, "/")
   .padEnd(Math.ceil(String(s).length / 4) * 4, "="));
 
-export { Sandbox } from "@cloudflare/sandbox";
+export { Sandbox } from "./sandbox.js";
 export { Artifacts } from "./artifacts.js";
 export { Directory } from "./directory.js";
 export { Session } from "./session.js";
