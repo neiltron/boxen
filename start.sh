@@ -27,11 +27,16 @@ if ! nc -z 127.0.0.1 8093 2>/dev/null; then
   # celld cuts outbound fetches (whole response included) at its default
   # timeout, 120s as observed: long model streams and long sandbox commands
   # (npm install under emulation) died with "error decoding response body".
-  CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600 \
-  AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret \
-    celld-0.6.1 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 \
-    --listen 127.0.0.1:8093 >> .celld.log 2>&1 &
-  echo "celld starting (pid $!)"
+  # A missed lease renewal (the Mac sleeping) makes celld halt on purpose
+  # ("SELF-FENCE" in .celld.log), so a loop restarts it. caffeinate -i holds
+  # off idle sleep while it runs; a closed lid still sleeps.
+  export CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600 \
+    AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret
+  nohup bash -c 'while :; do
+    caffeinate -i celld-0.6.1 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 --listen 127.0.0.1:8093
+    echo "pid-celld-supervisor: celld exited ($?), restarting"; sleep 2
+  done' pid-celld-supervisor >> .celld.log 2>&1 &
+  echo "celld starting (supervisor pid $!)"
 fi
 wait_port 8093
 
