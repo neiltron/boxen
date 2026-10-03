@@ -14,7 +14,7 @@ const connection = (provider: string) =>
 // the next model request, so it works mid-run too. The cell's agent_changed
 // event is the confirmation, for every tab at once.
 export function ModelPicker({ session }: { session: SessionHandle }) {
-  const { model, models, send } = session;
+  const { model, models, ready, send } = session;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -27,11 +27,11 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
 
   const choose = (m: ModelInfo) => {
     const level = model.agent.thinkingLevel;
-    send({
+    if (!send({
       type: "configure",
       model: { provider: m.provider, modelId: m.id },
       thinkingLevel: level && m.thinkingLevels.includes(level) ? level : undefined,
-    });
+    })) return;
     setOpen(false);
   };
 
@@ -41,6 +41,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
         <button
           type="button"
           aria-label="Choose model"
+          disabled={!ready}
           className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <span className="truncate font-mono">{current?.modelId ?? "no model"}</span>
@@ -58,6 +59,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
               <button
                 key={level}
                 type="button"
+                disabled={!ready}
                 onClick={() => send({ type: "configure", model: current, thinkingLevel: level })}
                 className={cn("rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted",
                   model.agent.thinkingLevel === level && "border-foreground/40 bg-muted text-foreground")}
@@ -76,6 +78,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
               <button
                 type="button"
                 onClick={() => choose(m)}
+                disabled={!ready}
                 className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
               >
                 <span className="min-w-0 flex-1">

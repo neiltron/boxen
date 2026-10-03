@@ -271,6 +271,10 @@ export class Directory extends DurableObject {
   async webSocketMessage(ws, raw) {
     let cmd;
     try { cmd = JSON.parse(raw); } catch { return; }
+    if (cmd.type === "ping") {
+      try { ws.send(JSON.stringify({ type: "pong" })); } catch {}
+      return;
+    }
     if (cmd.type === "sub") {
       try { ws.send(JSON.stringify({ type: "sessions", sessions: await this.list(), auth: await this.authStatus() })); } catch {}
     }

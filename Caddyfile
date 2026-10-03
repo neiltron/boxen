@@ -1,6 +1,7 @@
-# https://a.oxen.sh → the UI dev server (which proxies /api to celld).
+# https://a.oxen.sh → a built UI, not Vite/HMR. /api (including WebSockets)
+# goes directly to celld. caddy.sh sets PIDS_UI_ROOT to the absolute dist path.
 # DNS points at this Mac's tailnet IP; Tailscale forwards tailnet TCP 443 to
-# 127.0.0.1:8443 (the same forward boxen's b.oxen.sh uses). Run: ./caddy.sh
+# 127.0.0.1:8443. Run npm run ui:build, then ./caddy.sh.
 # ponytail: owns :8443 alone, so it can't run beside boxen's Caddy; merge the
 # site blocks into one Caddy if both need to be up on this Mac.
 {
@@ -14,5 +15,14 @@ a.oxen.sh {
 	tls {
 		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	}
-	reverse_proxy localhost:5176
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8093
+	}
+	handle {
+		root * {$PIDS_UI_ROOT}
+		# Revalidate the entry point, manifest, and service worker on updates.
+		header Cache-Control "no-cache"
+		file_server
+	}
 }

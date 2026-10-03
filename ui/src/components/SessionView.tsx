@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Panel, Split, Stage, View, ViewType, Workspace, type WorkspaceHandle } from "@danfessler/trellis-react";
 import "@danfessler/trellis/style.css";
 import { ChatView } from "@/components/ChatView";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { PANEL_VIEWS } from "@/components/panel/Panel";
 import { SessionContext, useSessionContext, type PanelView } from "@/components/panel/session-context";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -76,6 +77,21 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     if (seen.current !== null && saves.length > seen.current) open("artifacts", saves.at(-1));
     seen.current = saves.length;
   });
+
+  // A cold/offline launch has no transcript to display. Don't initialize the
+  // workspace, terminal renderer, and panel fetches until the first snapshot.
+  // `loaded` stays true during reconnects so the mounted reader is preserved.
+  if (!session.loaded) return (
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-2 border-b border-border px-2 py-2.5">
+        <SidebarTrigger />
+        <span className="truncate text-sm">{session.meta?.name ?? "Session"}</span>
+      </header>
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Connecting to session…
+      </div>
+    </div>
+  );
 
   return (
     <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, artifactRefresh: saves.length, open }}>

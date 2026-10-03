@@ -63,8 +63,24 @@ prototype uses `~/.local/bin/celld-0.6.1`; the other prototypes stay on 0.3.0.
 ```sh
 npm install && npm run deploy   # bundles the worker, saves the sandbox image to the bucket
 ./start.sh                      # rustfs (:9000) + celld (:8093) + .env tokens
-npm run ui                      # http://localhost:5176
+npm run ui                      # development only: http://localhost:5176 (HMR)
 ```
+
+For daily/mobile use, serve the built PWA rather than Vite's dev client:
+
+```sh
+npm --prefix ui ci
+npm run ui:build
+./caddy.sh                      # https://a.oxen.sh (tailnet only), static UI + /api
+```
+
+Restart an already-running Caddy once to apply the switch from the dev proxy.
+The installed app remembers its selected session, rejoins live data after
+suspension without reloading, and offers updates rather than forcing them.
+The offline cache contains only the app shell; conversations still come from
+celld. See [ui/README.md](ui/README.md) for installation, OAuth callbacks,
+update/offline behavior, tests, and the iPhone smoke-test checklist. PWA support
+does not prevent OS eviction; notifications are a future extension.
 
 After editing `src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.

@@ -1,42 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WS_BASE, type ModelInfo, type SessionMeta } from "@/lib/api";
 import { applyEvent, emptyModel, type ChatModel } from "@/lib/events";
+import { liveSocket } from "@/lib/live-socket";
 
-// One WebSocket to the Session cell: a snapshot of the conversation, then
-// live agent events. Events mutate a ref'd model; a version counter drives renders
-// (event bursts during streaming would thrash immutable state).
+// Keep the displayed transcript while disconnected. Build the joining
+// snapshot separately, then swap it in atomically at "ready"; clearing the
+// visible model at connect time used to destroy the reader's scroll position.
 export function useSession(id: string | null) {
   const modelRef = useRef<ChatModel>(emptyModel());
   const [version, setVersion] = useState(0);
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [models, setModels] = useState<ModelInfo[] | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const connectionRef = useRef<ReturnType<typeof liveSocket> | null>(null);
+  const readyRef = useRef(false);
 
   useEffect(() => {
     modelRef.current = emptyModel();
     setMeta(null);
+    setModels(null);
     setReady(false);
+    setLoaded(false);
+    readyRef.current = false;
     setVersion((v) => v + 1);
     if (!id) return;
 
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout>;
-    const heartbeat = setInterval(() => {
-      const ws = wsRef.current;
-      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
-    }, 25_000);
-
-    const connect = () => {
-      modelRef.current = emptyModel();
-      const ws = new WebSocket(`${WS_BASE}/api/session/${id}/ws`);
-      wsRef.current = ws;
-      ws.onopen = () => ws.send(JSON.stringify({ type: "sub" }));
-      ws.onmessage = (e) => {
+    let joining: ChatModel | null = null;
+    const connection = liveSocket(`${WS_BASE}/api/session/${encodeURIComponent(id)}/ws`, {
+      open() {
+        joining = emptyModel();
+        connection.send({ type: "sub" });
+      },
+      disconnect() {
+        readyRef.current = false;
+        setReady(false);
+      },
+      message(e) {
         const m = JSON.parse(e.data);
         if (m.type === "events") {
-          for (const ev of m.events) applyEvent(modelRef.current, ev);
-          setVersion((v) => v + 1);
+          for (const ev of m.events) applyEvent(joining ?? modelRef.current, ev);
+          if (!joining) setVersion((v) => v + 1);
         } else if (m.type === "error") {
           applyEvent(modelRef.current, m);
           setVersion((v) => v + 1);
@@ -45,32 +49,28 @@ export function useSession(id: string | null) {
         } else if (m.type === "meta") {
           setMeta(m.meta);
         } else if (m.type === "ready") {
+          if (joining) modelRef.current = joining;
+          joining = null;
+          readyRef.current = true;
           setReady(true);
+          setLoaded(true);
           setVersion((v) => v + 1);
         }
-      };
-      // Also how the server hands over a reopened session: reconnect and
-      // take its fresh snapshot.
-      ws.onclose = () => {
-        setReady(false);
-        if (!closed) retry = setTimeout(connect, 2000);
-      };
-    };
-    connect();
+      },
+    });
+    connectionRef.current = connection;
     return () => {
-      closed = true;
-      clearTimeout(retry);
-      clearInterval(heartbeat);
-      wsRef.current?.close();
-      wsRef.current = null;
+      connection.close();
+      connectionRef.current = null;
     };
   }, [id]);
 
-  const send = useCallback((cmd: object) => {
-    wsRef.current?.send(JSON.stringify(cmd));
+  // No offline command queue: never silently drop a draft or replay a prompt.
+  const send = useCallback((cmd: object): boolean => {
+    return readyRef.current && (connectionRef.current?.send(cmd) ?? false);
   }, []);
 
-  return { model: modelRef.current, version, meta, ready, send, models };
+  return { id, model: modelRef.current, version, meta, ready, loaded, send, models };
 }
 
 export type SessionHandle = ReturnType<typeof useSession>;

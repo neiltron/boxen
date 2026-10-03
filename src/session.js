@@ -302,6 +302,7 @@ export class Session extends DurableObject {
     let cmd;
     try { cmd = JSON.parse(raw); } catch { return; }
     try {
+      if (cmd.type === "ping") { ws.send(JSON.stringify({ type: "pong" })); return; }
       if (cmd.type === "sub") return await this.subscribe(ws);
       if (cmd.type === "prompt" || cmd.type === "steer") {
         const { root, models } = await this.open();

@@ -62,7 +62,12 @@ const cell = new Session();
 cell.env = { Sandbox: {}, DIRECTORY: { getByName: () => ({}) } };
 cell.meta = async () => meta;
 cell.open = async () => ({ root: {}, workspace: Promise.resolve() });
-cell.ensureWorkspace = async () => { calls.push(["workspace"]); };
+cell.workspace = async () => { calls.push(["workspace"]); };
+// A heartbeat must not open a Harness or prepare a container.
+const pong = [];
+await cell.webSocketMessage({ send: (raw) => pong.push(JSON.parse(raw)) }, '{"type":"ping"}');
+assert.deepEqual(pong, [{ type: "pong" }]);
+assert.deepEqual(calls, []);
 const worker = entry.namespace.default;
 const env = { SESSION: { getByName(id) { assert.equal(id, meta.id); return cell; } } };
 const request = new Request(`https://example.test/api/session/${meta.id}/terminal`, { headers: { Upgrade: "websocket" } });

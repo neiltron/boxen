@@ -16,6 +16,7 @@ import { Markdown } from "@/components/Markdown";
 import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
 import type { SessionHandle } from "@/hooks/useSession";
+import { useDraft } from "@/hooks/useDraft";
 import { cn } from "@/lib/utils";
 import type { Block, ChatItem } from "@/lib/events";
 
@@ -67,7 +68,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
 
 export function ChatView({ session, onTogglePanel }: { session: SessionHandle; onTogglePanel: () => void }) {
   const { model, meta, ready, send } = session;
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useDraft(session.id);
 
   // Stick to the end while the reader is there. The scroller's own follow
   // mode drops out when content shrinks (a finished tool card loses its live
@@ -83,8 +84,8 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
 
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
-    send({ type: "prompt", message: text, requestId: crypto.randomUUID() });
+    if (!text || !ready) return;
+    if (!send({ type: "prompt", message: text, requestId: crypto.randomUUID() })) return;
     setDraft("");
     atEnd.current = true; // your own message brings the view back to the end
   };
@@ -175,7 +176,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
               {model.running && (
                 <InputGroupButton
                   type="button" variant="outline" size="icon-sm" className="ml-auto rounded-full"
-                  aria-label="Stop the agent" onClick={() => send({ type: "abort" })}
+                  aria-label="Stop the agent" disabled={!ready} onClick={() => send({ type: "abort" })}
                 >
                   <StopIcon className="size-3.5" />
                 </InputGroupButton>

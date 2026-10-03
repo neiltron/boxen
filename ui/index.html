@@ -6,11 +6,17 @@
     <!-- maximum-scale=1 stops iOS Safari's focus-zoom on inputs (pinch zoom
          still works — iOS ignores the cap for user gestures). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <meta name="theme-color" content="#171717" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="pi sessions" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>pi sessions</title>
     <!-- Applies the theme before first paint, so a dark session doesn't flash
          light while the module bundle loads. Mirrors src/lib/theme.ts. -->
     <script>
-      const stored = localStorage.getItem("pids.theme");
+      let stored;
+      try { stored = localStorage.getItem("pids.theme"); } catch {}
       const isDark = stored === "dark"
         || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.classList.toggle("dark", isDark);

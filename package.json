@@ -5,7 +5,8 @@
   "description": "pi-sessions rebuilt on pi-durable: the agent runs inside the Session cell, no host process",
   "scripts": {
     "deploy": "AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret celld-0.6.1 deploy . --bucket s3://pid-cells --endpoint http://127.0.0.1:9000",
-    "ui": "npm --prefix ui run dev"
+    "ui": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build"
   },
   "dependencies": {
     "@cloudflare/sandbox": "^0.12.9",
