@@ -13,7 +13,9 @@ import { load } from "./check-harness.mjs";
 // API paths the spec must cover. ponytail: a new path outside this list and
 // the spec goes unnoticed; #71 makes it every path the worker serves.
 const COVERED = ["/api/sessions"];
-const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+// Every method an OpenAPI path item can declare, except OPTIONS: the router
+// answers every OPTIONS preflight with CORS headers, before any route.
+const METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD", "PATCH", "TRACE"];
 
 const { default: worker, Directory } = await load({
   "@cloudflare/sandbox": { getSandbox() { throw new Error("must not wake sandbox"); } },
@@ -84,7 +86,12 @@ await assert.rejects(apiClient("http://localhost:8093", (r) => call(r, broken)).
 // covered path and every path in the spec (call() fails on listed but unrouted).
 for (const path of new Set([...COVERED, ...Object.keys(spec.paths)])) {
   for (const method of METHODS) {
-    const body = method === "GET" ? undefined : "{}";
+    // fetch forbids TRACE, so no client can send one and no worker receives one.
+    if (method === "TRACE") {
+      assert.ok(!spec.paths[path]?.trace, `TRACE ${path} is in openapi.json but fetch can't send it`);
+      continue;
+    }
+    const body = method === "GET" || method === "HEAD" ? undefined : "{}";
     const response = await call(new Request(`http://localhost:8093${path}`, { method, body }));
     const listed = !!spec.paths[path]?.[method.toLowerCase()];
     assert.ok(listed || await unrouted(response), `${method} ${path} is served by the worker but missing from openapi.json`);
