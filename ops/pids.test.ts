@@ -39,10 +39,12 @@ function source(): string {
   const root = path.join(base, 'source');
   fs.mkdirSync(root, { recursive: true });
   for (const name of SOURCE_FILES) fs.writeFileSync(path.join(root, name), '{}');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@12.9.1"}');
   for (const name of SOURCE_DIRS) {
     fs.mkdirSync(path.join(root, name), { recursive: true });
     fs.writeFileSync(path.join(root, name, 'example.txt'), name);
   }
+  fs.writeFileSync(path.join(root, 'worker/wrangler.jsonc'), '{}');
   return root;
 }
 
@@ -159,13 +161,21 @@ describe('sources and files', () => {
       fs.writeFileSync(path.join(root, name), 'not a source file');
     }
     assert.equal(pids.sourceRevision(root), before);
-    fs.writeFileSync(path.join(root, 'src/example.txt'), 'changed');
+    fs.writeFileSync(path.join(root, 'worker/example.txt'), 'changed');
     assert.notEqual(pids.sourceRevision(root), before);
+  });
+
+  test('this checkout is a source with every workspace package', () => {
+    const root = path.join(HERE, '..');
+    const workspace = fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
+    const packages = [...workspace.matchAll(/^ {2}- (\S+)$/gm)].map((match) => match[1]);
+    assert.deepEqual(SOURCE_DIRS.filter((name) => name !== 'ops'), packages);
+    assert.match(pids.sourceRevision(root), /^[0-9a-f]{20}$/);
   });
 
   test('source symlink rejected', async () => {
     const root = source();
-    fs.symlinkSync('/etc/passwd', path.join(root, 'src/link'));
+    fs.symlinkSync('/etc/passwd', path.join(root, 'worker/link'));
     await rejects(() => pids.sourceRevision(root), /Symlinks/);
   });
 
@@ -270,16 +280,27 @@ describe('sources and files', () => {
     const root = source();
     const revision = pids.sourceRevision(root);
     pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, source: root }));
-    fakeRun((argv) => {
+    const { calls } = fakeRun((argv) => {
       if (argv[0] === 'runuser') throw new Failure('simulated build failure');
     });
     await rejects(() => pids.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }),
       /build failure/);
+    assert.deepEqual(calls.at(-1), ['runuser', '-u', 'pids', '--', 'npx', '--yes', 'pnpm@12.9.1', 'install', '--frozen-lockfile']);
     const retained = path.join(paths.ROOT, 'releases', revision);
     assert.equal((pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj).source, retained);
-    assert.ok(fs.existsSync(path.join(retained, 'src/example.txt')));
+    assert.ok(fs.existsSync(path.join(retained, 'worker/example.txt')));
     assert.ok(!fs.existsSync(path.join(retained, '.built')));
-    assert.match(fs.readFileSync(path.join(retained, 'wrangler.install.jsonc'), 'utf8'), /^\{"assets":\{"directory":"\.\/ui\/dist","binding":"ASSETS"/);
+    assert.match(fs.readFileSync(path.join(retained, 'worker/wrangler.install.jsonc'), 'utf8'), /^\{"assets":\{"directory":"\.\/ui-dist","binding":"ASSETS"/);
+    assert.equal(fs.readFileSync(path.join(retained, 'worker/.dockerignore'), 'utf8'), 'node_modules\nui-dist\n.env*\n');
+  });
+
+  test('build refuses a source without an exact pnpm pin', async () => {
+    const root = source();
+    fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@latest"}');
+    const { calls } = fakeRun();
+    await rejects(() => pids.prepareSource(root, pids.sourceRevision(root), { uid: process.getuid!(), gid: process.getgid!(), home: base }),
+      /exact pnpm version/);
+    assert.ok(!calls.some((argv) => argv[0] === 'runuser'));
   });
 
   test('installed manager runs on the private Node and replaces the Python one', () => {

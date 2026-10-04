@@ -1,5 +1,5 @@
 {
-  "name": "ui",
+  "name": "@pi-durable-sessions/ui",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "test:workspace": "playwright test --config workspace.playwright.config.ts",
     "preview": "vite preview",
-    "check:sessions": "node session-actions.check.mjs"
+    "check:sessions": "node session-actions.check.mjs",
+    "check": "node session.check.ts && pnpm run lint && pnpm run test:workspace && pnpm run build && pnpm run check:sessions"
   },
   "dependencies": {
     "@danfessler/trellis": "^0.3.0",

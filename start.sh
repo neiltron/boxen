@@ -1,7 +1,7 @@
 #!/bin/bash
 # Launch pi-durable-sessions: rustfs (shared, :9000) → celld 0.6.1 node (:8093).
 # Needs a Docker daemon for the per-session Sandbox containers.
-# UI is separate: npm run ui (http://localhost:5176), then sign in from the sidebar.
+# UI is separate: pnpm ui (http://localhost:5176), then sign in from the sidebar.
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.local/bin:$PATH"
@@ -58,5 +58,5 @@ fi
 echo
 echo "pi-durable-sessions is up:"
 echo "  api    http://127.0.0.1:8093/api/sessions"
-echo "  ui     npm run ui   →  http://localhost:5176"
-echo "  (after editing src/: ./deploy.sh — no restart needed)"
+echo "  ui     pnpm ui   →  http://localhost:5176"
+echo "  (after editing worker/src/: ./deploy.sh — no restart needed)"

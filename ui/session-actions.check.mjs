@@ -1,5 +1,5 @@
 // Browser smoke test with HTTP/WS fixtures; no celld, model, or sandbox needed.
-// npm run build && npx playwright install chromium && npm run check:sessions
+// pnpm run build && pnpm exec playwright install chromium && pnpm run check:sessions
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { preview } from "vite";
