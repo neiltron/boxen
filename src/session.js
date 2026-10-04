@@ -14,6 +14,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
 import { CellSqlite } from "./cell-sqlite.js";
 import { directoryCredentials } from "./credentials.js";
+import { validateMetadataPatch } from "./session-metadata.js";
 import { sessionWorkspace } from "./workspace.js";
 
 const Prompt = defineExtension({
@@ -77,6 +78,7 @@ export class Session extends DurableObject {
   }
 
   async init(meta) {
+    meta = { ...meta, archivedAt: null, metadataRevision: 0 };
     await this.state.storage.put("meta", meta);
     await this.env.DIRECTORY.getByName("main").register(meta);
     await this.open();
@@ -224,7 +226,8 @@ export class Session extends DurableObject {
     const stream = await watchEvents(harness, root.id, ctx);
     this.streams.set(ws, stream);
     const send = (msg) => { try { ws.send(JSON.stringify(msg)); } catch {} };
-    send({ type: "meta", meta });
+    // Metadata can change while opening the Harness; take a fresh snapshot.
+    send({ type: "meta", meta: await this.meta() });
     send({ type: "events", events: [stream.snapshot] });
     send({ type: "ready" });
     stream.start(async (events) => send({ type: "events", events }));
@@ -274,21 +277,38 @@ export class Session extends DurableObject {
     }
   }
 
-  // A manual rename also counts as the title, so autoTitle leaves it alone.
-  async rename(name) {
-    const meta = await this.meta();
-    const updated = { ...meta, name, titled: true };
-    await this.state.storage.put("meta", updated);
-    await this.env.DIRECTORY.getByName("main").rename({ id: meta.id, name });
+  async updateMetadata(input) {
+    const patch = validateMetadataPatch(input);
+    const updated = await this.state.storage.transaction(async () => {
+      const meta = await this.meta();
+      if (!meta) throw Object.assign(new Error("no such session"), { status: 404 });
+      const updated = { ...meta, archivedAt: meta.archivedAt ?? null };
+      if ("name" in patch) Object.assign(updated, { name: patch.name, titled: true });
+      if ("archived" in patch) updated.archivedAt = patch.archived ? (meta.archivedAt ?? Date.now()) : null;
+      if (!("name" in patch) && updated.archivedAt === (meta.archivedAt ?? null)) return updated;
+      updated.metadataRevision = (meta.metadataRevision ?? 0) + 1;
+      await this.state.storage.put("meta", updated);
+      return updated;
+    });
     for (const sock of this.streams.keys()) {
       try { sock.send(JSON.stringify({ type: "meta", meta: updated })); } catch {}
     }
+    // Projected even when unchanged: a failed projection surfaces as an error,
+    // and retrying the same change repairs Directory. Revisions drop stale ones.
+    await this.env.DIRECTORY.getByName("main").projectMetadata(updated);
+    return updated;
+  }
+
+  // A manual rename also counts as the title, so autoTitle leaves it alone.
+  async rename(name) {
+    return this.updateMetadata({ name });
   }
 
   // Names the session from its first message, once, with the session's own
   // model at its lowest reasoning level. Failures keep the starting name.
   async autoTitle(models, root, text) {
-    await this.state.storage.put("meta", { ...(await this.meta()), titled: true });
+    const meta = await this.meta();
+    await this.state.storage.put("meta", { ...meta, titled: true });
     const ref = (await root.agent(ctx)).model;
     const model = ref && models.getModel(ref.provider, ref.modelId);
     if (!model) return;
@@ -299,7 +319,10 @@ export class Session extends DurableObject {
     }, { reasoning: getSupportedThinkingLevels(model)[0] });
     const title = reply.content.filter((c) => c.type === "text").map((c) => c.text).join(" ")
       .replace(/["'`*]/g, "").replace(/[.!?:]+$/, "").replace(/\s+/g, " ").trim().slice(0, 60);
-    if (reply.stopReason !== "error" && title) await this.rename(title);
+    // A manual rename made while the model was answering wins.
+    if (reply.stopReason !== "error" && title && (await this.meta()).name === meta.name) {
+      await this.updateMetadata({ name: title });
+    }
   }
 
   async track(id, events) {

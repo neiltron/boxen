@@ -7,6 +7,7 @@
 //                     │ model calls straight from the cell
 //                     └ register/touch/credentials → Directory cell ⇄ WS ⇄ sidebar
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
+import { validateMetadataPatch } from "./session-metadata.js";
 import { previewTarget, validPreviewPort, sessionWorkspace } from "./workspace.js";
 
 // pi-ai loads OAuth flows through a dynamic import the bundle can't follow;
@@ -24,7 +25,7 @@ export { Session } from "./session.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
   "access-control-allow-headers": "content-type",
 };
 
@@ -112,6 +113,15 @@ export default {
       if (url.pathname === "/api/directory/ws") {
         return env.DIRECTORY.getByName("main").fetch(request);
       }
+      const metadata = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)$/);
+      if (metadata && request.method === "PATCH") {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+        const patch = validateMetadataPatch(body);
+        const session = env.SESSION.getByName(metadata[1]);
+        if (!await session.meta()) return json({ error: "no such session" }, 404);
+        return json(await session.updateMetadata(patch));
+      }
       const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff|ports|terminal)$/);
       const socket = m?.[2] === "ws" || (m?.[2] === "terminal" && request.method === "GET");
       if (socket && request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
@@ -136,7 +146,7 @@ export default {
       }
       return json({ error: "unknown route" }, 404);
     } catch (e) {
-      return json({ error: e.message }, 500);
+      return json({ error: e.message }, e.status ?? 500);
     }
   },
 };

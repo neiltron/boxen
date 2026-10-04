@@ -86,6 +86,43 @@ npm run ui                      # http://localhost:5176
 After editing `src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
+## Rename and archive
+
+Use the **⋯** menu in a sidebar row or the session header to rename or archive
+it. Names are trimmed, limited to 120 characters, and shared with every viewer;
+a manual rename wins over an automatic title that is still being generated.
+
+**Archive is organization, not shutdown.** It hides a session from the Active
+list for everyone without stopping its agent, deleting files, or making the
+conversation read-only. Agent activity does not unarchive it. Switch the sidebar
+to **Archived** to find it again, then **Restore** (or use **Undo** immediately
+after archiving). Archiving the open session keeps its view and unsent draft;
+its header shows **Archived · Restore**.
+
+`PATCH /api/session/:id` accepts `{ "name": "New title" }` and/or
+`{ "archived": true }` (`false` restores). Metadata changes neither open the
+Harness nor wake its sandbox, and do not bump `lastActivity`. Session metadata
+is authoritative and projected to Directory with a revision, so stale updates
+are dropped. If that projection fails the request errors; retrying the same
+change repairs Directory. Existing records without `archivedAt` remain active.
+
+Checks (Node 22+):
+
+```sh
+node --experimental-vm-modules metadata.check.mjs
+cd ui
+npm ci
+npm run build
+npx playwright install --with-deps chromium  # once per machine
+npm run check:sessions
+```
+
+The backend check uses real in-memory SQLite with mocked runtime/agent
+boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
+it checks two-viewer updates, rename failure, archive/undo/restore, draft
+preservation, keyboard controls, and narrow-screen menus.
+Neither replaces a live celld/deployment smoke test.
+
 ## Preview
 
 Start the session's app in its sandbox, listening on `0.0.0.0` (for example,

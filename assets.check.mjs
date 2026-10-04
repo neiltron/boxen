@@ -16,8 +16,8 @@ const stubs = {
   "./session.js": { Session: class {} },
 };
 async function link(name) {
-  if (name === "./workspace.js") {
-    const module = new SourceTextModule(await readFile(new URL("src/workspace.js", import.meta.url), "utf8"), { context });
+  if (name === "./workspace.js" || name === "./session-metadata.js") {
+    const module = new SourceTextModule(await readFile(new URL(`src/${name}`, import.meta.url), "utf8"), { context });
     await module.link(link);
     return module;
   }

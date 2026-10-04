@@ -8,6 +8,8 @@ export const WS_BASE = API_BASE
 export interface SessionMeta {
   id: string;
   name: string;
+  archivedAt?: number | null;
+  metadataRevision?: number;
   cwd: string;
   repo?: string;
   branch?: string;
@@ -39,9 +41,9 @@ export interface AuthStatus {
   agent: { model?: { provider: string; modelId: string }; thinkingLevel?: string };
 }
 
-async function post<T>(path: string, body: object): Promise<T> {
+async function post<T>(path: string, body: object, method = "POST"): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -149,3 +151,6 @@ export function githubRepo(url: string): string | null {
 // The session's working tree against HEAD, untracked files included.
 export const fetchDiff = (sessionId: string) => get<{ repo: boolean; patch: string }>(`/api/session/${sessionId}/diff`);
 export const fetchListeningPorts = (sessionId: string) => get<{ ports: number[] }>(`/api/session/${sessionId}/ports`);
+
+export const updateSession = (id: string, patch: { name?: string; archived?: boolean }) =>
+  post<SessionMeta>(`/api/session/${id}`, patch, "PATCH");
