@@ -1,35 +1,14 @@
 // node --experimental-vm-modules assets.check.mjs
 // Worker routing: installed UI assets, and the session routes that reach a Sandbox.
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
+import { load } from "./check-harness.mjs";
 
-const context = createContext({ Request, Response, URL, Headers, atob, console });
 let sandbox; // what getSandbox hands the workspace module
-const stubs = {
-  "@earendil-works/pi-ai/bun-oauth": { registerBunOAuthFlows() {} },
+const { default: worker } = await load({
   "@cloudflare/sandbox": { getSandbox(binding, id) { return sandbox(binding, id); } },
-  "./sandbox-env.js": { sandboxEnv() {}, shellQuote() {} },
-  "./sandbox.js": { Sandbox: class {} },
-  "./artifacts.js": { Artifacts: class {} },
   "./directory.js": { Directory: class {} },
   "./session.js": { Session: class {} },
-};
-async function link(name) {
-  if (name === "./workspace.js" || name === "./session-metadata.js") {
-    const module = new SourceTextModule(await readFile(new URL(`src/${name}`, import.meta.url), "utf8"), { context });
-    await module.link(link);
-    return module;
-  }
-  const values = stubs[name];
-  return new SyntheticModule(Object.keys(values), function () {
-    for (const [key, value] of Object.entries(values)) this.setExport(key, value);
-  }, { context });
-}
-const entry = new SourceTextModule(await readFile(new URL("src/index.js", import.meta.url), "utf8"), { context });
-await entry.link(link);
-await entry.evaluate();
-const worker = entry.namespace.default;
+}, { Headers });
 let forwarded;
 let calls = 0;
 const assetResponse = new Response("<html>installed UI</html>");
