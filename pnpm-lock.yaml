@@ -173,7 +173,7 @@ importers:
         specifier: ~6.0.2
         version: 6.0.3
 
-  ui:
+  apps/ui:
     dependencies:
       '@danfessler/trellis':
         specifier: ^0.3.0
@@ -267,7 +267,7 @@ importers:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)
 
-  worker:
+  apps/worker:
     dependencies:
       '@cloudflare/sandbox':
         specifier: ^0.12.9

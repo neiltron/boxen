@@ -59,4 +59,4 @@ echo
 echo "pi-durable-sessions is up:"
 echo "  api    http://127.0.0.1:8093/api/sessions"
 echo "  ui     pnpm ui   →  http://localhost:5176"
-echo "  (after editing worker/src/: ./deploy.sh — no restart needed)"
+echo "  (after editing apps/worker/src/: ./deploy.sh — no restart needed)"

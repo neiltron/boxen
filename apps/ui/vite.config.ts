@@ -39,7 +39,7 @@ export default defineConfig({
   },
   server: {
     port: 5176,
-    // Reached as https://a.oxen.sh through Caddy (../Caddyfile), tailnet only.
+    // Reached as https://a.oxen.sh through Caddy (../../Caddyfile), tailnet only.
     allowedHosts: ["a.oxen.sh"],
     // Same-origin API + WebSockets: Safari refuses cross-origin ws:// to the
     // literal 127.0.0.1, so the UI talks only to localhost:5173 and vite

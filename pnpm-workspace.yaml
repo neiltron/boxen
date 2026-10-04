@@ -1,6 +1,6 @@
 packages:
-  - worker
-  - ui
+  - apps/*
+  - packages/*
 
 # Dependency install scripts pnpm may run. esbuild's swaps its JS shim for the
 # native binary (celld deploy runs it); the others are no-ops or version notices.

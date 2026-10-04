@@ -151,7 +151,7 @@ export class Directory extends DurableObject {
   }
 
   // The provider's redirect, forwarded from the loopback port it targets
-  // (see ui/vite.config.ts). Same as pasting it, minus the pasting.
+  // (see apps/ui/vite.config.ts). Same as pasting it, minus the pasting.
   async loginCallback(redirectUrl) {
     try {
       await this.loginFinish(redirectUrl);
