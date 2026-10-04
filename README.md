@@ -144,6 +144,11 @@ The operations commands of #68 (start, stop, deploy, status, logs) will join
 the same binary as a second group in its command table; see the comment above
 `groups` in `apps/cli/pds.ts`.
 
+`pds` is written by hand on purpose: [docs/forge-evaluation.md](docs/forge-evaluation.md)
+ran Cloudflare's forge generator against `openapi.json` (2026-10-04) and
+recommends against generating it for now, with the condition that would
+change that.
+
 ## Drive it from another agent (MCP)
 
 `apps/mcp/server.ts` is an MCP server on stdio, so an agent such as Claude
