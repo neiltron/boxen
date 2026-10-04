@@ -1,4 +1,4 @@
-// Offline installer checks: node --test ops/
+// Offline installer checks: node --test ops/pids.test.ts
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

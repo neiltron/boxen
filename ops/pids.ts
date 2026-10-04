@@ -6,8 +6,8 @@
  * app already uses, through type stripping, so there is no build step. Keep to
  * erasable TypeScript: no enums, namespaces or constructor parameter properties.
  *
- * Every cross-function call goes through the `pids` object so tests can replace
- * any step, the way the host-facing steps (run, which, tailscale) need to be.
+ * Calls made through the `pids` object can be replaced by tests, the way the
+ * host-facing steps (run, which, tailscale) need to be. Direct calls cannot.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
