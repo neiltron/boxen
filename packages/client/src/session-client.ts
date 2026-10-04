@@ -34,8 +34,10 @@
 //   once: the cell runs the turn on durably, but a rejoin's snapshot carries
 //   no submission records, so it cannot tell how a turn that ended meanwhile
 //   was settled. The caller decides (check the Session later, or abort it).
-//   Stopping the client settles a pending run() the same way: `disconnected`
-//   if its prompt went out, `aborted` if not. run() never resends.
+//   A snapshot mid-turn (pi-durable replacing events it dropped) ends it the
+//   same way unless the snapshot still lists its submission. Stopping the
+//   client settles a pending run() too: `disconnected` if its prompt went
+//   out, `aborted` if not. run() never resends.
 import { appendError, applyEvent, emptyModel, type ChatModel } from "./events.ts";
 import type { components } from "./openapi.ts";
 import type { AgentState, ModelInfo, SessionCommand, SessionFrame } from "./protocol.ts";
@@ -64,7 +66,7 @@ export type TurnResult =
   | { status: "done"; text: string } // the text of the answer the cell recorded for this prompt
   | { status: "error"; error: string } // the cell refused the prompt, or the turn failed (no model, model error, …)
   | { status: "aborted" } // anyone's abort, or this run's signal
-  | { status: "disconnected" }; // the socket dropped mid-turn; the turn goes on in the cell
+  | { status: "disconnected" }; // the outcome is unknown: the socket dropped mid-turn, or the cell dropped events; the turn may go on
 
 export interface SessionClient extends SessionCommands {
   connect(): () => void;
@@ -75,8 +77,9 @@ export interface SessionClient extends SessionCommands {
 
 // The fields of pi-durable's events a turn reads: the SubmissionRecord it
 // ends on, and the committed entries one of which is its answer.
-type Submission = { requestId?: string; status: string; reason?: string; detail?: unknown; answer?: unknown };
+type Submission = { id?: unknown; requestId?: string; status: string; reason?: string; detail?: unknown; answer?: unknown };
 type Entry = { id?: unknown; model?: { role?: string; content?: { type?: string; text?: string }[] }[] };
+type Snapshot = { entries?: Entry[]; run?: { inputs: unknown[] }; inbox?: { id: unknown }[] };
 
 const answerText = (entry: Entry) =>
   (entry.model?.[0]?.content ?? []).flatMap((c) => (c.type === "text" ? [c.text ?? ""] : [])).join("\n");
@@ -99,9 +102,11 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
   const listeners = new Set<() => void>();
   const turns = new Set<(frame: SessionFrame | "drop" | "stop") => void>(); // run()s in flight
 
+  let holding = false; // receive() tells subscribers only after turns have seen the frame
+  const notify = () => { for (const listener of listeners) listener(); };
   const set = (next: Partial<SessionState>) => {
     state = { ...state, ...next };
-    for (const listener of listeners) listener();
+    if (!holding) notify();
   };
 
   const fold = (frame: SessionFrame) => {
@@ -134,10 +139,15 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
     }
   };
 
-  // Turns see each frame after it is folded, so a settled turn reads its reply.
+  // Turns see each frame once it is folded (a join's `ready` lets a waiting
+  // one send) and before subscribers do, so a subscriber that stops the
+  // client on what the frame shows can't preempt the outcome it carries.
   const receive = (frame: SessionFrame) => {
-    fold(frame);
+    const before = state;
+    holding = true;
+    try { fold(frame); } finally { holding = false; }
     for (const turn of [...turns]) turn(frame);
+    if (state !== before) notify();
   };
   const dropped = (why: "drop" | "stop") => {
     joining = null;
@@ -175,6 +185,8 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
       const requestId = crypto.randomUUID();
       let sent = false;
       const answers = new Map<unknown, string>(); // assistant entries committed since, by id
+      let submission: unknown; // its SubmissionId, from the first record for its requestId
+      const keep = (entry?: Entry) => { if (entry?.model?.[0]?.role === "assistant") answers.set(entry.id, answerText(entry)); };
       const end = (result: TurnResult) => {
         turns.delete(watch);
         signal?.removeEventListener("abort", cancel);
@@ -191,8 +203,20 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
         if (frame.type !== "events") return;
         for (const ev of frame.events) {
           const { record, entry } = ev as { record?: Submission; entry?: Entry };
-          if (ev.type === "message_end" && entry?.model?.[0]?.role === "assistant") answers.set(entry.id, answerText(entry));
+          if (ev.type === "message_end") keep(entry);
+          if (ev.type === "snapshot") {
+            // pi-durable replaced batches it dropped (its watch queue
+            // overflowed) with this. Unsettled, the submission is still in the
+            // run or the inbox and its record is yet to come; otherwise its
+            // settlement was dropped, and the outcome is unknown, as after a drop.
+            const snap = ev as Snapshot;
+            for (const e of snap.entries ?? []) keep(e);
+            const live = [...(snap.run?.inputs ?? []), ...(snap.inbox ?? []).map((item) => item.id)];
+            if (submission === undefined || !live.includes(submission)) return end({ status: "disconnected" });
+            continue;
+          }
           if (ev.type !== "submission" || record?.requestId !== requestId) continue;
+          submission = record.id;
           // The answer entry the record names, not the transcript's last item.
           if (record.status === "done") return end({ status: "done", text: answers.get(record.answer) ?? "" });
           if (record.status !== "unanswered") continue; // queued, placed

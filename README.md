@@ -141,7 +141,7 @@ submission record, matched by requestId) with one of:
 | `done` (`text`: the answer's text) | the prompt was answered | finished |
 | `error` (`error`: the reason) | the cell refused the prompt (an `error` frame carrying its requestId), or settled it unanswered (no model, model error, fault) | never started, or ended |
 | `aborted` | anyone's `abort`, including this call's `signal` | stopped |
-| `disconnected` | the socket dropped after the prompt went out | **may still be running** |
+| `disconnected` (the outcome is unknown) | the socket dropped after the prompt went out, or the cell dropped events mid-turn | **may still be running** |
 
 Progress is the client's state: `subscribe()` and read the reply growing in
 `state().model.items`. The `signal` sends nothing if the prompt hasn't gone
@@ -156,6 +156,14 @@ that ended meanwhile was settled. The caller decides: look at the Session later,
 abort it. Stopping the client (the function `connect()` returned) settles a
 pending `run()` too: `disconnected` if its prompt went out, `aborted` if not.
 `run()` never resends.
+
+The cell can also drop events: when a watcher falls behind, pi-durable
+replaces the batches it dropped with a fresh snapshot. If that snapshot still
+lists the prompt's submission in the run or the inbox, `run()` keeps waiting
+(and finds the answer among the snapshot's entries if it is there). If not,
+or if no record for the prompt had arrived yet, the settlement may have been
+dropped, and `run()` resolves `disconnected` rather than wait for a record
+that won't come.
 
 `text` is the answer entry the cell records for this prompt, not the last
 line of the transcript, so other callers' prompts and error lines can't cut

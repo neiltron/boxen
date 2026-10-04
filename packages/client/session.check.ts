@@ -408,11 +408,67 @@ const artifactResult = (callId: string, artifactId: string) =>
     ] });
     assert.deepEqual(await turn, { status: "done", text: "Hello" });
 
-    // An answer committed in an earlier batch (a run that ends after its tools).
+    // An answer committed in an earlier batch (a run that ends after its
+    // tools), with another assistant entry committed after it.
     const ended = client.run("again");
-    s.frame({ type: "events", events: [{ type: "message_end", entry: { id: 6, model: [{ role: "assistant", content: [{ type: "text", text: "Earlier" }] }] } }] });
+    const answer = (id: number, text: string) => ({ type: "message_end", entry: { id, model: [{ role: "assistant", content: [{ type: "text", text }] }] } });
+    s.frame({ type: "events", events: [answer(6, "Earlier"), answer(7, "Later")] });
     s.frame(submission(s.sent.at(-1)!.requestId, "done", { answer: 6 }));
     assert.deepEqual(await ended, { status: "done", text: "Earlier" });
+  }
+
+  // A snapshot mid-turn replaces batches pi-durable dropped (its watch queue
+  // overflowed). The answer can be in its entries; the turn goes on while
+  // the snapshot lists its submission in the run or the inbox. Otherwise the
+  // settlement was among the dropped batches: the outcome is unknown, and the
+  // turn ends as a drop does, `disconnected`.
+  {
+    const overflow = (rest: object) => ({ type: "events", events: [snapshot([
+      { id: 5, model: [{ role: "user", content: "hi" }] },
+      { id: 6, model: [{ role: "assistant", content: [{ type: "text", text: "From the snapshot" }] }] },
+    ], rest)] });
+    const { client, net } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const running = client.run("hi");
+    s.frame(submission(promptOf(s)!.requestId, "placed", { id: 9 }));
+    s.frame(overflow({ run: { inputs: [9] } }));
+    assert.equal(await settled(running), pending, "its submission is still in the run");
+    s.frame(submission(promptOf(s)!.requestId, "done", { id: 9, answer: 6 }));
+    assert.deepEqual(await running, { status: "done", text: "From the snapshot" });
+
+    const queued = client.run("later");
+    s.frame(submission(s.sent.at(-1)!.requestId, "queued", { id: 10 }));
+    s.frame(overflow({ run: { inputs: [9] }, inbox: [{ id: 10, mode: "steer" }] }));
+    assert.equal(await settled(queued), pending, "its submission is still in the inbox");
+
+    const settledUnseen = client.run("gone");
+    s.frame(submission(s.sent.at(-1)!.requestId, "placed", { id: 11 }));
+    s.frame(overflow({ inbox: [{ id: 10, mode: "steer" }] }));
+    assert.deepEqual(await settledUnseen, { status: "disconnected" });
+    assert.equal(await settled(queued), pending);
+
+    const unknown = client.run("no record yet"); // its record, if any, was dropped
+    s.frame(overflow({ run: { inputs: [9] }, inbox: [{ id: 10, mode: "steer" }] }));
+    assert.deepEqual(await unknown, { status: "disconnected" });
+  }
+
+  // A subscriber that stops the client once the run ends still gets the
+  // outcome that frame carries: turns see a frame before subscribers do.
+  {
+    const { client, net, stop } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const turn = client.run("hi");
+    const { requestId } = promptOf(s)!;
+    s.frame({ type: "events", events: [{ type: "run_start", inputs: [1] }] });
+    client.subscribe(() => { if (!client.state().model.running) stop(); });
+    s.frame({ type: "events", events: [
+      { type: "message_end", entry: { id: 3, model: [{ role: "assistant", content: [{ type: "text", text: "Hello" }], stopReason: "stop" }] } },
+      { type: "run_end", inputs: [1] },
+      { type: "submission", record: { requestId, status: "done", entry: 2, answer: 3 } },
+    ] });
+    assert.deepEqual(await turn, { status: "done", text: "Hello" });
   }
 
   // Error: the cell refuses the prompt, or settles it unanswered. A refusal
