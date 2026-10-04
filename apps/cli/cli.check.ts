@@ -64,6 +64,24 @@ async function pds(argv: string[], deps: Partial<Deps> = {}) {
   assert.match((await pds(["frobnicate"])).err, /unknown command: frobnicate/);
   assert.equal((await pds(["list", "--name", "x"])).code, 2, "options belong to their command");
   assert.match((await pds(["prompt", "s1"])).err, /needs a session id and the text/);
+  // Commands that take no arguments refuse them, before any request.
+  requests.length = 0;
+  assert.match((await pds(["create", "my-session"])).err, /Unexpected argument 'my-session'/);
+  assert.equal((await pds(["list", "extra"])).code, 2);
+  assert.equal(requests.length, 0);
+}
+
+// The system's URL must be http(s), from the flag or the environment.
+{
+  const bad = [
+    await pds(["prompt", "s1", "hi", "--url", "ftp://example.test"]),
+    await pds(["list", "--url", "not a url"]),
+    await pds(["list"], { env: { PDS_URL: "ws://x" } }),
+  ];
+  for (const r of bad) {
+    assert.equal(r.code, 2);
+    assert.match(r.err, /must be http\(s\)/);
+  }
 }
 
 // The target: --url, else $PDS_URL, else the default.
@@ -112,6 +130,14 @@ async function pds(argv: string[], deps: Partial<Deps> = {}) {
   // No join in time: an error naming the socket, not a hang.
   const unreachable = await pds(["prompt", "s1", "hi"], { transport: cell(false), connectMs: 10 });
   assert.deepEqual(unreachable, { code: 1, out: "", err: `error: no connection to ws://127.0.0.1:8093/api/session/s1/ws in 0.01 s\n` });
+}
+
+// A transport that throws fails the command, and prompt leaves no timer
+// behind (its join deadline, the client's ping) to keep the process alive.
+{
+  const broken = await pds(["prompt", "s1", "hi"], { transport: () => { throw new Error("no socket for you"); }, connectMs: 60_000 });
+  assert.deepEqual(broken, { code: 1, out: "", err: `pds: ${DEFAULT_URL}: no socket for you\n` });
+  assert.deepEqual(process.getActiveResourcesInfo().filter((r) => r === "Timeout"), [], "no timers left running");
 }
 
 console.log("cli.check: ok");

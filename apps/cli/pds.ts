@@ -48,6 +48,7 @@ interface Command {
   args: string; // for the usage line
   summary: string;
   options?: ParseArgsOptionsConfig; // beyond --url, --json, --help
+  positionals?: true; // takes arguments; otherwise any is a usage error
   run(ctx: Ctx, values: Record<string, unknown>, positionals: string[]): Promise<number>;
 }
 
@@ -81,6 +82,7 @@ const groups: Record<string, Record<string, Command>> = {
     prompt: {
       args: "<session-id> <text...>",
       summary: "send a prompt, stream the reply, exit 0 when the turn is done",
+      positionals: true,
       async run(ctx, _, [id, ...words]) {
         const text = words.join(" ");
         if (!id || !text) return usage(ctx.deps, "prompt needs a session id and the text");
@@ -113,11 +115,18 @@ const groups: Record<string, Record<string, Command>> = {
         const giveUp = setTimeout(() => { unreachable = true; cancel.abort(); }, connectMs);
         client.subscribe(() => { if (client.state().ready) clearTimeout(giveUp); });
 
-        const stop = client.connect();
-        let result: TurnResult = await client.run(text, { signal: cancel.signal });
-        stop();
-        clearTimeout(giveUp);
-        signal?.removeEventListener("abort", abort);
+        // Clean up on every way out, a throw from connect() included: a
+        // timer or a socket left behind would keep the process alive.
+        let result: TurnResult;
+        let stop = () => {};
+        try {
+          stop = client.connect();
+          result = await client.run(text, { signal: cancel.signal });
+        } finally {
+          stop();
+          clearTimeout(giveUp);
+          signal?.removeEventListener("abort", abort);
+        }
         if (unreachable) result = { status: "error", error: `no connection to ${sessionSocketUrl(ctx.url, id)} in ${connectMs / 1000} s` };
 
         if (ctx.json) out(`${JSON.stringify(result)}\n`);
@@ -172,13 +181,14 @@ export async function main(argv: string[], deps: Deps): Promise<number> {
   if (!command) return usage(deps, `unknown command: ${name}`);
   let parsed;
   try {
-    parsed = parseArgs({ args: rest, options: { ...common, ...command.options }, allowPositionals: true, strict: true });
+    parsed = parseArgs({ args: rest, options: { ...common, ...command.options }, allowPositionals: !!command.positionals, strict: true });
   } catch (e) {
     return usage(deps, (e as Error).message);
   }
   const { values, positionals } = parsed;
   if (values.help) { deps.out(help()); return 0; }
   const url = (values.url as string | undefined) ?? deps.env.PDS_URL ?? DEFAULT_URL;
+  if (!/^https?:$/.test(URL.parse(url)?.protocol ?? "")) return usage(deps, `the system's URL must be http(s): ${url}`);
   try {
     return await command.run({ url, json: !!values.json, deps }, values, positionals);
   } catch (e) {
