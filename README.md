@@ -143,7 +143,7 @@ pnpm --filter @pi-durable-sessions/worker run check  # or one package
 `packages/client/openapi.json` is the REST contract, so far the Session list
 and create endpoints. After editing it, run `pnpm --filter
 @pi-durable-sessions/client run generate` to regenerate the client's types.
-`worker/contract.check.mjs` runs the router against it and fails when either
+`apps/worker/contract.check.mjs` runs the router against it and fails when either
 serves or lists a route the other lacks.
 
 The backend check uses real in-memory SQLite with mocked runtime/agent

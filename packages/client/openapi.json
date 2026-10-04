@@ -3,7 +3,7 @@
   "info": {
     "title": "pi-durable-sessions",
     "version": "0.1.0",
-    "description": "The worker's REST API (worker/src/index.js). So far only the Session list and create endpoints; worker/contract.check.mjs fails when the worker and this file disagree. The Session WebSocket (/api/session/{id}/ws) is not described here."
+    "description": "The worker's REST API (apps/worker/src/index.js). So far only the Session list and create endpoints; apps/worker/contract.check.mjs fails when the worker and this file disagree. The Session WebSocket (/api/session/{id}/ws) is not described here."
   },
   "paths": {
     "/api/sessions": {
