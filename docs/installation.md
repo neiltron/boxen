@@ -140,7 +140,7 @@ npm i --no-save typescript @types/node@24 && npx tsc -p ops   # type-check the m
 node --experimental-vm-modules assets.check.mjs
 node --experimental-vm-modules terminal.check.mjs
 node preview.check.js
-(cd ui && node events.check.ts)
+(cd ui && node session.check.ts)
 ```
 
 Live isolated smoke (Docker + celld + esbuild, dependencies installed, UI built):

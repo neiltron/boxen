@@ -39,9 +39,11 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   (markdown, html, svg, mermaid, code), versioned and full-text searchable,
   readable while sandboxes sleep.
 - **ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
-  Changes, Preview, Terminal, and Events views. The reducer
-  (`src/lib/events.ts`) folds pi-durable agent events; run
-  `node events.check.ts` from `ui/` to check it.
+  Changes, Preview, Terminal, and Events views. The session client
+  (`src/lib/session-client.ts`) is the UI's one handle on a Session cell:
+  the reconnecting socket, the reducer that folds pi-durable agent events
+  (`src/lib/events.ts`), and typed commands. Run `node session.check.ts`
+  from `ui/` to check it against a scripted socket.
 - **Repos**: a session can start from a repo URL; the cell clones it into the
   sandbox once; later containers get it back from the checkpoint. `GH_TOKEN` and
   `LINEAR_API_KEY` from a gitignored `.env` go into each sandbox command's

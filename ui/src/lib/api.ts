@@ -11,9 +11,10 @@ export interface SessionMeta {
   cwd: string;
   repo?: string;
   branch?: string;
-  status?: string;
+  status?: "running" | "idle"; // Directory rows only
   createdAt: number;
   lastActivity?: number;
+  titled?: boolean; // the Session cell's meta frame only: named by autoTitle or a rename
 }
 
 // Named after the repo (or "untitled") until the first message titles it.

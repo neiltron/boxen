@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon, init, Terminal, type ITheme } from "ghostty-web";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useSessionContext } from "@/components/panel/session-context";
+import { WS_BASE } from "@/lib/api";
 
 let initializing: Promise<void> | undefined;
 
@@ -68,9 +69,8 @@ export function TerminalTab() {
     const connect = () => {
       if (disposed) return;
       ready = false;
-      const url = new URL(`/api/session/${sessionId}/terminal`, location.href);
-      url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(url);
+      // Raw PTY bytes with its own backoff and give-up, so not lib/socket.ts.
+      const ws = new WebSocket(`${WS_BASE}/api/session/${sessionId}/terminal`);
       ws.binaryType = "arraybuffer";
       socket = ws;
       let ended = false;
