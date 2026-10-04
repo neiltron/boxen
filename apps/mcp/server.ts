@@ -11,16 +11,18 @@
 // aborts the turn.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { CancelledNotificationSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_URL, sessionSocketUrl, system, webSocketTransport, type Transport, type TurnResult } from "@pi-durable-sessions/client";
 import { z } from "zod";
 
 const CONNECT_MS = 15_000;
+const ABORT_MS = 5_000;
 
 export interface Deps {
   fetch?: (request: Request) => Promise<Response>;
   transport: Transport;
   connectMs?: number; // how long run_turn waits for the Session to join
+  abortMs?: number; // how long a cancelled run_turn waits for the Session to confirm the abort
 }
 
 const SESSION = "A Session is one coding agent with its own sandbox (a container with a /workspace directory, optionally a cloned git repo) and a durable transcript; it keeps both between turns.";
@@ -42,6 +44,14 @@ const clip = (s: string, n = 120) => { s = s.replace(/\s+/g, " ").trim(); return
 export function createServer(url: string, deps: Deps) {
   const { api, session } = system(url, deps);
   const server = new McpServer({ name: "pi-durable-sessions", version: "0.1.0" });
+  // Workaround: @modelcontextprotocol/sdk 1.32.0 (Protocol._oncancel) drops a
+  // cancel whose requestId is falsy, so request 0, a valid JSON-RPC id, could
+  // not be cancelled and its turn ran on. This handler does what the SDK's
+  // does for every id. Remove it once the 1.x SDK checks for undefined, as
+  // the v2 @modelcontextprotocol/server (2.3.0) already does.
+  const pending = (server.server as unknown as { _requestHandlerAbortControllers?: Map<unknown, AbortController> })._requestHandlerAbortControllers;
+  if (!(pending instanceof Map)) throw new Error("@modelcontextprotocol/sdk changed: revisit the request-0 cancel workaround in server.ts");
+  server.server.setNotificationHandler(CancelledNotificationSchema, ({ params }) => { pending.get(params.requestId)?.abort(params.reason); });
   const readOnly = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool("list_sessions", {
@@ -66,7 +76,7 @@ export function createServer(url: string, deps: Deps) {
     },
   }, async ({ session: id, prompt }, { signal, _meta, sendNotification }) => {
     const client = session(id);
-    const { connectMs = CONNECT_MS } = deps;
+    const { connectMs = CONNECT_MS, abortMs = ABORT_MS } = deps;
 
     // Progress, when asked for: one message per step of the turn.
     const token = _meta?.progressToken;
@@ -96,9 +106,14 @@ export function createServer(url: string, deps: Deps) {
       }
     });
 
-    // Bound the wait for the join, not the turn (as pds prompt does).
+    // Bound the wait for the join, not the turn (as pds prompt does). Once
+    // cancelled, bound the wait for the cell to settle the abort too: then
+    // stop the client, which closes the socket and settles run().
     const cancel = new AbortController();
-    const abort = () => cancel.abort();
+    let stop = () => {};
+    let unconfirmed: ReturnType<typeof setTimeout> | undefined;
+    let abandoned = false;
+    const abort = () => { cancel.abort(); unconfirmed = setTimeout(() => { abandoned = true; stop(); }, abortMs); };
     signal.addEventListener("abort", abort);
     if (signal.aborted) abort();
     let unreachable = false;
@@ -106,16 +121,17 @@ export function createServer(url: string, deps: Deps) {
     client.subscribe(() => { if (client.state().ready) clearTimeout(giveUp); });
 
     let result: TurnResult;
-    let stop = () => {};
     try {
       stop = client.connect();
       result = await client.run(prompt, { signal: cancel.signal });
     } finally {
       stop();
       clearTimeout(giveUp);
+      clearTimeout(unconfirmed);
       signal.removeEventListener("abort", abort);
     }
     if (unreachable) return failed(`Could not reach the Session: no connection to ${sessionSocketUrl(url, id)} in ${connectMs / 1000} s. Nothing was sent. Check the id with list_sessions; if it is right, the system may be down.`);
+    if (abandoned && result.status === "disconnected") return failed(`Cancelled: the abort was sent to Session ${id}, but it did not confirm within ${abortMs / 1000} s, so the turn may still be running. Call list_sessions and look at this Session's status.`);
     switch (result.status) {
       case "done": return { content: [{ type: "text", text: result.text || "(The turn ended without a text answer.)" }] };
       case "error": return failed(`The turn failed: ${result.error}`);
@@ -155,6 +171,14 @@ if (import.meta.main) {
     process.stderr.write(`pds-mcp: PDS_URL must be http(s): ${url}\n`);
     process.exit(2);
   }
-  await createServer(url, { transport: webSocketTransport }).connect(new StdioServerTransport());
+  const server = createServer(url, { transport: webSocketTransport });
+  await server.connect(new StdioServerTransport());
   process.stderr.write(`pds-mcp: serving ${url} on stdio\n`);
+  // Shut down when the client does: SDK 1.32.0's stdio transport ignores the
+  // end of stdin. Closing the server aborts requests in flight, so a running
+  // turn is aborted in its Session, and the process exits once they settle.
+  const close = () => void server.close();
+  process.stdin.once("end", close);
+  process.once("SIGTERM", close);
+  process.once("SIGINT", close); // a second Ctrl-C kills
 }

@@ -163,8 +163,11 @@ Code can use Sessions as tools. Like `pds`, it talks to `$PDS_URL`, else
 one notification when the Session has joined and the prompt went out, one per
 tool call as it starts (its name and arguments), and one per piece of text the
 agent finishes, each clipped to 120 characters. Cancelling the call aborts the
-Session's whole current run, as the web app's stop button does. A turn whose
-connection drops comes back as "outcome unknown", with how to find out.
+Session's whole current run, as the web app's stop button does; if the
+Session does not confirm the abort within 5 s, the server stops waiting and
+closes its connection. The server shuts down when its stdin ends or on
+SIGTERM or SIGINT, aborting a running turn first. A turn whose connection
+drops comes back as "outcome unknown", with how to find out.
 
 Register it with Claude Code (use the absolute path of your checkout; leave
 out `-e` for the default address):
