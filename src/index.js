@@ -131,7 +131,7 @@ export default {
       if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
       return json({ error: "unknown route" }, 404);
     } catch (e) {
-      return json({ error: e.message }, e.status === 400 || e.status === 404 ? e.status : 500);
+      return json({ error: e.message }, e.status ?? 500);
     }
   },
 };

@@ -75,10 +75,7 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => select(s.id)}
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left",
-                selected === s.id && "bg-muted",
-              )}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left"
             >
               <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
               <span className="min-w-0 flex-1">

@@ -22,10 +22,7 @@ export class Directory extends DurableObject {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sessions(
       id TEXT PRIMARY KEY, name TEXT, cwd TEXT, status TEXT,
       createdAt INT, lastActivity INT)`);
-    for (const col of ["repo", "branch"]) {
-      try { this.sql.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`); } catch { /* already there */ }
-    }
-    for (const [col, type] of [["archivedAt", "INT"], ["metadataRevision", "INT NOT NULL DEFAULT 0"]]) {
+    for (const [col, type] of [["repo", "TEXT"], ["branch", "TEXT"], ["archivedAt", "INT"], ["metadataRevision", "INT NOT NULL DEFAULT 0"]]) {
       try { this.sql.exec(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`); } catch { /* already there */ }
     }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS credentials(
@@ -55,8 +52,6 @@ export class Directory extends DurableObject {
   }
 
   async projectMetadata(meta) {
-    // Register is idempotent and cannot reset activity or user metadata.
-    await this.register(meta);
     this.sql.exec(
       `UPDATE sessions SET name = ?, archivedAt = ?, metadataRevision = ?
        WHERE id = ? AND metadataRevision < ?`,

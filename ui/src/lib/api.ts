@@ -41,9 +41,9 @@ export interface AuthStatus {
   agent: { model?: { provider: string; modelId: string }; thinkingLevel?: string };
 }
 
-async function post<T>(path: string, body: object): Promise<T> {
+async function post<T>(path: string, body: object, method = "POST"): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -152,13 +152,5 @@ export function githubRepo(url: string): string | null {
 export const fetchDiff = (sessionId: string) => get<{ repo: boolean; patch: string }>(`/api/session/${sessionId}/diff`);
 export const fetchListeningPorts = (sessionId: string) => get<{ ports: number[] }>(`/api/session/${sessionId}/ports`);
 
-export async function updateSession(id: string, patch: { name?: string; archived?: boolean }): Promise<SessionMeta> {
-  const res = await fetch(`${API_BASE}/api/session/${id}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? `update failed: ${res.status}`);
-  return data;
-}
+export const updateSession = (id: string, patch: { name?: string; archived?: boolean }) =>
+  post<SessionMeta>(`/api/session/${id}`, patch, "PATCH");

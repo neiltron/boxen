@@ -59,20 +59,23 @@ try {
     await tab.getByRole("button", { name: "Actions for Investigate reconnects", exact: true }).waitFor();
   }
 
-  // Rename an unopened session, including blank input, failure/retry, and Enter.
-  await page.getByRole("button", { name: "Actions for Investigate reconnects", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-  const name = page.getByRole("textbox", { name: "Name", exact: true });
-  await name.waitFor();
-  assert.equal(await name.evaluate((el) => el.selectionEnd - el.selectionStart), "Investigate reconnects".length);
-  await name.fill("   ");
-  assert.equal(await page.getByRole("button", { name: "Save", exact: true }).isDisabled(), true);
-  await name.fill("Renamed session");
+  // Rename an unopened session through the prompt: blank is ignored, a failure
+  // is reported, and a retry succeeds.
+  const rename = async (tab, menu, value) => {
+    tab.once("dialog", (dialog) => {
+      assert.equal(dialog.defaultValue(), sessions[0].name);
+      void dialog.accept(value);
+    });
+    await menu.getByRole("button", { name: `Actions for ${sessions[0].name}`, exact: true }).click();
+    await tab.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  };
+  const revision = sessions[0].metadataRevision;
+  await rename(page, page.locator("nav"), "   ");
   failNext = true;
-  await name.press("Enter");
+  await rename(page, page.locator("nav"), "Renamed session");
   await page.getByRole("alert").filter({ hasText: "simulated outage" }).waitFor();
-  await name.press("Enter");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(sessions[0].metadataRevision, revision, "blank and failed renames change nothing");
+  await rename(page, page.locator("nav"), "Renamed session");
   await other.getByRole("button", { name: "Actions for Renamed session", exact: true }).waitFor();
   assert.equal(sessionSubscriptions, 0, "sidebar rename does not connect to the agent");
 
@@ -87,33 +90,32 @@ try {
 
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-  await page.getByRole("button", { name: "Archived session: restore" }).waitFor();
+  await page.locator("header").getByText("Archived", { exact: true }).waitFor();
   await other.locator("nav").getByRole("button", { name: "Actions for Renamed session", exact: true }).waitFor({ state: "hidden" });
   assert.equal(await draft.inputValue(), "Keep my unsent draft");
   assert.equal(sessionSubscriptions, 1, "archiving does not remount the selected view");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await page.getByRole("button", { name: "Archived session: restore" }).waitFor({ state: "hidden" });
+  await page.locator("header").getByText("Archived", { exact: true }).waitFor({ state: "hidden" });
   await other.getByRole("button", { name: "Actions for Renamed session", exact: true }).waitFor();
 
   // Archive again, browse archived rows, then restore from the header.
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-  await page.getByRole("button", { name: "Archived session: restore" }).waitFor();
+  await page.locator("header").getByText("Archived", { exact: true }).waitFor();
   await other.getByRole("button", { name: "Archived", exact: true }).click();
   await other.getByRole("button", { name: "Actions for Renamed session", exact: true }).click();
   await other.getByRole("menuitem", { name: "Restore", exact: true }).waitFor();
   await other.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Archived session: restore" }).click();
+  await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Restore", exact: true }).click();
   await other.getByText("No archived sessions", { exact: true }).waitFor();
   assert.equal(await draft.inputValue(), "Keep my unsent draft");
 
-  // Escape cancels rename, keyboard can reach menus, touch layout retains them.
+  // Dismissing the prompt cancels; keyboard can reach menus; touch layout retains them.
+  page.once("dialog", (dialog) => void dialog.dismiss());
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-  await page.getByRole("textbox", { name: "Name", exact: true }).fill("Do not save");
-  await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(sessions[0].name, "Renamed session");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();

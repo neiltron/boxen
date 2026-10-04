@@ -13,7 +13,6 @@ import {
   InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { SessionActions } from "@/components/SessionActions";
-import { useSessionActions } from "@/hooks/useSessionActions";
 import { Markdown } from "@/components/Markdown";
 import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
@@ -69,7 +68,6 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
 
 export function ChatView({ session, onTogglePanel }: { session: SessionHandle; onTogglePanel: () => void }) {
   const { model, meta, ready, send } = session;
-  const actions = useSessionActions();
   const [draft, setDraft] = useState("");
 
   // Stick to the end while the reader is there. The scroller's own follow
@@ -101,7 +99,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
           model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",
         )} />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
-        {meta?.archivedAt != null && <Button size="sm" variant="outline" disabled={actions.pending} onClick={() => void actions.archive(meta, false)} aria-label="Archived session: restore">Archived · Restore</Button>}
+        {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
         {meta && <SessionActions session={meta} />}
         <Button
           variant="ghost" size="icon-sm" className="ml-auto"

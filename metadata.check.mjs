@@ -1,64 +1,25 @@
 // Real Session/Directory methods with in-memory SQLite and mocked runtime/agent boundaries.
 // node --experimental-vm-modules metadata.check.mjs (Node 22+)
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
 import { DatabaseSync } from "node:sqlite";
+import { load } from "./check-harness.mjs";
 
-let sandbox;
-const context = createContext({ Request, Response, URL, atob, console, setTimeout: () => 1 });
-const stubs = {
-  "cloudflare:workers": { DurableObject: class {} },
-  "@cloudflare/sandbox": { getSandbox() { if (!sandbox) throw new Error("must not wake sandbox"); return sandbox; } },
-  "@earendil-works/chord/context": { BACKGROUND_CONTEXT: {} },
-  "@earendil-works/pi-ai": { Type: {} },
-  "@earendil-works/pi-ai/bun-oauth": { registerBunOAuthFlows() {} },
-  "@earendil-works/pi-ai/models": { getSupportedThinkingLevels: () => ["off"] },
-  "@earendil-works/pi-ai/providers/all": { builtinModels() {} },
-  "@earendil-works/pi-durable": {
-    createRegistry() {}, defineExtension: (x) => x, defineTool() {}, Harness: {}, section() {}, watchEvents() {},
-  },
-  "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: {} },
-  "@earendil-works/pi-durable/tools": { CodingTools: {} },
-  "./artifacts.js": { ARTIFACT_KINDS: [], Artifacts: class {} },
-  "./sandbox.js": { Sandbox: class {} },
-  "./cell-sqlite.js": { CellSqlite: class {} },
-  "./credentials.js": { directoryCredentials() {} },
-  "./sandbox-env.js": { sandboxEnv() {}, shellQuote() {} },
-};
-const modules = new Map();
-async function link(name) {
-  if (modules.has(name)) return modules.get(name);
-  const exports = stubs[name];
-  const module = exports
-    ? new SyntheticModule(Object.keys(exports), function () {
-      for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
-    }, { context })
-    : new SourceTextModule(await readFile(new URL(`src/${name}`, import.meta.url), "utf8"), { context });
-  modules.set(name, module);
-  await module.link(link);
-  return module;
-}
-const entry = await link("index.js");
-await entry.evaluate();
-const { Session, Directory, default: worker } = entry.namespace;
+const { Session, Directory, default: worker } = await load({
+  "@cloudflare/sandbox": { getSandbox() { throw new Error("must not wake sandbox"); } },
+}, { setTimeout: () => 1 });
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
 function storage() {
-  let values = new Map(), alarm = null, tail = Promise.resolve();
+  let values = new Map(), tail = Promise.resolve();
   const db = new DatabaseSync(":memory:");
   return {
     sql: { exec(sql, ...params) { const rows = db.prepare(sql).all(...params); return { toArray: () => rows }; } },
     async get(key) { return structuredClone(values.get(key)); },
     async put(key, value) { values.set(key, structuredClone(value)); },
-    async delete(key) { values.delete(key); },
-    async getAlarm() { return alarm; },
-    async setAlarm(time) { alarm = time; },
-    async consumeAlarm() { alarm = null; },
     transaction(fn) {
       const run = tail.then(async () => {
-        const before = structuredClone(values), beforeAlarm = alarm;
-        try { return await fn(); } catch (e) { values = before; alarm = beforeAlarm; throw e; }
+        const before = structuredClone(values);
+        try { return await fn(); } catch (e) { values = before; throw e; }
       });
       tail = run.catch(() => {});
       return run;
@@ -121,69 +82,13 @@ const idle = await make("def-456");
 await idle.rename("New name");
 assert.equal((await directory.list()).find((s) => s.id === "def-456").lastActivity, beforeActivity, "metadata does not bump activity");
 
-// Failed projection survives eviction. Alarm retries without opening the agent.
+// A failed projection is reported; retrying the same change repairs Directory.
 offline = true;
-await idle.updateMetadata({ archived: true });
-assert.ok(await idle.state.storage.get("pendingMetadata"));
-assert.ok(await idle.state.storage.getAlarm());
-const restarted = new Session(idle.state, env);
-restarted.open = idle.open;
-await idle.state.storage.consumeAlarm();
-await restarted.alarm();
-assert.ok(await idle.state.storage.getAlarm(), "failure rearms retry");
+await assert.rejects(idle.updateMetadata({ archived: true }), /directory offline/);
+assert.ok((await idle.meta()).archivedAt);
 offline = false;
-await idle.state.storage.consumeAlarm();
-await restarted.alarm();
-assert.equal(await idle.state.storage.get("pendingMetadata"), undefined);
+await idle.updateMetadata({ archived: true });
 assert.ok((await directory.list()).find((s) => s.id === "def-456").archivedAt);
-assert.equal((await restarted.meta()).name, "New name");
-
-// Running and legacy alarms still resume. Archive never calls abort.
-for (const legacy of [false, true]) {
-  const running = await make(legacy ? "legacy" : "running");
-  if (legacy) await running.state.storage.setAlarm(Date.now());
-  else await running.scheduleRun();
-  await running.updateMetadata({ archived: true });
-  let watched = 0;
-  running.watchRun = async () => { watched++; };
-  await running.state.storage.consumeAlarm();
-  await running.alarm();
-  assert.equal(watched, 1);
-}
-
-// An old alarm delivered concurrently with a metadata edit is still a run alarm.
-const racing = await make("legacy-race");
-let resumed = 0;
-racing.watchRun = async () => { resumed++; };
-await Promise.all([racing.updateMetadata({ archived: true }), racing.alarm()]);
-assert.equal(resumed, 1);
-
-// A completed run must not be awakened again by a metadata retry. Conversely,
-// a new run starting during checkpoint must retain its durable resume intent.
-const lifecycle = await make("lifecycle");
-let opens = 0;
-lifecycle.open = async () => { opens++; return { harness: { waitForIdle: async () => {} } }; };
-lifecycle.setStatus = async () => {};
-sandbox = { checkpoint: async () => {} };
-await lifecycle.scheduleRun();
-await lifecycle.state.storage.consumeAlarm();
-await lifecycle.alarm();
-assert.equal(await lifecycle.state.storage.get("runPending"), false);
-await lifecycle.updateMetadata({ archived: true });
-await lifecycle.state.storage.consumeAlarm();
-await lifecycle.alarm();
-assert.equal(opens, 1, "metadata alarm after a run stays idle");
-await lifecycle.scheduleRun();
-sandbox.checkpoint = () => lifecycle.scheduleRun();
-await lifecycle.state.storage.consumeAlarm();
-await lifecycle.alarm();
-assert.equal(await lifecycle.state.storage.get("runPending"), true);
-assert.ok(await lifecycle.state.storage.getAlarm(), "new run keeps an alarm after old checkpoint");
-sandbox.checkpoint = async () => {};
-await lifecycle.state.storage.consumeAlarm();
-await lifecycle.alarm();
-assert.equal(await lifecycle.state.storage.get("runPending"), false);
-sandbox = undefined;
 
 // A manual rename wins even if an automatic title request is already in flight.
 const auto = await make("auto");

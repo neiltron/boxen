@@ -81,7 +81,7 @@ export class Session extends DurableObject {
   }
 
   async init(meta) {
-    meta = { ...meta, archivedAt: null, metadataRevision: 0, titleRevision: 0 };
+    meta = { ...meta, archivedAt: null, metadataRevision: 0 };
     await this.state.storage.put("meta", meta);
     await this.env.DIRECTORY.getByName("main").register(meta);
     await this.open();
@@ -165,7 +165,7 @@ export class Session extends DurableObject {
       for (const ws of this.state.getWebSockets()) { try { ws.close(4000, "session reopened"); } catch {} }
     })().finally(() => { this.closing = null; });
     // The alarm opens the new Harness, which resumes the interrupted run.
-    return this.closing.then(() => this.scheduleRun());
+    return this.closing.then(() => this.state.storage.setAlarm(Date.now()));
   }
 
   // Set while a run goes, so a cell that restarts mid-run (node restart,
@@ -173,22 +173,14 @@ export class Session extends DurableObject {
   // The handler holds the run's I/O to a live event until the run ends,
   // then checkpoints the workspace. celld redelivers an alarm that runs
   // long (about every 15s), so redeliveries join the one already watching.
-  async alarm() {
-    // Metadata retries must not open a Harness or start a container. Old run
-    // alarms have no runPending flag and retain their previous resume behavior.
-    this.activeAlarms = (this.activeAlarms ?? 0) + 1;
-    try {
-      await this.metadataQueue(() => this.flushMetadata());
-      if ((await this.state.storage.get("runPending")) === false) return;
-      this.watching ??= this.watchRun().finally(() => { this.watching = null; });
-      return await this.watching;
-    } finally { this.activeAlarms--; }
+  alarm() {
+    this.watching ??= this.watchRun().finally(() => { this.watching = null; });
+    return this.watching;
   }
 
   async watchRun() {
     const meta = await this.meta();
     if (!meta) return;
-    const epoch = await this.state.storage.get("runEpoch");
     const { harness } = await this.open();
     try {
       const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
@@ -199,10 +191,6 @@ export class Session extends DurableObject {
     }
     await this.setStatus(meta.id, "idle");
     await getSandbox(this.env.Sandbox, meta.id).checkpoint();
-    await this.state.storage.transaction(async () => {
-      if (await this.state.storage.get("runEpoch") === epoch) await this.state.storage.put("runPending", false);
-      else await this.state.storage.setAlarm(Date.now()); // a new run started during checkpoint
-    });
   }
 
   // The session's files in whatever container is current: restored from the
@@ -347,67 +335,26 @@ export class Session extends DurableObject {
     }
   }
 
-  // Serialize metadata writes and projection acknowledgments, not model calls.
-  metadataQueue(fn) {
-    const result = (this.metadataTail ?? Promise.resolve()).then(fn);
-    this.metadataTail = result.catch(() => {});
-    return result;
-  }
-
-  async scheduleRun() {
-    await this.state.storage.transaction(async () => {
-      await this.state.storage.put("runPending", true);
-      await this.state.storage.put("runEpoch", ((await this.state.storage.get("runEpoch")) ?? 0) + 1);
-      await this.state.storage.setAlarm(Date.now());
-    });
-  }
-
-  async flushMetadata() {
-    const pending = await this.state.storage.get("pendingMetadata");
-    if (!pending) return;
-    try {
-      await this.env.DIRECTORY.getByName("main").projectMetadata(pending);
-      await this.state.storage.delete("pendingMetadata");
-    } catch (e) {
-      console.error("metadata projection failed; retrying", e.message);
-      // The outbox and alarm survive eviction, including an ambiguous RPC result.
-      await this.state.storage.setAlarm(Date.now() + 5000);
-    }
-  }
-
-  updateMetadata(input, expectedTitleRevision) {
+  async updateMetadata(input) {
     const patch = validateMetadataPatch(input);
-    return this.metadataQueue(async () => {
-      const updated = await this.state.storage.transaction(async () => {
-        const meta = await this.meta();
-        if (!meta) throw Object.assign(new Error("no such session"), { status: 404 });
-        if (expectedTitleRevision !== undefined && (meta.titleRevision ?? 0) !== expectedTitleRevision) return meta;
-        const updated = { ...meta, archivedAt: meta.archivedAt ?? null };
-        if ("name" in patch) {
-          updated.name = patch.name;
-          updated.titled = true;
-          updated.titleRevision = (meta.titleRevision ?? 0) + 1;
-        }
-        if ("archived" in patch) updated.archivedAt = patch.archived ? (meta.archivedAt ?? Date.now()) : null;
-        if (!("name" in patch) && updated.archivedAt === (meta.archivedAt ?? null)) return updated;
-        updated.metadataRevision = (meta.metadataRevision ?? 0) + 1;
-        await this.state.storage.put("meta", updated);
-        await this.state.storage.put("pendingMetadata", updated);
-        const alarm = await this.state.storage.getAlarm();
-        // Adopt pre-feature alarms as run alarms; metadata-only retries do not
-        // resume an idle session. New runs persist their own intent/epoch.
-        if (await this.state.storage.get("runPending") === undefined) {
-          await this.state.storage.put("runPending", alarm !== null || !!this.watching || !!this.activeAlarms);
-        }
-        if (alarm === null) await this.state.storage.setAlarm(Date.now() + 5000);
-        return updated;
-      });
-      for (const sock of this.streams.keys()) {
-        try { sock.send(JSON.stringify({ type: "meta", meta: updated })); } catch {}
-      }
-      await this.flushMetadata();
+    const updated = await this.state.storage.transaction(async () => {
+      const meta = await this.meta();
+      if (!meta) throw Object.assign(new Error("no such session"), { status: 404 });
+      const updated = { ...meta, archivedAt: meta.archivedAt ?? null };
+      if ("name" in patch) Object.assign(updated, { name: patch.name, titled: true });
+      if ("archived" in patch) updated.archivedAt = patch.archived ? (meta.archivedAt ?? Date.now()) : null;
+      if (!("name" in patch) && updated.archivedAt === (meta.archivedAt ?? null)) return updated;
+      updated.metadataRevision = (meta.metadataRevision ?? 0) + 1;
+      await this.state.storage.put("meta", updated);
       return updated;
     });
+    for (const sock of this.streams.keys()) {
+      try { sock.send(JSON.stringify({ type: "meta", meta: updated })); } catch {}
+    }
+    // Projected even when unchanged: a failed projection surfaces as an error,
+    // and retrying the same change repairs Directory. Revisions drop stale ones.
+    await this.env.DIRECTORY.getByName("main").projectMetadata(updated);
+    return updated;
   }
 
   // A manual rename also counts as the title, so autoTitle leaves it alone.
@@ -418,13 +365,8 @@ export class Session extends DurableObject {
   // Names the session from its first message, once, with the session's own
   // model at its lowest reasoning level. Failures keep the starting name.
   async autoTitle(models, root, text) {
-    const revision = await this.metadataQueue(() => this.state.storage.transaction(async () => {
-      const meta = await this.meta();
-      if (meta.titled) return null;
-      await this.state.storage.put("meta", { ...meta, titled: true });
-      return meta.titleRevision ?? 0;
-    }));
-    if (revision === null) return;
+    const meta = await this.meta();
+    await this.state.storage.put("meta", { ...meta, titled: true });
     const ref = (await root.agent(ctx)).model;
     const model = ref && models.getModel(ref.provider, ref.modelId);
     if (!model) return;
@@ -435,7 +377,10 @@ export class Session extends DurableObject {
     }, { reasoning: getSupportedThinkingLevels(model)[0] });
     const title = reply.content.filter((c) => c.type === "text").map((c) => c.text).join(" ")
       .replace(/["'`*]/g, "").replace(/[.!?:]+$/, "").replace(/\s+/g, " ").trim().slice(0, 60);
-    if (reply.stopReason !== "error" && title) await this.updateMetadata({ name: title }, revision);
+    // A manual rename made while the model was answering wins.
+    if (reply.stopReason !== "error" && title && (await this.meta()).name === meta.name) {
+      await this.updateMetadata({ name: title });
+    }
   }
 
   async track(id, events) {
@@ -444,7 +389,7 @@ export class Session extends DurableObject {
       if (ev.type === "run_start") status = "running";
       else if (ev.type === "run_end") status = "idle";
     }
-    if (status === "running") await this.scheduleRun();
+    if (status === "running") await this.state.storage.setAlarm(Date.now());
     await this.setStatus(id, status);
   }
 

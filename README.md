@@ -85,9 +85,9 @@ its header shows **Archived · Restore**.
 `PATCH /api/session/:id` accepts `{ "name": "New title" }` and/or
 `{ "archived": true }` (`false` restores). Metadata changes neither open the
 Harness nor wake its sandbox, and do not bump `lastActivity`. Session metadata
-is authoritative; a persisted, revisioned outbox projects changes to Directory
-and retries via alarms after failure/restart. Metadata-only alarms do not resume
-an idle agent. Existing records without `archivedAt` remain active.
+is authoritative and projected to Directory with a revision, so stale updates
+are dropped. If that projection fails the request errors; retrying the same
+change repairs Directory. Existing records without `archivedAt` remain active.
 
 Checks (Node 22+):
 
@@ -102,8 +102,8 @@ npm run check:sessions
 
 The backend check uses real in-memory SQLite with mocked runtime/agent
 boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
-it checks two-viewer updates, rename validation/failure/retry, archive/undo/
-restore, draft preservation, keyboard controls, and narrow-screen menus.
+it checks two-viewer updates, rename failure, archive/undo/restore, draft
+preservation, keyboard controls, and narrow-screen menus.
 Neither replaces a live celld/deployment smoke test.
 
 ## Preview
