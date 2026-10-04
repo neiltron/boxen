@@ -681,6 +681,14 @@ function restartCompleted(service: string, saved: Obj): void {
   saveConfig(saved);
 }
 
+// The dev wrangler config plus an ASSETS binding, so celld serves the built UI
+// and the API on one origin.
+export function wranglerWithAssets(wrangler: string): string {
+  const assets = { assets: { directory: './ui/dist', binding: 'ASSETS', run_worker_first: true,
+    not_found_handling: 'single-page-application' } };
+  return wrangler.replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ',');
+}
+
 function prepareSource(source: string, revision: string, account: Account): string {
   pids.runtimeDirectories();
   const release = path.join(paths.ROOT, 'releases', revision);
@@ -691,10 +699,7 @@ function prepareSource(source: string, revision: string, account: Account): stri
       fs.mkdirSync(path.dirname(target), { recursive: true });
       if (path.resolve(file) !== path.resolve(target)) fs.copyFileSync(file, target);
     }
-    const assets = { assets: { directory: './ui/dist', binding: 'ASSETS', run_worker_first: true,
-      not_found_handling: 'single-page-application' } };
-    const wrangler = fs.readFileSync(path.join(release, 'wrangler.jsonc'), 'utf8')
-      .replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ',');
+    const wrangler = wranglerWithAssets(fs.readFileSync(path.join(release, 'wrangler.jsonc'), 'utf8'));
     atomicWrite(path.join(release, 'wrangler.install.jsonc'), wrangler, 0o644);
     atomicWrite(path.join(release, '.dockerignore'), 'node_modules\nui\n.git\ndocs\n.env*\n', 0o644);
     pids.run(['chown', '-R', `${account.uid}:${account.gid}`, release]);

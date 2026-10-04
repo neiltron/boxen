@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { BUCKET, RUSTFS_IMAGE, pids } from './pids.ts';
+import { BUCKET, RUSTFS_IMAGE, pids, wranglerWithAssets } from './pids.ts';
 
 const hex = () => randomUUID().replaceAll('-', '');
 
@@ -56,10 +56,8 @@ async function smoke(binary: string): Promise<void> {
     }
     fs.cpSync(path.join(source, 'ui/dist'), path.join(project, 'ui/dist'), { recursive: true });
     fs.symlinkSync(path.join(source, 'node_modules'), path.join(project, 'node_modules'));
-    const assets = { assets: { directory: './ui/dist', binding: 'ASSETS', run_worker_first: true,
-      not_found_handling: 'single-page-application' } };
     const wrangler = path.join(project, 'wrangler.jsonc');
-    fs.writeFileSync(wrangler, fs.readFileSync(wrangler, 'utf8').replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ','));
+    fs.writeFileSync(wrangler, wranglerWithAssets(fs.readFileSync(wrangler, 'utf8')));
     fs.writeFileSync(path.join(project, '.dockerignore'), 'node_modules\nui\n.git\n');
     const keys = { access_key: hex(), secret_key: hex() + hex() };
     const envFile = path.join(project, 'storage.env');
