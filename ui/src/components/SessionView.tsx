@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, Split, Stage, View, ViewType, Workspace, type WorkspaceHandle } from "@danfessler/trellis-react";
 import "@danfessler/trellis/style.css";
 import { ChatView } from "@/components/ChatView";
@@ -7,6 +7,9 @@ import { SessionContext, useSessionContext, type PanelView } from "@/components/
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSession } from "@/hooks/useSession";
 import type { ChatModel } from "@/lib/events";
+import { bindPanelShortcuts, restorePanels, togglePanels, WORKSPACE_LAYOUT_VERSION } from "@/lib/workspace";
+
+const PANEL_VIEW_IDS = new Set<string>(PANEL_VIEWS.map((v) => v.id));
 
 // Artifact saves in the transcript, oldest first.
 function artifactSaves(model: ChatModel): string[] {
@@ -38,35 +41,33 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const ws = useRef<WorkspaceHandle>(null);
   const [artifact, setArtifact] = useState<string | null>(null);
 
-  const restore = (viewId: string) => {
-    const hidden = ws.current?.getSnapshot().hidden.find((h) => h.views.some((v) => v.id === viewId));
-    if (hidden) ws.current?.restore(hidden.panelId);
-  };
   const open = (view: PanelView, artifactId?: string) => {
-    restore(view);
+    // Restore docking dependencies too, including when an artifact arrives live.
+    if (ws.current) restorePanels(ws.current, PANEL_VIEW_IDS);
     ws.current?.focus(view);
     if (artifactId) setArtifact(artifactId);
   };
-  // Hides every panel holding a panel view, or brings them all back.
   const togglePanel = () => {
-    const snap = ws.current?.getSnapshot();
-    if (!snap) return;
-    const ids = new Set<string>(PANEL_VIEWS.map((v) => v.id));
-    const hidden = snap.hidden.filter((h) => h.views.some((v) => ids.has(v.id)));
-    if (hidden.length) hidden.forEach((h) => ws.current?.restore(h.panelId));
-    else snap.views.filter((v) => ids.has(v.id)).forEach((v) => ws.current?.hide(v.id));
+    if (ws.current) togglePanels(ws.current, PANEL_VIEW_IDS);
   };
 
   // A phone's first visit starts with the chat alone. Trellis has no hidden
   // state in its initial layout, so check for a saved one before Trellis
   // writes it, and hide the panel once the handle arrives.
-  const [fresh] = useState(() => {
-    try { return mobile && localStorage.getItem(storageKey) === null; } catch { return false; }
-  });
-  const attach = (handle: WorkspaceHandle | null) => {
+  const fresh = useMemo(() => {
+    if (!mobile) return false;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return !saved || JSON.parse(saved).version !== WORKSPACE_LAYOUT_VERSION;
+    } catch { return true; }
+  }, [mobile, storageKey]);
+  const attach = useCallback((handle: WorkspaceHandle | null) => {
     ws.current = handle;
-    if (handle && fresh) handle.hide("panel");
-  };
+    if (!handle) return;
+    if (fresh) handle.hide("panel");
+    const unbind = bindPanelShortcuts(handle);
+    return () => { unbind(); ws.current = null; };
+  }, [fresh]);
 
   // A save that arrives live (not in the joining snapshot) opens in the panel.
   const saves = artifactSaves(session.model);
@@ -80,7 +81,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   return (
     <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, artifactRefresh: saves.length, open }}>
       <Workspace
-        key={storageKey} ref={attach} storageKey={storageKey} version={1} label="Session"
+        key={storageKey} ref={attach} storageKey={storageKey} version={WORKSPACE_LAYOUT_VERSION} label="Session"
         navigation={false} floating={false} className="pids-workspace h-full"
       >
         <ViewType id="chat" tabbar="never" closable={false} singleton scaling={false}>
