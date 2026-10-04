@@ -291,6 +291,17 @@ through the client. After editing it, run `pnpm --filter
 checks each response against the spec, and fails when the worker and the spec
 disagree on a route or a method.
 
+**API reference.** `pnpm reference` builds the REST reference from
+`openapi.json` into `docs/api-reference.html`; open that file in a browser.
+It is built on demand and git-ignored, not committed, so no generated HTML
+lands in diffs and there is nothing to keep current: rebuild it after a spec
+change. Redocly CLI (`@redocly/cli`, one bundled package) renders it. The
+page holds the whole reference prerendered, and loads Redoc's script from
+cdn.redocly.com for search and the collapsible parts; offline it still reads.
+The Session WebSocket's messages are not in the spec:
+[docs/session-protocol.md](docs/session-protocol.md), beside the reference,
+describes them, and the reference links to it.
+
 The backend check uses real in-memory SQLite with mocked runtime/agent
 boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
 it checks two-viewer updates, rename failure, archive/undo/restore, draft

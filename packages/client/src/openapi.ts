@@ -97,7 +97,7 @@ export interface paths {
         };
         /**
          * The Session WebSocket
-         * @description The agent's events and the commands that drive it. Its messages are not described here.
+         * @description The agent's events and the commands that drive it. Its messages are described in [docs/session-protocol.md](session-protocol.md).
          */
         get: operations["sessionSocket"];
         put?: never;
