@@ -84,6 +84,23 @@ try {
   await page.locator("nav").getByRole("button", { name: /^Renamed session/ }).click();
   const draft = page.getByPlaceholder("Steer the running agent…");
   await draft.fill("Keep my unsent draft");
+
+  // Exercise the actual SessionView ref wiring, not just the Trellis fixture:
+  // a selected row still owns focus until a global shortcut enters the chat.
+  await page.locator("nav").getByRole("button", { name: /^Renamed session/ }).focus();
+  await page.keyboard.press("Control+Alt+k");
+  await page.waitForFunction(() => document.activeElement?.matches("[data-chat-composer]"));
+  await page.keyboard.press("Control+Alt+k");
+  await page.waitForFunction(() => document.activeElement?.matches('[role="tab"]'));
+  await page.keyboard.press("Control+Alt+k");
+  await page.waitForFunction(() => document.activeElement?.matches("[data-chat-composer]"));
+  const panelToggle = page.getByRole("button", { name: "Show or hide the panel", exact: true });
+  await panelToggle.click();
+  await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor({ state: "hidden" });
+  await panelToggle.click();
+  await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor();
+  assert.equal(await page.getByRole("tablist").count(), 1, "sidebar restores as one group");
+
   for (const ws of sockets) {
     if (!ws.url().endsWith("/directory/ws")) ws.send(JSON.stringify({ type: "meta", meta: { ...sessions[0], name: "Stale title", metadataRevision: 0 } }));
   }
@@ -121,6 +138,12 @@ try {
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archive", exact: true }).waitFor();
   await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor({ state: "hidden" });
+  await panelToggle.click();
+  await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor();
+  await page.getByPlaceholder("Steer the running agent…").fill("Mobile draft rerender");
+  await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor();
+  assert.equal(await page.getByRole("tablist").count(), 1, "fresh mobile panel stays open across rerenders");
   assert.deepEqual(errors, [], "no uncaught browser errors");
   console.log("session-actions.check ok (two browsers, rename/archive/undo/restore, failures, draft, keyboard/mobile)");
 } finally {

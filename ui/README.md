@@ -29,6 +29,7 @@ npx playwright install --with-deps chromium  # first run on a supported host
 npm run test:workspace
 node events.check.ts
 npm run build
+npm run check:sessions  # built-app smoke test with HTTP/WebSocket fixtures
 npm run lint
 ```
 
@@ -36,6 +37,9 @@ The Playwright suite uses a real Trellis workspace in an isolated Vite fixture;
 no cell backend is required. It covers entering from the session list, cycling
 and composer focus, macOS key codes, nested hide/restore, horizontal/vertical
 layouts, partial hiding, dialogs/IME, and listener teardown/rebinding.
+The built-app session smoke test also covers entering from the real session
+list, panel hide/show, and keeping a newly opened mobile panel visible across
+composer rerenders.
 
 ## React + TypeScript + Vite
 

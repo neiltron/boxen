@@ -138,7 +138,9 @@ test("typing, IME and dialogs keep their keys; handled shortcuts don't reach ter
   await expect(page.getByRole("textbox", { name: "Rename session" })).toBeFocused();
   await page.evaluate(() => document.querySelector("dialog")!.close());
   await page.locator(composer).focus();
-  await page.locator(composer).evaluate((el) => el.addEventListener("keydown", () => { el.setAttribute("data-leaked", "true"); }));
+  await page.locator(composer).evaluate((el) => el.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).code === "KeyJ") el.setAttribute("data-leaked", "true");
+  }));
   await page.keyboard.press("Control+Alt+j");
   await expect(page.locator(composer)).not.toHaveAttribute("data-leaked");
 });
