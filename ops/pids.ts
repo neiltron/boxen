@@ -16,7 +16,6 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
-import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 
@@ -80,7 +79,7 @@ export type Keys = { access_key: string; secret_key: string };
 export type RunResult = { returncode: number; stdout: string; stderr: string };
 export type RunOptions = { capture?: boolean; check?: boolean; env?: NodeJS.ProcessEnv; cwd?: string; timeout?: number };
 export type Args = {
-  command: string; json: boolean; help: boolean; domain?: string; source?: string; config?: string; access?: string;
+  command: string; help: boolean; domain?: string; source?: string; config?: string; access?: string;
   port?: number; storagePort?: number; dryRun: boolean; yes: boolean; noInput: boolean; lines: number;
 };
 
@@ -583,7 +582,7 @@ function serviceAccount(): Account {
   return account;
 }
 
-function credentials(_config: Config): Keys {
+function credentials(): Keys {
   const file = path.join(paths.CONFIG, 'credentials.json');
   let stored = pids.readJson(file, null) as Obj | null;
   if (stored === null) {
@@ -924,7 +923,7 @@ function realpathOrResolve(file: string): string {
   }
 }
 
-const MANAGER_FILE = fileURLToPath(import.meta.url);
+const MANAGER_FILE = import.meta.filename;
 
 /** Copy this manager and a launcher into place, so a partial install can be inspected/retried. */
 function installManager(): void {
@@ -988,7 +987,7 @@ async function setup(args: Args): Promise<Obj> {
     }
     const account = pids.serviceAccount();
     pids.toolchain();
-    const keys = pids.credentials(config);
+    const keys = pids.credentials();
     pids.installManager();
     const saved: Obj = { ...config, source, revision, state: 'installing', pending_restarts: previous.pending_restarts ?? [] };
     saveConfig(saved);
@@ -1147,7 +1146,7 @@ function logs(lines: number): Obj {
 
 // ---- Command line ----------------------------------------------------------
 
-type OptionSpec = { type: 'string' | 'boolean'; help: string; choices?: string[]; integer?: boolean; metavar?: string };
+type OptionSpec = { type: 'string' | 'boolean'; help: string; choices?: string[]; metavar?: string };
 type CommandSpec = { help: string; options: Record<string, OptionSpec> };
 
 const APPROVAL: Record<string, OptionSpec> = {
@@ -1161,8 +1160,8 @@ const COMMANDS: Record<string, CommandSpec> = {
     source: { type: 'string', metavar: 'DIR', help: 'Path to pi-durable-sessions (defaults to this checkout or installed release)' },
     config: { type: 'string', metavar: 'FILE', help: 'JSON file: access, port, storage_port' },
     access: { type: 'string', choices: ['local', 'tailscale'], help: 'local (127.0.0.1 only) or tailscale (private tailnet HTTPS)' },
-    port: { type: 'string', integer: true, metavar: 'PORT', help: 'Application port on 127.0.0.1 (default 8093)' },
-    'storage-port': { type: 'string', integer: true, metavar: 'PORT', help: 'Object storage port on 127.0.0.1 (default 19000)' },
+    port: { type: 'string', metavar: 'PORT', help: 'Application port on 127.0.0.1 (default 8093)' },
+    'storage-port': { type: 'string', metavar: 'PORT', help: 'Object storage port on 127.0.0.1 (default 19000)' },
     'dry-run': { type: 'boolean', help: 'Plan only: no packages, files, services or downloads changed' },
     ...APPROVAL } },
   uninstall: { help: 'Remove services and own Serve route; preserve ALL data', options: { ...APPROVAL } },
@@ -1170,7 +1169,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   start: { help: 'Start installed services', options: {} },
   stop: { help: 'Stop services (sandbox workspaces may be lost)', options: {} },
   logs: { help: 'Read bounded journal logs', options: {
-    lines: { type: 'string', integer: true, metavar: 'N', help: 'Number of lines, 1..1000 (default 100)' } } },
+    lines: { type: 'string', metavar: 'N', help: 'Number of lines, 1..1000 (default 100)' } } },
 };
 const COMMON: Record<string, OptionSpec> = {
   json: { type: 'boolean', help: 'Stable JSON stdout (default when stdout is not a TTY)' },
@@ -1227,7 +1226,7 @@ function parseCli(argv: string[]): Args {
   }
   const text = (name: string) => values[name] as string | undefined;
   return {
-    command, json: values.json === true, help: values.help === true, domain: text('domain'), source: text('source'),
+    command, help: values.help === true, domain: text('domain'), source: text('source'),
     config: text('config'), access: text('access'), port: integer('port'), storagePort: integer('storage-port'),
     dryRun: values['dry-run'] === true, yes: values.yes === true, noInput: values['no-input'] === true,
     lines: integer('lines') ?? 100,
@@ -1235,7 +1234,7 @@ function parseCli(argv: string[]): Args {
 }
 
 function blankArgs(command: string, help = false): Args {
-  return { command, json: false, help, dryRun: false, yes: false, noInput: false, lines: 100 };
+  return { command, help, dryRun: false, yes: false, noInput: false, lines: 100 };
 }
 
 export async function main(argv: string[] = process.argv.slice(2),
