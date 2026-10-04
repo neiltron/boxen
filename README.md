@@ -50,7 +50,9 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   (`src/session-client.ts`): the reconnecting socket (`src/socket.ts`, which
   the Directory socket uses too), the reducer that folds pi-durable agent
   events (`src/events.ts`), and typed commands. It needs no browser: the
-  caller passes the transport (`src/browser.ts` is the browser's).
+  caller passes the transport (`src/websocket.ts` is the standard WebSocket,
+  the same in the browser and in Node). `run()` is one turn for a headless
+  caller (see [Run a turn from Node](#run-a-turn-from-node)).
   `packages/client/session.check.ts` checks it against a scripted socket, and
   `apps/worker/protocol.check.mjs` holds the Session cell's commands to the
   protocol's.
@@ -112,6 +114,45 @@ Write `pnpm run deploy`, not `pnpm deploy`: that is a built-in pnpm command.
 
 After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
+
+## Run a turn from Node
+
+The shared client drives a Session with no browser. Against a running system
+(here the local one; a tailnet URL works the same):
+
+```sh
+cd packages/client
+node examples/run-turn.ts http://127.0.0.1:8093 "List the files in /workspace"
+node examples/run-turn.ts http://127.0.0.1:8093 "And now?" <session-id>  # an existing Session
+```
+
+It creates a Session unless given one, streams the reply to stdout, and
+exits 0 when the turn is done, 1 otherwise. Ctrl-C aborts the turn. A prompt
+spends model credits, and the Session stays behind.
+
+In code: `sessionClient(url, { transport: webSocketTransport })`, `connect()`,
+then `await client.run(text, { signal })`. It waits for the join, sends the
+prompt, and resolves when the cell settles that prompt (its pi-durable
+submission record, matched by requestId) with one of:
+
+| `status` | when | the turn in the cell |
+|---|---|---|
+| `done` (`text`: the last assistant message's text) | the prompt was answered | finished |
+| `error` (`error`: the reason) | the cell refused the prompt (an `error` frame), or settled it unanswered (no model, model error, fault) | never started, or ended |
+| `aborted` | anyone's `abort`, including this call's `signal` | stopped |
+| `disconnected` | the socket dropped after the prompt went out | **may still be running** |
+
+Progress is the client's state: `subscribe()` and read the reply growing in
+`state().model.items`. The `signal` sends nothing if the prompt hasn't gone
+out yet; otherwise it sends `abort`, and `run()` resolves when the cell
+settles the turn, normally `aborted`. A drop before the prompt goes out only
+delays it (the socket keeps retrying; pass `AbortSignal.timeout(ms)` to bound
+the wait). A drop after resolves `disconnected` at once instead of following
+the turn through the reconnect: the cell runs it on durably, but a rejoin's
+snapshot carries no submission records, so `run()` couldn't tell how a turn
+that ended meanwhile was settled. The caller decides: look at the Session later, or
+abort it. `run()` never resends. `packages/client/session.check.ts` covers
+every outcome with the scripted socket.
 
 ## Rename and archive
 

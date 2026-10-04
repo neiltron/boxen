@@ -339,4 +339,117 @@ const artifactResult = (callId: string, artifactId: string) =>
   assert.deepEqual(kinds(other.client), ["system"]);
 }
 
+// run(): one turn for a headless caller, settled by the cell's submission
+// record for the prompt's requestId.
+{
+  const pending = Symbol("pending");
+  const settled = <T>(p: Promise<T>) => Promise.race([p, new Promise<typeof pending>((r) => setTimeout(() => r(pending), 0))]);
+  const submission = (requestId: unknown, status: string, rest: object = {}) =>
+    ({ type: "events", events: [{ type: "submission", record: { id: 1, conversationId: "c", type: "input", requestId, status, ...rest } }] });
+  const promptOf = (s: Scripted) => s.sent.find((c) => c.type === "prompt");
+
+  // Done: waits for ready, streams through the state, resolves with the reply.
+  {
+    const { client, net } = setup();
+    const s = net.last();
+    const turn = client.run("hi");
+    s.open();
+    assert.equal(promptOf(s), undefined, "nothing goes out before ready");
+    join(s, snapshot([]));
+    const { requestId } = promptOf(s)!;
+    assert.equal(typeof requestId, "string");
+    const seen: string[] = [];
+    client.subscribe(() => {
+      const last = client.state().model.items.at(-1);
+      if (last?.kind === "assistant" && last.blocks[0]?.kind === "text") seen.push(last.blocks[0].text);
+    });
+    s.frame(submission(requestId, "placed"));
+    s.frame({ type: "events", events: [
+      { type: "run_start", inputs: [1] },
+      { type: "message_start", message: { role: "user", content: "hi" } },
+      { type: "message_start", message: { role: "assistant", content: [] } },
+      { type: "message_update", changes: [{ type: "text_start", contentIndex: 0, block: { type: "text", text: "" } }, { type: "text_delta", contentIndex: 0, delta: "Hel" }] },
+    ] });
+    s.frame({ type: "events", events: [{ type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: "lo" }] }] });
+    s.frame(submission("someone-else", "done"));
+    s.frame({ type: "error", error: "a title failed" }); // after admission: not this turn's outcome
+    assert.equal(await settled(turn), pending);
+    s.frame({ type: "events", events: [
+      { type: "message_end", entry: { model: [{ role: "assistant", content: [{ type: "text", text: "Hello" }], stopReason: "stop" }] } },
+      { type: "run_end", inputs: [1] },
+      { type: "submission", record: { requestId, status: "done", entry: 2, answer: 3 } },
+    ] });
+    assert.deepEqual(await turn, { status: "done", text: "Hello" });
+    assert.deepEqual(seen.slice(0, 2), ["Hel", "Hello"], "the reply streams through the state");
+  }
+
+  // Error: the cell refuses the prompt, or settles it unanswered.
+  {
+    const { client, net } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const refused = client.run("hi");
+    s.frame({ type: "error", error: "Session is poisoned" });
+    assert.deepEqual(await refused, { status: "error", error: "Session is poisoned" });
+
+    const failed = client.run("hi");
+    s.frame(submission(promptOf(s)!.requestId, "queued"));
+    s.frame(submission(s.sent.at(-1)!.requestId, "unanswered", { reason: "model_error", detail: "429 rate limited" }));
+    assert.deepEqual(await failed, { status: "error", error: "429 rate limited" });
+
+    const noModel = client.run("hi");
+    s.frame(submission(s.sent.at(-1)!.requestId, "unanswered", { reason: "no_model" }));
+    assert.deepEqual(await noModel, { status: "error", error: "no_model" });
+  }
+
+  // Aborted: the signal sends abort and the turn ends as the cell settles it;
+  // anyone's abort ends it the same way; a signal before sending sends nothing.
+  {
+    const { client, net } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const stop = new AbortController();
+    const turn = client.run("hi", { signal: stop.signal });
+    const { requestId } = s.sent.at(-1)!;
+    stop.abort();
+    assert.deepEqual(s.sent.at(-1), { type: "abort" });
+    assert.equal(await settled(turn), pending, "resolves when the cell settles, not at the signal");
+    s.frame(submission(requestId, "unanswered", { reason: "aborted" }));
+    assert.deepEqual(await turn, { status: "aborted" });
+
+    const other = client.run("hi");
+    s.frame(submission(s.sent.at(-1)!.requestId, "unanswered", { reason: "aborted" }));
+    assert.deepEqual(await other, { status: "aborted" });
+
+    const sent = s.sent.length;
+    assert.deepEqual(await client.run("hi", { signal: AbortSignal.abort() }), { status: "aborted" });
+    const early = new AbortController();
+    const waiting = setup();
+    const unsent = waiting.client.run("hi", { signal: early.signal });
+    early.abort();
+    assert.deepEqual(await unsent, { status: "aborted" });
+    join(waiting.net.last(), snapshot([]));
+    assert.equal(promptOf(waiting.net.last()), undefined);
+    assert.equal(s.sent.length, sent);
+  }
+
+  // Disconnected: a drop after the prompt went out ends the turn at once; the
+  // rejoin resends nothing. A drop before it went out only delays it.
+  {
+    const { client, net, time } = setup();
+    const turn = client.run("hi");
+    net.last().drop();
+    time.advance(RETRY_MS);
+    const s = net.last();
+    join(s, snapshot([]));
+    assert.equal(promptOf(s)?.message, "hi");
+    s.frame(submission(promptOf(s)!.requestId, "placed"));
+    s.drop();
+    assert.deepEqual(await turn, { status: "disconnected" });
+    time.advance(RETRY_MS);
+    join(net.last(), snapshot([], { run: { inputs: [1] } }));
+    assert.equal(promptOf(net.last()), undefined, "never resent");
+  }
+}
+
 console.log("session.check ok");

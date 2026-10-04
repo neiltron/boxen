@@ -5,9 +5,9 @@
 // socket, for the proxies on the way (Vite's dev proxy, Caddy, Tailscale
 // Serve) that may cut quiet connections.
 //
-// The transport is the seam, and the caller always passes one: the browser's
-// WebSocket (browserSocket in browser.ts) or the scripted socket in
-// session.check.ts. Nothing here assumes a browser. The clock is injected
+// The transport is the seam, and the caller always passes one: the standard
+// WebSocket of a browser or Node (webSocketTransport in websocket.ts) or the
+// scripted socket in session.check.ts. Nothing here assumes a browser. The clock is injected
 // too, so checks drive retries and pings without waiting.
 
 export interface Wire {

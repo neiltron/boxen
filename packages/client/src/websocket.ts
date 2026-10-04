@@ -1,7 +1,9 @@
-// The browser's WebSocket as a Transport (socket.ts).
+// The standard WebSocket as a Transport (socket.ts), in the browser and in
+// Node alike: Node 22+ has the same global WebSocket, so this one adapter is
+// the Node transport too. tsconfig.core.json holds it to Node's library.
 import type { Transport } from "./socket.ts";
 
-export const browserSocket: Transport = (url, on) => {
+export const webSocketTransport: Transport = (url, on) => {
   const ws = new WebSocket(url);
   ws.onopen = () => on.open();
   ws.onmessage = (e) => on.message(e.data);

@@ -10,7 +10,7 @@ import type { components, paths } from "./openapi.ts";
 export * from "./protocol.ts";
 export * from "./session-client.ts";
 export { reconnecting, type Clock, type SocketDeps, type Transport, type Wire } from "./socket.ts";
-export { browserSocket } from "./browser.ts";
+export { webSocketTransport } from "./websocket.ts";
 
 type Schemas = components["schemas"];
 export type Session = Schemas["Session"];

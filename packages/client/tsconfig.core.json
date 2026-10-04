@@ -1,8 +1,8 @@
 {
   // The session client's core against Node's globals and no DOM: what a
   // headless caller gets. (tsconfig.json adds DOM for the REST client's
-  // Request and Response types, and browser.ts.)
+  // Request and Response types.)
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2023"], "types": ["node"] },
-  "include": ["src/session-client.ts", "session.check.ts"]
+  "include": ["src/session-client.ts", "src/websocket.ts", "session.check.ts", "examples"]
 }
