@@ -33,14 +33,14 @@ curl -fsSL https://raw.githubusercontent.com/neiltron/celld-test/<COMMIT>/pi-dur
 PIDS_REF=<COMMIT> bash /tmp/pids-install.sh --access tailscale
 ```
 
-A pipe-to-bash invocation works too; downloading first lets you inspect the script. `PIDS_REF` selects the application source, not just the installer. It defaults to `pi-durable-sessions`; pin a commit for reproducibility. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
+A pipe-to-bash invocation works too; downloading first lets you inspect the script. `PIDS_REF` selects the application source, not just the installer. It defaults to `pi-durable-sessions`; pin a commit for reproducibility. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. The installer itself runs on that same pinned Node, which `install.sh` downloads and verifies first, so the host needs no Python or other runtime. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
 
 ## Agent/noninteractive installation
 
 ```sh
-# Read-only. Works on a development Mac too; reports supported_host: false rather than installing.
-python3 ops/pids.py inspect --json
-python3 ops/pids.py setup --access tailscale --dry-run --no-input --json
+# Read-only, with any Node 24+. Works on a development Mac too; reports supported_host: false rather than installing.
+node ops/pids.ts inspect --json
+node ops/pids.ts setup --access tailscale --dry-run --no-input --json
 
 # Approved mutations. With passwordless/preauthorized sudo; never prompts for missing inputs.
 ./install.sh --access tailscale --yes --no-input --json
@@ -79,7 +79,7 @@ Rollback: rerun setup with an earlier source checkout. This redeploys applicatio
 
 | Component | Location / behavior |
 |---|---|
-| Manager | `/usr/local/bin/pids`, `/opt/pi-durable-sessions/manager/` |
+| Manager | `/usr/local/bin/pids`, `/opt/pi-durable-sessions/manager/pids.ts`, run by the private Node below |
 | Native runtimes | Private celld 0.6.1 and Node 24.5.0 under `/opt/pi-durable-sessions/`; no global Node replacement |
 | Application sources | `/opt/pi-durable-sessions/releases/<content-revision>/` |
 | Settings | `/etc/pi-durable-sessions/config.json` |
@@ -134,8 +134,9 @@ Workspace snapshots and session deletion cleanup are **not implemented here**. T
 Offline:
 
 ```sh
-python3 -m unittest discover -s ops -v
+node --test ops/pids.test.ts
 shellcheck install.sh
+npm i --no-save typescript @types/node@24 && npx tsc -p ops   # type-check the manager
 node --experimental-vm-modules assets.check.mjs
 node --experimental-vm-modules terminal.check.mjs
 node preview.check.js
@@ -145,7 +146,7 @@ node preview.check.js
 Live isolated smoke (Docker + celld + esbuild, dependencies installed, UI built):
 
 ```sh
-python3 ops/smoke.py --celld /path/to/celld-0.6.1
+node ops/smoke.ts --celld /path/to/celld-0.6.1
 ```
 
 This creates a disposable RustFS container/volume, deploys the actual worker, sandbox image and UI assets, starts a separate node, checks storage/API/static assets, and cleans up its own node/container/volume. It does not call a model or exercise a sandbox terminal, Tailscale or systemd.
