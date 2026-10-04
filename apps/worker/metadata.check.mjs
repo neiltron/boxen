@@ -126,6 +126,21 @@ await cell.webSocketMessage({ send() {} }, JSON.stringify({ type: "rename", name
 assert.equal((await cell.meta()).name, "WebSocket name");
 assert.equal((await directory.list()).find((s) => s.id === "abc-123").name, "WebSocket name");
 
+// Malformed frames are ignored: no handler runs, nothing is sent, no throw.
+{
+  const sent = [], open = cell.open;
+  let opened = 0;
+  cell.open = () => { opened++; return open.call(cell); };
+  for (const raw of ['{"type":["abort"]}', '{"type":["rename"],"name":"Changed"}', "null", '{"type":"nope"}',
+    '{"type":"constructor"}', '{"type":"toString"}', '{}', "[]", "not json"]) {
+    await cell.webSocketMessage({ send: (m) => sent.push(m) }, raw);
+  }
+  cell.open = open;
+  assert.deepEqual(sent, []);
+  assert.equal(opened, 0);
+  assert.equal((await cell.meta()).name, "WebSocket name");
+}
+
 // HTTP contract: validation, not-found, canonical response, and CORS.
 const httpEnv = { SESSION: { getByName: (id) => id === "abc-123" ? cell : new Session({ storage: storage() }, env) } };
 const request = (body, id = "abc-123") => new Request(`https://example.test/api/session/${id}`, {

@@ -281,7 +281,8 @@ export class Session extends DurableObject {
   async webSocketMessage(ws, raw) {
     let cmd;
     try { cmd = JSON.parse(raw); } catch { return; }
-    const handle = Object.hasOwn(Session.commands, cmd?.type) ? Session.commands[cmd.type] : null;
+    // A string type only: the lookup would coerce ["abort"] to "abort".
+    const handle = typeof cmd?.type === "string" && Object.hasOwn(Session.commands, cmd.type) ? Session.commands[cmd.type] : null;
     if (!handle) return;
     try {
       await handle.call(this, ws, cmd);
