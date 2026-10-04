@@ -161,6 +161,12 @@ list = await client.listSessions();
 assert.equal(list.find((s) => s.id === named.id).name, "Renamed");
 await assert.rejects(client.updateSession(named.id, { name: " " }), /1–120 characters/);
 await assert.rejects(client.updateSession("0000", { archived: false }), /no such session/);
+// The name's length is the worker's rule, in the description, not the schema:
+// 61 emoji are 61 characters but 122 UTF-16 units; a padded name is trimmed first.
+const emoji = { name: "🙂".repeat(61) };
+conforms(spec.components.schemas.SessionPatch, emoji, "61 emoji");
+await assert.rejects(client.updateSession(named.id, emoji), /1–120 characters/);
+assert.equal((await client.updateSession(named.id, { name: `${" ".repeat(120)}a` })).name, "a");
 assert.deepEqual(await client.getDiff(repo.id), await workspace.diff());
 assert.deepEqual(await client.listPorts(repo.id), { ports: [5173, 8080] });
 for (const route of ["diff", "ports", "terminal"]) {

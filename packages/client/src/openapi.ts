@@ -396,8 +396,9 @@ export interface components {
             archivedAt?: number | null;
             metadataRevision?: number;
         };
-        /** @description Only these fields are writable. A name is trimmed first. */
+        /** @description Only these fields are writable; anything else is a 400. */
         SessionPatch: {
+            /** @description Trimmed, then 1–120 UTF-16 code units (a JavaScript string's length), or the request is a 400. JSON Schema can't count that way, so the schema doesn't constrain the length. */
             name?: string;
             /** @description false restores */
             archived?: boolean;
@@ -924,7 +925,7 @@ export interface operations {
     getArtifact: {
         parameters: {
             query?: {
-                /** @description An earlier version; the latest when absent */
+                /** @description An earlier version; the latest when absent, 0 or not a number. A version that doesn't exist is a 404. */
                 v?: number;
             };
             header?: never;

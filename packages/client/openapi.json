@@ -261,7 +261,7 @@
         "summary": "An artifact with its content",
         "parameters": [
           { "$ref": "#/components/parameters/ArtifactId" },
-          { "name": "v", "in": "query", "description": "An earlier version; the latest when absent", "schema": { "type": "integer", "minimum": 1 } }
+          { "name": "v", "in": "query", "description": "An earlier version; the latest when absent, 0 or not a number. A version that doesn't exist is a 404.", "schema": { "type": "integer", "minimum": 1 } }
         ],
         "responses": {
           "200": {
@@ -376,11 +376,11 @@
       },
       "SessionPatch": {
         "type": "object",
-        "description": "Only these fields are writable. A name is trimmed first.",
+        "description": "Only these fields are writable; anything else is a 400.",
         "minProperties": 1,
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "name": { "type": "string", "description": "Trimmed, then 1–120 UTF-16 code units (a JavaScript string's length), or the request is a 400. JSON Schema can't count that way, so the schema doesn't constrain the length." },
           "archived": { "type": "boolean", "description": "false restores" }
         }
       },
