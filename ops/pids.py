@@ -7,6 +7,7 @@ import fcntl
 import gzip
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -37,6 +38,15 @@ CELLD_SHA = '79a8253cff5d4e8a4a9f7a2611e393390f7fe9025f00e88467875b007c44866b'
 NODE_URL = 'https://nodejs.org/dist/v24.5.0/node-v24.5.0-linux-x64.tar.xz'
 NODE_SHA = '32edb1f2aeaf8ea0d484af33bf3b5d8330d7d33c9cd8c70f811b8a643822e613'
 RUSTFS_IMAGE = 'rustfs/rustfs@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff'
+PROBE_IMAGE = 'busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662'
+SANDBOX_NETWORK = 'celld'  # Created by celld; its nftables policy applies to this bridge.
+DOCKER_DAEMON_JSON = Path('/etc/docker/daemon.json')
+RESOLV_CONF = Path('/etc/resolv.conf')
+RESOLVED_UPLINK = Path('/run/systemd/resolve/resolv.conf')
+# celld rejects sandbox traffic to these ranges, so a resolver here is unreachable from every session.
+SANDBOX_BLOCKED = [ipaddress.ip_network(n) for n in (
+    '127.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16',
+    '::1/128', 'fc00::/7', 'fe80::/10')]
 SOURCE_FILES = ['package.json', 'package-lock.json', 'Dockerfile', 'wrangler.jsonc']
 SOURCE_DIRS = ['src', 'ui', 'ops']
 SKIP = {'node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store'}
@@ -196,7 +206,8 @@ def source_revision(source):
 def install_plan(config, host, revision):
     return {'host': host, 'config': config, 'source_revision': revision,
             'paths': {'application': str(ROOT), 'config': str(CONFIG), 'data': str(DATA)},
-            'steps': ['Install/reuse distro Docker and required tools',
+            'steps': ['Check that sandboxes will get a DNS resolver celld lets them reach',
+                      'Install/reuse distro Docker and required tools',
                       'Install checksum-pinned celld 0.6.1 and Node 24.5.0',
                       'Create dedicated pids service account and private random storage credentials',
                       'Build UI and worker from lockfiles as the service account',
@@ -253,6 +264,61 @@ def preflight_ports(config):
         if not port_available(config[key]) and not is_active(service):
             raise Failure(f'127.0.0.1:{config[key]} is already occupied by another service.', 2,
                           f'Choose --{key.replace("_", "-")} on the first installation, or resolve the conflict.')
+
+
+def resolv_nameservers(path):
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        return []
+    return [parts[1] for parts in (line.split() for line in lines) if len(parts) > 1 and parts[0] == 'nameserver']
+
+
+def container_resolvers():
+    """Resolvers Docker hands to containers: daemon.json dns, else the host's, and
+    for a loopback-only stub (systemd-resolved) the uplink servers behind it."""
+    configured = read_json(DOCKER_DAEMON_JSON, {}).get('dns')
+    if configured:
+        return [str(server) for server in configured], f'"dns" in {DOCKER_DAEMON_JSON}'
+    servers = resolv_nameservers(RESOLV_CONF)
+    if servers and all(getattr(parse_ip(server), 'is_loopback', False) for server in servers):
+        return resolv_nameservers(RESOLVED_UPLINK), f'the uplink resolvers in {RESOLVED_UPLINK}'
+    return servers, f'the resolvers in {RESOLV_CONF}'
+
+
+def parse_ip(address):
+    try:
+        return ipaddress.ip_address(address.split('%')[0])
+    except ValueError:
+        return None
+
+
+def sandbox_blocked(address):
+    ip = parse_ip(address)
+    return ip is None or any(ip in network for network in SANDBOX_BLOCKED)
+
+
+def preflight_sandbox_dns():
+    """Sessions clone repositories inside sandboxes; those need a resolver celld lets them reach."""
+    servers, source = container_resolvers()
+    if any(not sandbox_blocked(server) for server in servers):
+        return
+    raise Failure(f'Sandboxes would have no reachable DNS resolver: {source} lists {servers or "nothing"}, and celld '
+                  'blocks sandbox traffic to loopback, private and tailnet addresses. Sessions could not clone '
+                  'repositories or install packages. No changes made.', 2,
+                  f'Give Docker a public resolver: set "dns": ["1.1.1.1", "8.8.8.8"] in {DOCKER_DAEMON_JSON} '
+                  '(or remove a "dns" entry that points at this host when its upstream resolvers are already public), '
+                  'then run sudo systemctl restart docker and rerun setup.')
+
+
+def sandbox_dns_probe():
+    """Ground truth on the real sandbox network: None when celld has not created it yet."""
+    exists = run(['docker', 'network', 'inspect', SANDBOX_NETWORK], capture=True, check=False, timeout=30)
+    if exists.returncode:
+        return None
+    probe = run(['docker', 'run', '--rm', '--network', SANDBOX_NETWORK, '--label', 'io.pids.managed=probe',
+                 PROBE_IMAGE, 'nslookup', '-timeout=5', 'github.com'], capture=True, check=False, timeout=180)
+    return probe.returncode == 0
 
 
 def install_packages(host):
@@ -641,6 +707,7 @@ def setup(args):
         config = settings(args, previous)
         preflight_ports(config)
         preflight_exposure(config)
+        preflight_sandbox_dns()
         for service in (SERVICE, STORAGE):
             path = UNITS / f'{service}.service'
             if path.exists() and not (CONFIG / 'config.json').exists():
@@ -690,6 +757,10 @@ def setup(args):
         restart_completed(SERVICE, saved)
         saved.update(state='ready-local', url=url)
         atomic_write(CONFIG / 'config.json', json.dumps(saved, indent=2), 0o644)
+        if sandbox_dns_probe() is False:
+            raise Failure('Application installed locally, but a sandbox on the celld network cannot resolve github.com.', 3,
+                          'Sessions cannot clone repositories until Docker gives containers a public resolver. '
+                          f'Check "dns" in {DOCKER_DAEMON_JSON}, run sudo systemctl restart docker, then sudo pids doctor --json.')
         if config['access'] == 'tailscale':
             url = configure_tailscale(config)
         saved.update(state='ready', url=url)
@@ -726,6 +797,12 @@ def doctor():
     checks = {SERVICE: is_active(SERVICE), STORAGE: is_active(STORAGE),
               'ui': http_ok(url + '/', b'<html'), 'api': http_ok(url + '/api/sessions', b'['),
               'storage': http_ok(f'http://127.0.0.1:{config["storage_port"]}/health')}
+    try:
+        probe = sandbox_dns_probe()
+    except Failure:
+        probe = False
+    if probe is not None:
+        checks['sandbox_dns'] = probe
     if config['access'] == 'tailscale':
         status = tailscale_status()
         checks['tailscale'] = status.get('BackendState') == 'Running'

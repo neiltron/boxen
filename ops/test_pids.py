@@ -470,6 +470,77 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(result['dns_plan']['applied'])
         self.assertFalse(result['dns_plan']['proxied'])
 
+    def resolvers(self, daemon=None, host=(), uplink=()):
+        daemon_json = self.base / 'daemon.json'
+        daemon_json.unlink(missing_ok=True)
+        if daemon is not None:
+            daemon_json.write_text(json.dumps(daemon))
+        resolv = self.base / 'resolv.conf'
+        resolv.write_text(''.join(f'nameserver {s}\n' for s in host))
+        uplink_conf = self.base / 'uplink.conf'
+        uplink_conf.write_text(''.join(f'nameserver {s}\n' for s in uplink))
+        return [patch.object(pids, 'DOCKER_DAEMON_JSON', daemon_json), patch.object(pids, 'RESOLV_CONF', resolv),
+                patch.object(pids, 'RESOLVED_UPLINK', uplink_conf)]
+
+    def test_sandbox_dns_preflight_rejects_resolvers_celld_blocks(self):
+        cases = [  # (daemon.json, host resolv.conf, resolved uplinks) -> passes?
+            ({'dns': ['172.17.0.1']}, ['127.0.0.53'], ['68.105.28.11'], False),  # Docker bridge gateway (this host).
+            ({'dns': ['172.17.0.1', '1.1.1.1']}, [], [], True),
+            (None, ['127.0.0.53'], ['68.105.28.11'], True),  # systemd-resolved stub with public uplinks.
+            (None, ['127.0.0.53'], ['192.168.1.1'], False),  # Home router behind the stub.
+            (None, ['192.168.1.1'], [], False),
+            (None, ['100.100.100.100'], [], False),  # Tailscale MagicDNS only.
+            (None, [], [], False),
+            (None, ['2606:4700:4700::1111'], [], True),
+        ]
+        for daemon, host, uplink, passes in cases:
+            with self.subTest(daemon=daemon, host=host, uplink=uplink), contextlib.ExitStack() as stack:
+                for p in self.resolvers(daemon, host, uplink):
+                    stack.enter_context(p)
+                if passes:
+                    pids.preflight_sandbox_dns()
+                else:
+                    with self.assertRaisesRegex(pids.Failure, 'no reachable DNS resolver') as caught:
+                        pids.preflight_sandbox_dns()
+                    self.assertEqual(caught.exception.code, 2)
+                    self.assertIn('daemon.json', caught.exception.action)
+                    if daemon:
+                        self.assertIn('172.17.0.1', str(caught.exception))
+
+    def test_sandbox_dns_preflight_runs_before_package_or_service_changes(self):
+        source = self.source()
+        args = self.args('--source', str(source), '--access', 'local', '--yes')
+        with patch.object(pids, 'host_info', return_value=self.host), patch.object(pids, 'require_root'), \
+             patch.object(pids, 'preflight_ports'), patch.object(pids, 'preflight_exposure'), \
+             patch.object(pids, 'preflight_sandbox_dns', side_effect=pids.Failure('no reachable DNS resolver', 2)), \
+             patch.object(pids, 'install_packages') as packages, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(pids.Failure, 'no reachable DNS resolver'):
+                pids.setup(args)
+        packages.assert_not_called()
+        self.assertFalse(pids.ROOT.exists())
+
+    def test_sandbox_dns_probe_only_runs_on_the_real_sandbox_network(self):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append([str(a) for a in args])
+            if args[1] == 'network':
+                return types.SimpleNamespace(returncode=network_rc, stdout='', stderr='')
+            return types.SimpleNamespace(returncode=probe_rc, stdout='', stderr='')
+
+        with patch.object(pids, 'run', side_effect=fake_run):
+            network_rc, probe_rc = 1, 0
+            self.assertIsNone(pids.sandbox_dns_probe())
+            self.assertEqual(len(calls), 1)  # No container started without the network.
+            network_rc, probe_rc = 0, 1
+            self.assertFalse(pids.sandbox_dns_probe())
+            network_rc, probe_rc = 0, 0
+            self.assertTrue(pids.sandbox_dns_probe())
+        probe = calls[-1]
+        self.assertEqual(probe[:6], ['docker', 'run', '--rm', '--network', pids.SANDBOX_NETWORK, '--label'])
+        self.assertIn(pids.PROBE_IMAGE, probe)
+        self.assertIn('github.com', probe)
+
     def test_source_copy_survives_build_failure(self):
         source = self.source()
         revision = pids.source_revision(source)
