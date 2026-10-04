@@ -4,30 +4,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
-  finishLogin, listProviders, listSecrets, logout, setApiKey, setSecret, startLogin,
-  type AuthStatus, type ProviderInfo, type SecretKey,
+  finishLogin, listProviders, listSecrets, logout, setApiKey, setSecret, startLogin, SANDBOX_TOKENS,
+  type AuthStatus, type ProviderInfo, type SandboxToken,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Pending = { provider: string; url: string; code?: string };
 
-const TOKENS: { key: SecretKey; label: string; hint: string }[] = [
-  { key: "GH_TOKEN", label: "GitHub", hint: "Repo suggestions, private clones, git push, gh" },
-  { key: "LINEAR_API_KEY", label: "Linear", hint: "For the agent's Linear API calls" },
-];
+// The tokens are the API contract's; a new one needs its label here.
+const LABELS: Record<SandboxToken, { label: string; hint: string }> = {
+  GH_TOKEN: { label: "GitHub", hint: "Repo suggestions, private clones, git push, gh" },
+  LINEAR_API_KEY: { label: "Linear", hint: "For the agent's Linear API calls" },
+};
+const TOKENS = SANDBOX_TOKENS.map((key) => ({ key, ...LABELS[key] }));
 
 // Tokens every sandbox command gets in its env. The agent can read them, so
 // use narrowly scoped ones. Values never come back from the server.
 function SandboxTokens({ open }: { open: boolean }) {
-  const [set, setSet] = useState<SecretKey[]>([]);
-  const [drafts, setDrafts] = useState<Partial<Record<SecretKey, string>>>({});
+  const [set, setSet] = useState<SandboxToken[]>([]);
+  const [drafts, setDrafts] = useState<Partial<Record<SandboxToken, string>>>({});
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) listSecrets().then((r) => setSet(r.keys), (e: Error) => setError(e.message));
   }, [open]);
 
-  const save = async (key: SecretKey, value: string) => {
+  const save = async (key: SandboxToken, value: string) => {
     setError("");
     try {
       setSet((await setSecret(key, value)).keys);

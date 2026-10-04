@@ -1,10 +1,9 @@
 import { useEffect, useId, useState } from "react";
 import { ArrowClockwiseIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
-import { fetchListeningPorts } from "@/lib/api";
+import { fetchListeningPorts, PREVIEW_PORTS, validPreviewPort } from "@/lib/api";
 
 function validPort(value: string) {
-  const port = Number(value);
-  return /^\d+$/.test(value) && port >= 1024 && port <= 65535 && port !== 3000;
+  return /^\d+$/.test(value) && validPreviewPort(Number(value));
 }
 
 function savedPort(sessionId: string) {
@@ -73,7 +72,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
           <ArrowSquareOutIcon className="size-3.5" />
         </a>
       </form>
-      {!valid && <p id={`${fieldId}-error`} className="px-3 py-1 text-xs text-destructive">Use a port from 1024–65535, except 3000 (sandbox control server).</p>}
+      {!valid && <p id={`${fieldId}-error`} className="px-3 py-1 text-xs text-destructive">Use a port from {PREVIEW_PORTS.min}–{PREVIEW_PORTS.max}, except {PREVIEW_PORTS.reserved} (sandbox control server).</p>}
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted-foreground">
         <button type="button" disabled={scanning} onClick={() => void scan()} className="hover:text-foreground disabled:opacity-40">
           {scanning ? "Checking…" : "Find listening ports"}

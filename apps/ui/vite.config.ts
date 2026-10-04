@@ -3,6 +3,7 @@ import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { apiClient } from "@pi-durable-sessions/client";
 
 const API = "http://127.0.0.1:8093";
 
@@ -18,9 +19,9 @@ function oauthCallbacks(ports = [1455, 1456, 53692]): Plugin {
       const listeners = ports.map((port) => createServer(async (req, res) => {
         const original = `http://${req.headers.host}${req.url}`;
         try {
-          const upstream = await fetch(`${API}/api/auth/callback?u=${encodeURIComponent(original)}`);
-          res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "text/html" });
-          res.end(await upstream.text());
+          const page = await apiClient(API).authCallback(original);
+          res.writeHead(page.status, { "content-type": page.contentType ?? "text/html" });
+          res.end(page.body);
         } catch (e) {
           res.writeHead(502).end(`pi sessions API unreachable: ${(e as Error).message}`);
         }
