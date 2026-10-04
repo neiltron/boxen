@@ -292,7 +292,8 @@ checks each response against the spec, and fails when the worker and the spec
 disagree on a route or a method.
 
 **API reference.** `pnpm reference` builds the REST reference from
-`openapi.json` into `docs/api-reference.html`; open that file in a browser.
+`openapi.json` into [docs/api-reference.html](docs/api-reference.html); open that
+file in a browser (the link works once it is built).
 It is built on demand and git-ignored, not committed, so no generated HTML
 lands in diffs and there is nothing to keep current: rebuild it after a spec
 change. Redocly CLI (`@redocly/cli`, one bundled package) renders it. The

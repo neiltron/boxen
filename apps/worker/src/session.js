@@ -268,7 +268,7 @@ export class Session extends DurableObject {
       }));
       ws.send(JSON.stringify({ type: "models", models: list }));
     },
-    // Applies from the next model request; a running turn keeps its model.
+    // Applies from the next model request; the one in flight keeps its model.
     async configure(ws, cmd) {
       const { root } = await this.open();
       await root.configure({ model: cmd.model, thinkingLevel: cmd.thinkingLevel }, ctx);

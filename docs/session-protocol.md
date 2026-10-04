@@ -61,13 +61,14 @@ app, `pds` and the MCP server all use; it sends commands only once `ready`.
 | `ping` | | the session client, every 25 s | nothing: traffic on an idle socket for the proxies on the way |
 | `prompt` | `message`, `requestId` | the session client (`prompt()`, `run()`) | `events` as the turn runs, ending in its submission record; an `error` frame with the same `requestId` if the cell refuses it (see [a turn's outcome](#a-turns-outcome)) |
 | `steer` | as `prompt` | old clients only | as `prompt`: the cell handles it as one |
-| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts settle `unanswered` with reason `aborted` |
-| `configure` | `model?`, `thinkingLevel?` | the session client (`configure()`) | `events` (`agent_changed`); applies from the next model request, so a running turn keeps its model |
+| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts, with any queued behind it, settle `unanswered` with reason `aborted` |
+| `configure` | `model?`, `thinkingLevel?` | the session client (`configure()`) | `events` (`agent_changed`); applies from the next model request: the request in flight keeps its model, but a turn makes a new request after each tool round, so a turn can change model partway |
 | `models` | | the session client (`listModels()`) | a `models` frame, to this socket only |
 | `rename` | `name` | other clients only | a `meta` frame to every joined socket, as after `PATCH /api/session/{id}` with `{ "name" }` |
 
 - **`prompt`** while the agent is idle starts a run; while it works, the
-  message steers the run in progress. `requestId` is the client's own unique
+  message is queued as a steer and joins the run at its next boundary (after
+  the current tool round, or before the run would end). `requestId` is the client's own unique
   id for this prompt (the session client uses a UUID): a resend with the same
   `requestId` finds the first submission instead of making a second, and the
   turn's records and refusal carry it.
@@ -114,8 +115,8 @@ is the prompt's:
   snapshot's `entries`). Read the answer there, not from the transcript's last
   line, which another client's prompt can follow.
 - `unanswered`: `record.reason` `aborted` means someone sent `abort`; any
-  other reason (no model, a model error, a fault, with `record.detail` when
-  there is one) means the turn failed.
+  other reason (`no_model`, `model_error`, `faulted`, `reset`, with
+  `record.detail` when there is one) means the turn failed.
 
 An `error` frame carrying the prompt's `requestId` means the cell refused it,
 and the turn never started. An `error` frame without one is not this prompt's
