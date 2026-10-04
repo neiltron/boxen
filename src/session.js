@@ -4,7 +4,6 @@
 // picks up mid-turn. Tools run in this session's Sandbox container. Every
 // browser gets its own watchEvents() stream: a snapshot, then live deltas.
 import { DurableObject } from "cloudflare:workers";
-import { getSandbox } from "@cloudflare/sandbox";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
@@ -15,10 +14,8 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
 import { CellSqlite } from "./cell-sqlite.js";
 import { directoryCredentials } from "./credentials.js";
-import { sandboxEnv, shellQuote } from "./sandbox-env.js";
 import { validateMetadataPatch } from "./session-metadata.js";
-
-const WORKSPACE = "/workspace";
+import { sessionWorkspace } from "./workspace.js";
 
 const Prompt = defineExtension({
   name: "prompt",
@@ -85,7 +82,7 @@ export class Session extends DurableObject {
     await this.state.storage.put("meta", meta);
     await this.env.DIRECTORY.getByName("main").register(meta);
     await this.open();
-    this.workspace().catch(() => {}); // clone now rather than on the first tool call
+    this.workspace().then((w) => w.prepare()).catch(() => {}); // clone now rather than on the first tool call
     return meta;
   }
 
@@ -105,7 +102,6 @@ export class Session extends DurableObject {
   async openHarness() {
     const meta = await this.meta();
     const directory = this.env.DIRECTORY.getByName("main");
-    const sandbox = getSandbox(this.env.Sandbox, meta.id);
     const models = builtinModels({ credentials: directoryCredentials(directory) });
     const registry = createRegistry();
     registry.install(CodingTools);
@@ -118,10 +114,7 @@ export class Session extends DurableObject {
         registry,
         // Built per tool call, so a container that lost its disk since the
         // last call gets its files back before the tool runs.
-        env: async ({ cwd }) => {
-          await this.workspace();
-          return sandboxEnv(sandbox, `sandbox:${meta.id}`, cwd ?? meta.cwd, await directory.secrets());
-        },
+        env: async ({ cwd }) => (await this.workspace()).env(cwd),
         onReport: (e) => this.report(e),
       },
       ctx,
@@ -190,72 +183,23 @@ export class Session extends DurableObject {
       throw e;
     }
     await this.setStatus(meta.id, "idle");
-    await getSandbox(this.env.Sandbox, meta.id).checkpoint();
+    await (await this.workspace()).checkpoint();
   }
 
-  // The session's files in whatever container is current: restored from the
-  // last checkpoint after the container lost its disk, cloned the first time.
-  // Concurrent tool calls share one preparation.
+  // Everything this Session does to its Sandbox goes through one workspace
+  // (src/workspace.js), so tool calls, Changes, and the terminal share one
+  // restore or clone. It reads meta's id, cwd and repo, which never change.
+  // The worker sends only existing sessions here.
   workspace() {
-    this.preparing ??= this.prepareWorkspace().finally(() => { this.preparing = null; });
-    return this.preparing;
+    this.workspacing ??= this.meta().then((meta) => {
+      if (!meta) { this.workspacing = null; throw new Error("no such session"); }
+      return sessionWorkspace(this.env, meta, (text, level) => this.note(text, level));
+    });
+    return this.workspacing;
   }
 
-  async prepareWorkspace() {
-    const meta = await this.meta();
-    const sandbox = getSandbox(this.env.Sandbox, meta.id);
-    if ((await sandbox.prepare()) === "restored") await this.note("restored the workspace from its last checkpoint");
-    if (!meta.repo || (await sandbox.exists(`${meta.cwd}/.git`)).exists) return;
-    await this.note(`cloning ${meta.repo}${meta.branch ? ` (${meta.branch})` : ""}…`);
-    const env = sandboxEnv(sandbox, `sandbox:${meta.id}`, WORKSPACE, await this.env.DIRECTORY.getByName("main").secrets());
-    let output = "";
-    const branch = meta.branch ? `--branch ${shellQuote(meta.branch)} ` : "";
-    const result = await env.exec(`git clone ${branch}${shellQuote(meta.repo)} ${shellQuote(meta.cwd)}`,
-      { onOutput: (text) => { output += text; } }, ctx);
-    if (!result.ok || result.value.exitCode !== 0) {
-      const error = output.trim().split("\n").at(-1) || (result.ok ? `exit ${result.value.exitCode}` : result.error.message);
-      await this.note(`workspace setup failed: ${error}`, "error");
-      throw new Error(error);
-    }
-    await this.note(`cloned into ${meta.cwd}`);
-  }
-
-  // The working tree against HEAD, untracked files included. A throwaway
-  // index marks them intent-to-add, so the agent's own index is untouched.
   async diff() {
-    const meta = await this.meta();
-    await this.workspace();
-    const env = sandboxEnv(getSandbox(this.env.Sandbox, meta.id), `sandbox:${meta.id}`, meta.cwd);
-    let out = "";
-    const script = [
-      `cd ${shellQuote(meta.cwd)} || exit 3`,
-      `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 4`,
-      `idx=$(mktemp); cp "$(git rev-parse --git-dir)/index" "$idx" 2>/dev/null`,
-      `GIT_INDEX_FILE=$idx git add -A -N . 2>/dev/null && GIT_INDEX_FILE=$idx git diff HEAD --no-color --no-ext-diff; s=$?; rm -f "$idx"; exit $s`,
-    ].join("\n");
-    const r = await env.exec(script, { onOutput: (t) => { out += t; } }, ctx);
-    if (!r.ok) throw r.error;
-    if (r.value.exitCode === 4 || r.value.exitCode === 3) return { repo: false, patch: "" };
-    if (r.value.exitCode !== 0) throw new Error(out.trim().split("\n").at(-1) || `git diff exited ${r.value.exitCode}`);
-    return { repo: true, patch: out };
-  }
-
-  async terminal(request) {
-    const meta = await this.meta();
-    if (!meta) return new Response("no such session", { status: 404 });
-    await this.workspace();
-    const sandbox = getSandbox(this.env.Sandbox, meta.id);
-    const id = `terminal-${meta.id}`;
-    // Keep the interactive shell separate from the agent's exec shell. Reuse
-    // it on reconnect, but recreate it (with cwd) after the container restarts.
-    try {
-      await sandbox.createSession({ id, cwd: meta.cwd });
-    } catch (e) {
-      if (e.code !== "SESSION_ALREADY_EXISTS" && e.name !== "SessionAlreadyExistsError") throw e;
-    }
-    const session = await sandbox.getSession(id);
-    // Return this request's upgrade unchanged: celld owns I/O per request.
-    return session.terminal(request, { cols: 80, rows: 24, shell: "/bin/bash" });
+    return (await this.workspace()).diff();
   }
 
   // A durable line in the transcript that the model never sees.
@@ -265,13 +209,11 @@ export class Session extends DurableObject {
     return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);
   }
 
-  // Browser WebSocket. Nothing is sent during the upgrade (Safari drops
-  // frames that early) — the client sends "sub" when its socket is open.
+  // Browser WebSocket upgrades, already checked by the worker. Nothing is sent
+  // during the upgrade (Safari drops frames that early) — the client sends
+  // "sub" when its socket is open.
   async fetch(request) {
-    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-      return new Response("websocket upgrade required", { status: 426 });
-    }
-    if (new URL(request.url).pathname.endsWith("/terminal")) return this.terminal(request);
+    if (new URL(request.url).pathname.endsWith("/terminal")) return (await this.workspace()).terminal(request);
     const pair = new WebSocketPair();
     this.state.acceptWebSocket(pair[0]);
     return new Response(null, { status: 101, webSocket: pair[1] });

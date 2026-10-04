@@ -23,8 +23,11 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   `watchEvents()` stream (a snapshot, then deltas), which replaces the old
   event log and replay. A prompt sent while the agent works becomes a steer.
 - **Sandbox** (`@cloudflare/sandbox`, image in `Dockerfile`): one Linux
-  container per session. `src/sandbox-env.js` maps pi-durable's
-  `ExecutionEnv` onto it: read, write, edit, and bash with streamed output.
+  container per session. Everything done to it goes through the session's
+  workspace (`src/workspace.js`): restore and clone, the agent's
+  `ExecutionEnv` (`src/sandbox-env.js`: read, write, edit, and bash with
+  streamed output), the Changes diff, the terminal shell, and previews.
+  `node workspace.check.js` drives it with an in-memory sandbox.
   The container's disk dies with it, so `src/sandbox.js` checkpoints
   `/workspace` (minus `node_modules`) to the `BACKUP_BUCKET` binding after
   each run and before idle sleep, and restores it into a fresh container
@@ -141,7 +144,7 @@ and WebSocket upgrades for HMR. This is a local, plain-HTTP preview: celld
 must be on the browser's machine. App framing restrictions (CSP or
 X-Frame-Options) are preserved; use the new-tab link if embedding is blocked.
 
-Run `node preview.check.js` for proxy/port checks without a container. On a
+Run `node workspace.check.js` for proxy/port checks without a container. On a
 running stack, also check absolute assets in the Network tab, edit a source
 file to confirm HMR, and switch sessions/reload the UI to check port recall.
 Try port 3000 and 65536 directly in the preview host: both should return 400.
@@ -172,9 +175,10 @@ Browser smoke test (after deploying the worker and starting the UI):
 4. Run `exit`, then use Reconnect. Send the agent a bash task to confirm its
    shell still works. Switch sessions and check that output doesn't leak.
 
-Offline route checks: `node --experimental-vm-modules terminal.check.mjs`.
-These mock the SDK/Harness boundaries; they do not test celld's upgrade
-transport or the container's PTY implementation.
+Offline checks: `node workspace.check.js` (the shell, with an in-memory
+sandbox) and `node --experimental-vm-modules assets.check.mjs` (the route).
+They do not test celld's upgrade transport or the container's PTY
+implementation.
 
 ## Notes
 
