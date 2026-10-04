@@ -46,7 +46,9 @@ export const SANDBOX_NETWORK = 'celld'; // Created by celld; its nftables policy
 // The pnpm workspace root, then its packages (pnpm-workspace.yaml) and the installer.
 export const SOURCE_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'];
 export const SOURCE_DIRS = ['worker', 'ui', 'ops'];
-const SKIP = new Set(['node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store']);
+// Also what prepareSource writes into worker/, so a retained release hashes as its source.
+const SKIP = new Set(['node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store',
+  'ui-dist', 'wrangler.install.jsonc', '.dockerignore']);
 export const WARNINGS = [
   'No app accounts yet: every permitted tailnet client has full access. Restrict tailnet grants.',
   'Sandbox workspaces are ephemeral. Restarting celld can lose unpushed work.',

@@ -294,6 +294,22 @@ describe('sources and files', () => {
     assert.equal(fs.readFileSync(path.join(retained, 'worker/.dockerignore'), 'utf8'), 'node_modules\nui-dist\n.env*\n');
   });
 
+  test('a built release keeps its source revision, so a rerun reuses it', async () => {
+    const root = source();
+    const revision = pids.sourceRevision(root);
+    const release = path.join(paths.ROOT, 'releases', revision);
+    fakeRun((argv) => {
+      if (argv[0] !== 'runuser') return;
+      for (const name of ['node_modules/pkg/index.js', 'worker/node_modules/.bin/esbuild', 'worker/ui-dist/index.html']) {
+        fs.mkdirSync(path.dirname(path.join(release, name)), { recursive: true });
+        fs.writeFileSync(path.join(release, name), 'build output');
+      }
+    });
+    assert.equal(pids.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }), release);
+    assert.ok(fs.existsSync(path.join(release, 'worker/wrangler.install.jsonc')));
+    assert.equal(pids.sourceRevision(release), revision);
+  });
+
   test('build refuses a source without an exact pnpm pin', async () => {
     const root = source();
     fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@latest"}');
