@@ -129,7 +129,7 @@ change repairs Directory. Existing records without `archivedAt` remain active.
 Checks (Node 22+). `pnpm check` runs every check in the workspace: the
 installer's tests, type-check and `shellcheck install.sh` (install shellcheck
 first; the check fails without it), then each package's `check` script (`apps/worker/`: the metadata,
-assets and workspace checks; `packages/client/`: generated types
+assets, workspace and contract checks; `packages/client/`: generated types
 current, type-check; `apps/ui/`: session client, lint, Playwright, build,
 built-app smoke).
 
@@ -143,6 +143,8 @@ pnpm --filter @pi-durable-sessions/worker run check  # or one package
 `packages/client/openapi.json` is the REST contract, so far the Session list
 and create endpoints. After editing it, run `pnpm --filter
 @pi-durable-sessions/client run generate` to regenerate the client's types.
+`worker/contract.check.mjs` runs the router against it and fails when either
+serves or lists a route the other lacks.
 
 The backend check uses real in-memory SQLite with mocked runtime/agent
 boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
