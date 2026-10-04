@@ -12,9 +12,10 @@ const connection = (provider: string) =>
 // The composer's model control, adapted from boxen's. The session cell lists
 // what its login can use; a choice is a durable configure that applies from
 // the next model request, so it works mid-run too. The cell's agent_changed
-// event is the confirmation, for every tab at once.
+// event is the confirmation, for every tab at once. Like the rest of the
+// composer it is disabled while the session is not joined.
 export function ModelPicker({ session }: { session: SessionHandle }) {
-  const { model, models, send } = session;
+  const { model, models, ready } = session;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -27,8 +28,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
 
   const choose = (m: ModelInfo) => {
     const level = model.agent.thinkingLevel;
-    send({
-      type: "configure",
+    session.configure({
       model: { provider: m.provider, modelId: m.id },
       thinkingLevel: level && m.thinkingLevels.includes(level) ? level : undefined,
     });
@@ -36,12 +36,13 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
   };
 
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) { setQuery(""); send({ type: "models" }); } }}>
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) { setQuery(""); session.listModels(); } }}>
       <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="Choose model"
-          className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          disabled={!ready}
+          className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
         >
           <span className="truncate font-mono">{current?.modelId ?? "no model"}</span>
           {model.agent.thinkingLevel && <span className="text-muted-foreground/70">· {model.agent.thinkingLevel}</span>}
@@ -58,7 +59,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
               <button
                 key={level}
                 type="button"
-                onClick={() => send({ type: "configure", model: current, thinkingLevel: level })}
+                onClick={() => session.configure({ model: current, thinkingLevel: level })}
                 className={cn("rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted",
                   model.agent.thinkingLevel === level && "border-foreground/40 bg-muted text-foreground")}
               >

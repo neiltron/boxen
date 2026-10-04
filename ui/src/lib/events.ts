@@ -2,6 +2,8 @@
 // chat items. Each tab gets a `snapshot` first — the committed transcript plus
 // the in-flight generation and tool slots — then one batch of deltas per
 // commit. User messages and tool results arrive as messages like any other.
+// Internal to the session client (session-client.ts), which decides when a
+// model is built and swapped in; components only read the ChatModel.
 
 export type ToolState = "building" | "running" | "done";
 
@@ -17,7 +19,7 @@ export type Block =
       output: string;
       isError: boolean;
       state: ToolState;
-      details?: unknown;
+      artifactId?: string; // what an artifact tool call saved
     };
 
 export type ChatItem =
@@ -43,12 +45,15 @@ export interface ChatModel {
   agent: AgentState;
   log: LoggedEvent[]; // raw events for the Events tab, newest last
   logged: number;
+  // Facts the panel follows, counted as tool calls finish (see settle).
+  artifacts: string[]; // artifact ids saved in this transcript, oldest first
+  mutations: number; // finished calls that may have touched files
 }
 
 const LOG_LIMIT = 1000;
 
 export function emptyModel(): ChatModel {
-  return { items: [], running: false, seq: 0, agent: {}, log: [], logged: 0 };
+  return { items: [], running: false, seq: 0, agent: {}, log: [], logged: 0, artifacts: [], mutations: 0 };
 }
 
 function currentAssistant(m: ChatModel): Extract<ChatItem, { kind: "assistant" }> | null {
@@ -86,6 +91,7 @@ function toBlock(c: any, prev?: Block): Block {
       kind: "tool", toolId: c.id ?? null, name: c.name ?? "tool",
       argsText: "", args: c.arguments ?? null,
       output: p?.output ?? "", isError: p?.isError ?? false, state: p?.state ?? "building",
+      artifactId: p?.artifactId,
     };
   }
   return { kind: "text", text: "", streaming: false };
@@ -93,6 +99,27 @@ function toBlock(c: any, prev?: Block): Block {
 
 function push(m: ChatModel, item: any) {
   m.items.push({ ...item, seq: m.seq++ });
+}
+
+// A line that is not an agent event: a command the cell rejected.
+export function appendError(m: ChatModel, text: string) {
+  push(m, { kind: "system", level: "error", text });
+}
+
+// Calls that may change files; each finished one refetches the diff.
+const MUTATING = new Set(["write", "edit", "bash"]);
+
+// A tool call's result, from tool_execution_end or a toolResult message
+// (`msg` is missing when the call ended without one). The panel's facts
+// count a call once, the first time it finishes.
+function settle(m: ChatModel, b: Extract<Block, { kind: "tool" }>, msg: any) {
+  if (msg) b.output = textOf(msg.content);
+  b.isError = msg ? !!msg.isError : true;
+  if (typeof msg?.details?.artifactId === "string") b.artifactId = msg.details.artifactId;
+  if (b.state === "done") return;
+  b.state = "done";
+  if (MUTATING.has(b.name)) m.mutations++;
+  if (b.name === "artifact" && !b.isError && b.artifactId) m.artifacts.push(b.artifactId);
 }
 
 // One whole message: from a committed entry, a snapshot, or message_start.
@@ -105,12 +132,7 @@ function applyMessage(m: ChatModel, msg: any, streaming: boolean) {
     if (!streaming) endAssistant(m, msg);
   } else if (msg?.role === "toolResult") {
     const b = findTool(m, msg.toolCallId);
-    if (b) {
-      b.output = textOf(msg.content);
-      b.isError = !!msg.isError;
-      b.state = "done";
-      b.details = msg.details;
-    }
+    if (b) settle(m, b, msg);
   }
 }
 
@@ -137,7 +159,7 @@ export function applyEvent(m: ChatModel, ev: any): void {
   if (m.log.length > LOG_LIMIT) m.log.splice(0, m.log.length - LOG_LIMIT);
   switch (ev.type) {
     case "snapshot": {
-      Object.assign(m, { items: [], running: false, seq: 0 });
+      Object.assign(m, { items: [], running: false, seq: 0, artifacts: [], mutations: 0 });
       m.agent = ev.agent ?? {};
       for (const entry of ev.entries) {
         applyNote(m, entry);
@@ -234,13 +256,7 @@ export function applyEvent(m: ChatModel, ev: any): void {
 
     case "tool_execution_end": {
       const b = findTool(m, ev.toolCallId);
-      const msg = ev.entry?.model?.[0];
-      if (b) {
-        if (msg) b.output = textOf(msg.content);
-        b.isError = msg ? !!msg.isError : true;
-        b.details = msg?.details;
-        b.state = "done";
-      }
+      if (b) settle(m, b, ev.entry?.model?.[0]);
       return;
     }
 
@@ -256,10 +272,6 @@ export function applyEvent(m: ChatModel, ev: any): void {
 
     case "task_failed":
       push(m, { kind: "system", level: "error", text: ev.message });
-      return;
-
-    case "error": // a command the cell rejected (not an agent event)
-      push(m, { kind: "system", level: "error", text: ev.error });
       return;
 
     // turn_*, inbox_update, usage_changed, agent_changed, compaction_*:

@@ -9,7 +9,6 @@ export interface SessionContextValue {
   session: SessionHandle;
   artifact: string | null;
   setArtifact: (id: string | null) => void;
-  artifactRefresh: number;
   /** Bring a panel view forward (restoring its panel if hidden). */
   open: (view: PanelView, artifactId?: string) => void;
 }

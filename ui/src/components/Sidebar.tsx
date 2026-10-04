@@ -11,7 +11,6 @@ import { ago, cn } from "@/lib/utils";
 const statusDot: Record<string, string> = {
   running: "bg-green-500 animate-pulse",
   idle: "bg-muted-foreground/40",
-  exited: "bg-destructive/60",
 };
 
 export function Sidebar({
