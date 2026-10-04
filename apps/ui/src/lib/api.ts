@@ -1,3 +1,5 @@
+import { apiClient, type Session } from "@pi-durable-sessions/client";
+
 // Default: same-origin, proxied by the vite dev server to the celld node.
 // Set VITE_API_BASE to talk to a node directly (e.g. a built/static deploy).
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -5,30 +7,12 @@ export const WS_BASE = API_BASE
   ? API_BASE.replace(/^http/, "ws")
   : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
 
-export interface SessionMeta {
-  id: string;
-  name: string;
-  archivedAt?: number | null;
-  metadataRevision?: number;
-  cwd: string;
-  repo?: string;
-  branch?: string;
-  status?: "running" | "idle"; // Directory rows only
-  createdAt: number;
-  lastActivity?: number;
-  titled?: boolean; // the Session cell's meta frame only: named by autoTitle or a rename
-}
+// The Session type and endpoints come from the shared client's OpenAPI spec.
+export type SessionMeta = Session;
+const api = apiClient(API_BASE);
 
 // Named after the repo (or "untitled") until the first message titles it.
-export async function createSession(input: { name?: string; repo?: string; branch?: string }): Promise<SessionMeta> {
-  const res = await fetch(`${API_BASE}/api/sessions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`create failed: ${res.status}`);
-  return res.json();
-}
+export const createSession = api.createSession;
 
 export interface ModelInfo {
   provider: string;
