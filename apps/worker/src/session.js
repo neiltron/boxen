@@ -113,17 +113,23 @@ export class Session extends DurableObject {
         models,
         registry,
         // Built per tool call, so a container that lost its disk since the
-        // last call gets its files back before the tool runs.
+        // last call gets its files back before the tool runs: every build
+        // prepares, and prepare checks the container's marker each time.
         //
-        // The prepare goes through an RPC to this cell first. A turn runs in
-        // the background of the prompt that started it, often after that
-        // handler has returned. Once a handler has returned, celld never
-        // completes I/O begun after awaiting another event's promise, and the
-        // prepare init starts is still running when a prompt sent right after
-        // create arrives: joined directly, the turn's next call (the secrets
-        // read) hangs, and the turn never gets past its first step. Inside the
-        // RPC the wait belongs to a handler that is still running, and the
-        // reply is the turn's own I/O.
+        // The prepare is waited on only inside an RPC to this cell, never
+        // here. A turn runs in the background of the prompt that started it,
+        // often after that handler has returned. Once a handler has returned,
+        // celld never completes I/O begun after awaiting another event's
+        // promise, and the shared prepare is often another event's: init's,
+        // still running when a prompt arrives right after create, or a
+        // Changes or Terminal request's. Joined here, the turn's next call
+        // (the secrets read) hangs and the turn never gets past its first
+        // step. Inside the RPC the wait belongs to a handler that is still
+        // running, and the reply is the turn's own I/O. So workspace.env()
+        // does not prepare again: that second wait could join a prepare some
+        // request started after the RPC replied. A disk lost in that instant
+        // goes unnoticed until the next build, as one lost during the tool's
+        // own run would.
         env: async ({ cwd }) => {
           await this.env.SESSION.getByName(meta.id).prepareWorkspace();
           return (await this.workspace()).env(cwd);

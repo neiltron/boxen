@@ -142,12 +142,11 @@ function open(meta = repo, options = {}) {
   });
   await assert.rejects(ws.prepare(), { message: "fatal: repository 'https://github.com/o/app.git/' not found" });
   assert.deepEqual(notes.at(-1), ["workspace setup failed: fatal: repository 'https://github.com/o/app.git/' not found", "error"]);
-  await assert.rejects(ws.env(), /not found/, "a tool call doesn't run without its repo");
   await assert.rejects(ws.terminal(new Request("https://example.test/t")), /not found/);
   assert.equal(sandbox.attached.length, 0);
   fail = false;
   await ws.prepare();
-  assert.equal(sandbox.clones(), 4);
+  assert.equal(sandbox.clones(), 3);
   assert.deepEqual(notes.at(-1), ["cloned into /workspace/app"]);
 }
 {

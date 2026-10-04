@@ -4,13 +4,14 @@
 // and clone, the diff script, the terminal shell, and the preview proxy.
 //
 //   prepare()                 restore or clone the files; callers share one run
-//   env(cwd)                  pi-durable ExecutionEnv for a tool call, with secrets
+//   env(cwd)                  pi-durable ExecutionEnv for a tool call, with secrets;
+//                             the caller prepares first (session.js says how)
 //   diff()                    { repo, patch }: the working tree against HEAD
 //   terminal(request)         the browser's upgrade, attached to the shell
 //   ports(), preview(request, port), checkpoint()
 //
-// env, diff and terminal prepare first, so whichever notices a container that
-// lost its disk gets the files back. The seam is the @cloudflare/sandbox
+// diff and terminal prepare first, and the Session prepares before each env,
+// so whichever notices a container that lost its disk gets the files back. The seam is the @cloudflare/sandbox
 // object, with two adapters: the SDK's (sessionWorkspace) and an in-memory
 // fake (workspace.check.js).
 import { getSandbox } from "@cloudflare/sandbox";
@@ -65,7 +66,6 @@ export function workspace(sandbox, meta, { secrets = async () => ({}), onProgres
     },
 
     async env(cwd) {
-      await self.prepare();
       return shell(cwd ?? meta.cwd, await secrets());
     },
 

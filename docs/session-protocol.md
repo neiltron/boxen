@@ -61,7 +61,7 @@ app, `pds` and the MCP server all use; it sends commands only once `ready`.
 | `ping` | | the session client, every 25 s | nothing: traffic on an idle socket for the proxies on the way |
 | `prompt` | `message`, `requestId` | the session client (`prompt()`, `run()`) | `events` as the turn runs, ending in its submission record; an `error` frame with the same `requestId` if the cell refuses it (see [a turn's outcome](#a-turns-outcome)) |
 | `steer` | as `prompt` | old clients only | as `prompt`: the cell handles it as one |
-| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts, with any queued behind it, settle `unanswered` with reason `aborted` |
+| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts, with those already queued behind it when the abort lands, settle `unanswered` with reason `aborted`. A prompt admitted after that, while the run winds down, stays queued with no run to place it |
 | `configure` | `model?`, `thinkingLevel?` | the session client (`configure()`) | `events` (`agent_changed`); applies from the next model request: the request in flight keeps its model, but a turn makes a new request after each tool round, so a turn can change model partway |
 | `models` | | the session client (`listModels()`) | a `models` frame, to this socket only |
 | `rename` | `name` | other clients only | a `meta` frame to every joined socket, as after `PATCH /api/session/{id}` with `{ "name" }` |
