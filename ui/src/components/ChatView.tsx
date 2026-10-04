@@ -156,6 +156,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
         <form className="mx-auto w-full max-w-3xl" onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <InputGroup className="rounded-2xl">
             <InputGroupTextarea
+              data-chat-composer
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               enterKeyHint="enter"
