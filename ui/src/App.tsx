@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SessionActionsProvider } from "@/components/SessionActions";
 import { Sidebar } from "@/components/Sidebar";
 import { SessionView } from "@/components/SessionView";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -17,19 +18,21 @@ export default function App() {
       defaultOpen={!document.cookie.includes("sidebar_state=false")}
       className="h-dvh min-h-0 overflow-hidden bg-background text-foreground"
     >
-      <Sidebar auth={auth} sessions={sessions} selected={selected} onSelect={setSelected} />
-      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-        {selected ? (
-          <SessionView key={selected} sessionId={selected} />
-        ) : (
-          <div className="flex h-full flex-col">
-            <header className="flex items-center px-2 py-2.5"><SidebarTrigger /></header>
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              Select or create a session
+      <SessionActionsProvider>
+        <Sidebar auth={auth} sessions={sessions} selected={selected} onSelect={setSelected} />
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          {selected ? (
+            <SessionView key={selected} sessionId={selected} />
+          ) : (
+            <div className="flex h-full flex-col">
+              <header className="flex items-center px-2 py-2.5"><SidebarTrigger /></header>
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                Select or create a session
+              </div>
             </div>
-          </div>
-        )}
-      </SidebarInset>
+          )}
+        </SidebarInset>
+      </SessionActionsProvider>
     </SidebarProvider>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Sidebar as SidebarRoot, useSidebar } from "@/components/ui/sidebar";
+import { SessionActions } from "@/components/SessionActions";
 import { ProvidersSheet } from "@/components/ProvidersSheet";
 import { BranchField, RepoField } from "@/components/RepoField";
 import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
@@ -22,6 +23,8 @@ export function Sidebar({
   onSelect: (id: string) => void;
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
+  const [archived, setArchived] = useState(false);
+  const visible = sessions.filter((s) => (s.archivedAt != null) === archived);
   const [creating, setCreating] = useState(false);
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
@@ -38,6 +41,7 @@ export function Sidebar({
     setCreating(false);
     setRepo("");
     setBranch("");
+    setArchived(false);
     select(meta.id);
   };
 
@@ -61,32 +65,35 @@ export function Sidebar({
         </form>
       )}
 
+      <div className="flex gap-1 px-3 py-2" aria-label="Session list filter">
+        <Button size="sm" variant={archived ? "ghost" : "secondary"} aria-pressed={!archived} onClick={() => setArchived(false)}>Active</Button>
+        <Button size="sm" variant={archived ? "secondary" : "ghost"} aria-pressed={archived} onClick={() => setArchived(true)}>Archived</Button>
+      </div>
       <nav className="min-h-0 flex-1 overflow-y-auto p-1.5">
-        {sessions.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => select(s.id)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-muted",
-              selected === s.id && "bg-muted",
-            )}
-          >
-            <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm">{s.name}</span>
-              {s.repo && (
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                  {s.repo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "")}{s.branch ? `@${s.branch}` : ""}
-                </span>
-              )}
-            </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">{ago(s.lastActivity)}</span>
-          </button>
+        {visible.map((s) => (
+          <div key={s.id} className={cn("flex items-center rounded-md pr-1 hover:bg-muted", selected === s.id && "bg-muted")}>
+            <button
+              type="button"
+              onClick={() => select(s.id)}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left"
+            >
+              <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm">{s.name}</span>
+                {s.repo && (
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                    {s.repo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "")}{s.branch ? `@${s.branch}` : ""}
+                  </span>
+                )}
+              </span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{ago(s.lastActivity)}</span>
+            </button>
+            <SessionActions session={s} />
+          </div>
         ))}
-        {sessions.length === 0 && (
+        {visible.length === 0 && (
           <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-            No sessions yet — create one with +
+            {archived ? "No archived sessions" : "No active sessions — create one with +"}
           </div>
         )}
       </nav>
