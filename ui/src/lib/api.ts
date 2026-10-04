@@ -8,6 +8,8 @@ export const WS_BASE = API_BASE
 export interface SessionMeta {
   id: string;
   name: string;
+  archivedAt?: number | null;
+  metadataRevision?: number;
   cwd: string;
   repo?: string;
   branch?: string;
@@ -149,3 +151,14 @@ export function githubRepo(url: string): string | null {
 // The session's working tree against HEAD, untracked files included.
 export const fetchDiff = (sessionId: string) => get<{ repo: boolean; patch: string }>(`/api/session/${sessionId}/diff`);
 export const fetchListeningPorts = (sessionId: string) => get<{ ports: number[] }>(`/api/session/${sessionId}/ports`);
+
+export async function updateSession(id: string, patch: { name?: string; archived?: boolean }): Promise<SessionMeta> {
+  const res = await fetch(`${API_BASE}/api/session/${id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? `update failed: ${res.status}`);
+  return data;
+}

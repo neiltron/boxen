@@ -43,7 +43,9 @@ export function useSession(id: string | null) {
         } else if (m.type === "models") {
           setModels(m.models);
         } else if (m.type === "meta") {
-          setMeta(m.meta);
+          // A subscription snapshot can race a mutation broadcast while the
+          // server opens the Harness. Never replace newer metadata with it.
+          setMeta((current) => (current?.metadataRevision ?? 0) > (m.meta.metadataRevision ?? 0) ? current : m.meta);
         } else if (m.type === "ready") {
           setReady(true);
           setVersion((v) => v + 1);

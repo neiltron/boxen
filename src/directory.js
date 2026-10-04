@@ -25,6 +25,9 @@ export class Directory extends DurableObject {
     for (const col of ["repo", "branch"]) {
       try { this.sql.exec(`ALTER TABLE sessions ADD COLUMN ${col} TEXT`); } catch { /* already there */ }
     }
+    for (const [col, type] of [["archivedAt", "INT"], ["metadataRevision", "INT NOT NULL DEFAULT 0"]]) {
+      try { this.sql.exec(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`); } catch { /* already there */ }
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS credentials(
       provider TEXT PRIMARY KEY, json TEXT)`);
     this.sockets = [];
@@ -34,8 +37,8 @@ export class Directory extends DurableObject {
 
   async register({ id, name, cwd, repo, branch, createdAt }) {
     this.sql.exec(
-      `INSERT OR REPLACE INTO sessions(id, name, cwd, repo, branch, status, createdAt, lastActivity)
-       VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO sessions(id, name, cwd, repo, branch, status, createdAt, lastActivity)
+       VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
       id, name, cwd, repo ?? null, branch ?? null, "idle", createdAt, createdAt,
     );
     this.notify();
@@ -51,8 +54,14 @@ export class Directory extends DurableObject {
     this.notify();
   }
 
-  async rename({ id, name }) {
-    this.sql.exec(`UPDATE sessions SET name = ? WHERE id = ?`, name, id);
+  async projectMetadata(meta) {
+    // Register is idempotent and cannot reset activity or user metadata.
+    await this.register(meta);
+    this.sql.exec(
+      `UPDATE sessions SET name = ?, archivedAt = ?, metadataRevision = ?
+       WHERE id = ? AND metadataRevision < ?`,
+      meta.name, meta.archivedAt ?? null, meta.metadataRevision, meta.id, meta.metadataRevision,
+    );
     this.notify();
   }
 

@@ -62,7 +62,7 @@ const cell = new Session();
 cell.env = { Sandbox: {}, DIRECTORY: { getByName: () => ({}) } };
 cell.meta = async () => meta;
 cell.open = async () => ({ root: {}, workspace: Promise.resolve() });
-cell.ensureWorkspace = async () => { calls.push(["workspace"]); };
+cell.workspace = async () => { calls.push(["workspace"]); };
 const worker = entry.namespace.default;
 const env = { SESSION: { getByName(id) { assert.equal(id, meta.id); return cell; } } };
 const request = new Request(`https://example.test/api/session/${meta.id}/terminal`, { headers: { Upgrade: "websocket" } });
