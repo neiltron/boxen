@@ -119,6 +119,12 @@ export default {
       if (m?.[2] === "terminal" && request.method === "GET") return await env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "ws") return env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
+      // Installed builds serve the UI from celld itself. Keep API misses as
+      // JSON, and route preview hosts above before looking up static assets.
+      if (env.ASSETS && !url.pathname.startsWith("/api/") && url.pathname !== "/api" &&
+          (request.method === "GET" || request.method === "HEAD")) {
+        return env.ASSETS.fetch(request);
+      }
       return json({ error: "unknown route" }, 404);
     } catch (e) {
       return json({ error: e.message }, 500);

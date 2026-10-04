@@ -55,6 +55,20 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
 | `events` table, replay, synthetic `user_prompt`/`host_*` events | `watchEvents()` snapshot + deltas |
 | agent works on your real files | agent works in a per-session container |
 
+## Install on a Linux PC or server
+
+Experimental installer for x86-64 Omarchy/Arch and Ubuntu/Debian (including
+Ubuntu EC2), with private Tailscale HTTPS and agent-friendly commands:
+
+```sh
+./install.sh --access tailscale
+```
+
+See [installation, automation, and limitations](docs/installation.md). This
+installs separate system services; the development setup below is unchanged.
+[Better Auth feasibility](docs/better-auth.md) and workspace snapshots are
+follow-ups, not part of this installer.
+
 ## Run it
 
 Needs a Docker daemon (`orbctl start`) and celld ≥ 0.5 for containers. This
