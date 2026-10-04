@@ -23,14 +23,17 @@ the panel hidden below chat, using a separate layout from desktop.
 
 ## Checks
 
+`pnpm run check` here runs all of these in order; `pnpm check` at the workspace
+root runs them with every other check.
+
 ```sh
-npm ci
-npx playwright install --with-deps chromium  # first run on a supported host
-npm run test:workspace
+pnpm install  # at the workspace root, once
+pnpm exec playwright install --with-deps chromium  # first run on a supported host
+pnpm run test:workspace
 node session.check.ts
-npm run build
-npm run check:sessions  # built-app smoke test with HTTP/WebSocket fixtures
-npm run lint
+pnpm run build
+pnpm run check:sessions  # built-app smoke test with HTTP/WebSocket fixtures
+pnpm run lint
 ```
 
 The Playwright suite uses a real Trellis workspace in an isolated Vite fixture;

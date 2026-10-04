@@ -11,7 +11,7 @@ cd celld-test/pi-durable-sessions
 ./install.sh --access tailscale
 ```
 
-The installer requests sudo/approval, installs prerequisites, builds the UI, deploys the worker and sandbox image, and registers services. If Tailscale needs a login or HTTPS certificate approval, it keeps the local installation and returns instructions. For a login:
+The installer requests sudo/approval, installs prerequisites, installs the pnpm workspace and builds the UI (with the pnpm version `package.json` pins, fetched by the private Node's `npx`), deploys the worker and sandbox image, and registers services. If Tailscale needs a login or HTTPS certificate approval, it keeps the local installation and returns instructions. For a login:
 
 ```sh
 sudo tailscale up
@@ -71,6 +71,8 @@ sudo pids setup --source "$PWD" --yes --no-input
 sudo pids uninstall --yes --no-input
 ```
 
+**Crossing the pnpm workspace change** (`pnpm-lock.yaml` replaced `package-lock.json`): an installed `pids` accepts only the layout it was built for, and rejects the other before changing anything. To update an older installation, run the new checkout's `./install.sh` once instead of `pids setup --source`; to roll back past the change, run the older checkout's `./install.sh`.
+
 Uninstall disables/removes the two app services and removes its exact Tailscale root proxy if still owned. It **preserves all data, credentials, source releases, dependencies and the management command** for reinstall. It never removes another service's Serve route and never deletes Docker/Tailscale globally. This test has no purge command and no release garbage collector.
 
 Rollback: rerun setup with an earlier source checkout. This redeploys application code; it does **not** roll back database schemas or recover sandbox files. Old retained source releases live under `/opt/pi-durable-sessions/releases/`.
@@ -95,7 +97,7 @@ The dedicated service account's Docker access is **host-root-equivalent**. Only 
 
 Both services are enabled under Docker as well as the normal boot target, with Docker restart propagation. Starting Docker after maintenance should bring them back; verify this policy on the target systemd host. Required service restarts are recorded before unit replacement and survive failed updates. Uninstall handles missing units from interrupted installations, while preserving errors for actual service-management failures.
 
-No Vite process and no Caddy are needed: a generated `wrangler.install.jsonc` adds the built UI's ASSETS binding, and celld serves UI + API on one origin. The development `wrangler.jsonc`, `start.sh`, Caddy setup and `npm run ui` remain unchanged.
+No Vite process and no Caddy are needed: the UI is built into `worker/ui-dist`, a generated `worker/wrangler.install.jsonc` adds it as the ASSETS binding (celld only accepts an asset directory inside the project), and celld serves UI + API on one origin. The development `worker/wrangler.jsonc`, `start.sh`, Caddy setup and `pnpm ui` remain unchanged.
 
 ## Networking and domains
 
@@ -131,18 +133,18 @@ Workspace snapshots and session deletion cleanup are **not implemented here**. T
 
 ## Validation
 
-Offline:
+Offline, from the workspace root after `pnpm install`:
 
 ```sh
-node --test ops/pids.test.ts
-shellcheck install.sh
-npm i --no-save typescript @types/node@24 && npx tsc -p ops   # type-check the manager
-node --experimental-vm-modules assets.check.mjs
-node workspace.check.js
+pnpm run check:ops   # node --test ops/pids.test.ts, tsc -p ops, shellcheck install.sh (when installed)
+pnpm --filter @pi-durable-sessions/worker run check   # includes assets.check.mjs and workspace.check.js
 (cd ui && node session.check.ts)
+pnpm check           # all of the above plus every other workspace check
 ```
 
-Live isolated smoke (Docker + celld + esbuild, dependencies installed, UI built):
+The installer still imports nothing from the workspace; the root `package.json` only supplies TypeScript and Node types for the type-check.
+
+Live isolated smoke (Docker + celld, `pnpm install` and `pnpm build` done):
 
 ```sh
 node ops/smoke.ts --celld /path/to/celld-0.6.1
