@@ -140,11 +140,15 @@ pnpm check
 pnpm --filter @pi-durable-sessions/worker run check  # or one package
 ```
 
-`packages/client/openapi.json` is the REST contract, so far the Session list
-and create endpoints. After editing it, run `pnpm --filter
+`packages/client/openapi.json` is the REST contract: every endpoint the worker
+serves, and the constants the web app shares with it (sandbox token names,
+artifact kinds, the Preview port rule). The worker routes from it, so an
+endpoint must be in the spec to be served, and the web app calls the API only
+through the client. After editing it, run `pnpm --filter
 @pi-durable-sessions/client run generate` to regenerate the client's types.
-`apps/worker/contract.check.mjs` runs the router against it and fails when either
-serves or lists a route the other lacks.
+`apps/worker/contract.check.mjs` drives every operation through the client,
+checks each response against the spec, and fails when the worker and the spec
+disagree on a route or a method.
 
 The backend check uses real in-memory SQLite with mocked runtime/agent
 boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;

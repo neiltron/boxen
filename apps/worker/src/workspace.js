@@ -14,6 +14,7 @@
 // object, with two adapters: the SDK's (sessionWorkspace) and an in-memory
 // fake (workspace.check.js).
 import { getSandbox } from "@cloudflare/sandbox";
+import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
 import { sandboxEnv, shellQuote } from "./sandbox-env.js";
 
 const ROOT = "/workspace"; // clones run here, so a repo's cwd needn't exist yet
@@ -106,8 +107,11 @@ export function previewTarget(host) {
   return match ? { port: Number(match[1]), id: match[2].toLowerCase() } : null;
 }
 
+// The rule is the API contract's, which the web app reads too.
+export const PREVIEW_PORT = spec.components.schemas.PreviewPort;
+
 export function validPreviewPort(port) {
-  return Number.isInteger(port) && port >= 1024 && port <= 65535 && port !== 3000;
+  return Number.isInteger(port) && port >= PREVIEW_PORT.minimum && port <= PREVIEW_PORT.maximum && port !== PREVIEW_PORT.not.const;
 }
 
 // The SDK's containerFetch waits up to 90s for a port that isn't listening,

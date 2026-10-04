@@ -11,10 +11,10 @@
     "@cloudflare/sandbox": "^0.12.9",
     "@earendil-works/chord": "^1.0.0",
     "@earendil-works/pi-ai": "^1.0.0",
-    "@earendil-works/pi-durable": "^1.0.0"
+    "@earendil-works/pi-durable": "^1.0.0",
+    "@pi-durable-sessions/client": "workspace:*"
   },
   "devDependencies": {
-    "@pi-durable-sessions/client": "workspace:*",
     "ajv": "^8.20.0",
     "esbuild": "0.28.2"
   }

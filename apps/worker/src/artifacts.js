@@ -3,8 +3,10 @@
 // They live here rather than in a sandbox, so they stay readable and
 // searchable while sandboxes sleep. Every save keeps a version.
 import { DurableObject } from "cloudflare:workers";
+import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
 
-export const ARTIFACT_KINDS = ["markdown", "html", "svg", "mermaid", "code"];
+// What the agent's artifact tool offers; the API contract defines them.
+export const ARTIFACT_KINDS = spec.components.schemas.ArtifactKind.enum;
 
 export class Artifacts extends DurableObject {
   constructor(state, env) {

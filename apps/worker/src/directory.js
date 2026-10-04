@@ -5,10 +5,12 @@
 // through it. The login is the fleet's own, never copied from the host's pi.
 import { DurableObject } from "cloudflare:workers";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
 import { directoryCredentials } from "./credentials.js";
 
-// Tokens sandbox commands may get (see secretEnv in sandbox-env.js).
-const SECRET_KEYS = ["GH_TOKEN", "LINEAR_API_KEY"];
+// Tokens sandbox commands may get (see secretEnv in sandbox-env.js), as the
+// API contract names them.
+const SECRET_KEYS = spec.components.schemas.SandboxToken.enum;
 
 // The model a fresh login starts sessions on, per provider.
 const DEFAULT_MODELS = { openai: "gpt-6-astra", "openai-codex": "gpt-6-astra" };
