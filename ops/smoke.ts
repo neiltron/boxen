@@ -11,7 +11,6 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { BUCKET, RUSTFS_IMAGE, pids, wranglerWithAssets } from './pids.ts';
@@ -41,7 +40,7 @@ function exited(child: ChildProcess, seconds: number): Promise<boolean> {
 }
 
 async function smoke(binary: string): Promise<void> {
-  const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const source = path.resolve(import.meta.dirname, '..');
   if (!fs.existsSync(path.join(source, 'ui/dist/index.html')) || !fs.existsSync(path.join(source, 'node_modules'))) {
     throw new Error('First run npm ci && npm --prefix ui ci && npm --prefix ui run build.');
   }
