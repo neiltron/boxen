@@ -85,6 +85,18 @@ const artifactCall = (id: string) => ({ type: "toolCall", id, name: "artifact", 
 const artifactResult = (callId: string, artifactId: string) =>
   ({ role: "toolResult", toolCallId: callId, content: [{ type: "text", text: "saved" }], details: { artifactId } });
 
+// Metadata: a stale subscription snapshot never replaces a newer broadcast.
+{
+  const { client, net } = setup();
+  const s = net.last();
+  s.open();
+  s.frame({ type: "meta", meta: { ...meta, name: "Renamed", metadataRevision: 2 } });
+  s.frame({ type: "meta", meta: { ...meta, metadataRevision: 1 } });
+  assert.equal(client.state().meta?.name, "Renamed");
+  s.frame({ type: "meta", meta: { ...meta, name: "Again", metadataRevision: 3 } });
+  assert.equal(client.state().meta?.name, "Again");
+}
+
 // Joining: sub on open; meta, then a snapshot that shows only at ready.
 {
   const { client, net } = setup();

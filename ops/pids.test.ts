@@ -6,13 +6,12 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import { Failure, NODE_SHA, NODE_URL, PROBE_IMAGE, SANDBOX_NETWORK, SERVICE, SOURCE_DIRS, SOURCE_FILES, STORAGE, main, paths, pids }
   from './pids.ts';
 import type { Args, Config, Host, Obj, RunOptions, RunResult } from './pids.ts';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const MANAGER = path.join(HERE, 'pids.ts');
 const ORIGINAL_PATHS = { ...paths };
 
@@ -66,10 +65,6 @@ function stub<K extends keyof typeof pids>(name: K, impl: (typeof pids)[K]) {
 
 function mode(file: string): number {
   return fs.statSync(file).mode & 0o777;
-}
-
-function write(file: string, text: string): void {
-  pids.atomicWrite(file, text);
 }
 
 async function rejects(promise: Promise<unknown> | (() => unknown), pattern: RegExp): Promise<Failure> {
@@ -185,8 +180,8 @@ describe('sources and files', () => {
 
   test('credentials are random, private and stable on rerun', () => {
     fs.mkdirSync(path.join(paths.DATA, 'rustfs'), { recursive: true });
-    const first = pids.credentials(config);
-    assert.deepEqual(pids.credentials(config), first);
+    const first = pids.credentials();
+    assert.deepEqual(pids.credentials(), first);
     assert.ok(first.secret_key.length >= 64);
     for (const name of ['credentials.json', 'celld.env', 'storage.env']) assert.equal(mode(path.join(paths.CONFIG, name)), 0o600);
     assert.ok(!JSON.stringify(pids.installPlan(config, host, 'revision')).includes(first.secret_key));
@@ -195,7 +190,7 @@ describe('sources and files', () => {
   test('missing credentials never rotate existing storage', async () => {
     fs.mkdirSync(path.join(paths.DATA, 'rustfs'), { recursive: true });
     fs.writeFileSync(path.join(paths.DATA, 'rustfs/existing-object'), '');
-    await rejects(() => pids.credentials(config), /Restore credentials/);
+    await rejects(() => pids.credentials(), /Restore credentials/);
     assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'credentials.json')));
   });
 
@@ -251,7 +246,7 @@ describe('sources and files', () => {
     try {
       pids.runtimeDirectories();
       for (const directory of ['', 'bin', 'manager', 'releases']) assert.equal(mode(path.join(paths.ROOT, directory)), 0o755);
-      write(path.join(paths.CONFIG, 'secret'), 'private');
+      pids.atomicWrite(path.join(paths.CONFIG, 'secret'), 'private');
       await pids.withInstallLock(() => assert.equal(mode(paths.CONFIG), 0o755));
       assert.equal(mode(path.join(paths.CONFIG, 'secret')), 0o600);
     } finally {
@@ -274,7 +269,7 @@ describe('sources and files', () => {
   test('source copy survives a build failure', async () => {
     const root = source();
     const revision = pids.sourceRevision(root);
-    write(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, source: root }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, source: root }));
     fakeRun((argv) => {
       if (argv[0] === 'runuser') throw new Failure('simulated build failure');
     });
@@ -454,7 +449,7 @@ describe('tailscale', () => {
     stub('serveConfig', () => owned());
     await rejects(() => pids.preflightExposure(config), /unowned/);
     await rejects(() => pids.configureTailscale(config), /conflicts/);
-    write(path.join(paths.CONFIG, 'serve.json'), JSON.stringify({ hostname: 'host.tail.ts.net', port: 18093, state: 'pending' }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'serve.json'), JSON.stringify({ hostname: 'host.tail.ts.net', port: 18093, state: 'pending' }));
     pids.preflightExposure(config); // Retrying an interrupted owned apply is safe.
   });
 
@@ -474,10 +469,10 @@ describe('uninstall', () => {
   const uninstallArgs = () => pids.parseCli(['uninstall', '--yes', '--no-input']);
 
   function managedInstall(access: 'local' | 'tailscale' = 'local'): void {
-    write(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, access }));
-    write(path.join(paths.CONFIG, 'credentials.json'), 'credentials');
-    write(path.join(paths.DATA, 'rustfs/object'), 'durable state');
-    for (const name of [SERVICE, STORAGE]) write(path.join(paths.UNITS, `${name}.service`), 'managed');
+    pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, access }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'credentials.json'), 'credentials');
+    pids.atomicWrite(path.join(paths.DATA, 'rustfs/object'), 'durable state');
+    for (const name of [SERVICE, STORAGE]) pids.atomicWrite(path.join(paths.UNITS, `${name}.service`), 'managed');
     stub('requireRoot', () => undefined);
   }
 
@@ -497,7 +492,7 @@ describe('uninstall', () => {
   });
 
   test('a partial install tolerates confirmed-absent units', async () => {
-    write(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, state: 'installing' }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, state: 'installing' }));
     stub('requireRoot', () => undefined);
     const { calls } = fakeRun(() => ok('not-found\n'));
     assert.equal((await pids.uninstall(uninstallArgs())).ok, true);
@@ -505,7 +500,7 @@ describe('uninstall', () => {
   });
 
   test('rerun is a no-op', async () => {
-    write(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, state: 'uninstalled-data-preserved' }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, state: 'uninstalled-data-preserved' }));
     stub('requireRoot', () => undefined);
     const { calls } = fakeRun();
     assert.equal((await pids.uninstall(uninstallArgs())).ok, true);
@@ -515,7 +510,7 @@ describe('uninstall', () => {
   function tailscaleFixture(): Obj {
     managedInstall('tailscale');
     stub('which', () => '/usr/bin/tailscale');
-    write(path.join(paths.CONFIG, 'serve.json'), JSON.stringify({ hostname: 'host.tail.ts.net', port: 18093, state: 'active' }));
+    pids.atomicWrite(path.join(paths.CONFIG, 'serve.json'), JSON.stringify({ hostname: 'host.tail.ts.net', port: 18093, state: 'active' }));
     return { TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true } }, Web: {
       'host.tail.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:18093' } } },
       'host.tail.ts.net:8443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } } } };

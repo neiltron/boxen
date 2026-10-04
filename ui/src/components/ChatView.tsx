@@ -12,6 +12,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea,
 } from "@/components/ui/input-group";
+import { SessionActions } from "@/components/SessionActions";
 import { Markdown } from "@/components/Markdown";
 import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
@@ -98,6 +99,8 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
           model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",
         )} />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
+        {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
+        {meta && <SessionActions session={meta} />}
         <Button
           variant="ghost" size="icon-sm" className="ml-auto"
           aria-label="Show or hide the panel"

@@ -80,6 +80,9 @@ export function sessionClient(url: string, deps?: SocketDeps): SessionClient {
   const receive = (frame: Frame) => {
     switch (frame.type) {
       case "meta":
+        // A subscription snapshot can race a mutation broadcast while the
+        // server opens the Harness. Never replace newer metadata with it.
+        if ((state.meta?.metadataRevision ?? 0) > (frame.meta.metadataRevision ?? 0)) return;
         return set({ meta: frame.meta });
       case "models":
         return set({ models: frame.models });

@@ -1,9 +1,7 @@
 // Routing/lifecycle self-check without celld: node --experimental-vm-modules terminal.check.mjs
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
+import { load } from "./check-harness.mjs";
 
-const context = createContext({ Request, Response, URL, atob, console });
 const upgrade = { status: 101, webSocket: {} };
 const meta = { id: "abc-123", cwd: "/workspace/repo" };
 let creationError;
@@ -20,50 +18,15 @@ const sandbox = {
   },
 };
 // Only the route is exercised; Harness and container services are boundaries.
-const stubs = {
-  "cloudflare:workers": { DurableObject: class {} },
+const { Session, default: worker } = await load({
   "@cloudflare/sandbox": { getSandbox: () => sandbox, Sandbox: class {} },
-  "@earendil-works/chord/context": { BACKGROUND_CONTEXT: {} },
-  "@earendil-works/pi-ai": { Type: {} },
-  "@earendil-works/pi-ai/bun-oauth": { registerBunOAuthFlows() {} },
-  "@earendil-works/pi-ai/models": { getSupportedThinkingLevels() {} },
-  "@earendil-works/pi-ai/providers/all": { builtinModels() {} },
-  "@earendil-works/pi-durable": {
-    createRegistry() {}, defineExtension: (x) => x, defineTool() {}, Harness: {}, section() {}, watchEvents() {},
-  },
-  "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: {} },
-  "@earendil-works/pi-durable/tools": { CodingTools: {} },
-  "./artifacts.js": { ARTIFACT_KINDS: [], Artifacts: class {} },
   "./directory.js": { Directory: class {} },
-  "./cell-sqlite.js": { CellSqlite: class {} },
-  "./credentials.js": { directoryCredentials() {} },
-  "./sandbox-env.js": { sandboxEnv() {}, shellQuote() {} },
-};
-const modules = new Map();
-async function link(name) {
-  if (modules.has(name)) return modules.get(name);
-  let module;
-  if (name in stubs) {
-    const exports = stubs[name];
-    module = new SyntheticModule(Object.keys(exports), function () {
-      for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
-    }, { context });
-  } else {
-    module = new SourceTextModule(await readFile(new URL(`src/${name}`, import.meta.url), "utf8"), { context });
-  }
-  modules.set(name, module);
-  await module.link(link);
-  return module;
-}
-const entry = await link("index.js");
-await entry.evaluate();
-const { Session } = entry.namespace;
+});
 const cell = new Session();
 cell.env = { Sandbox: {}, DIRECTORY: { getByName: () => ({}) } };
 cell.meta = async () => meta;
 cell.open = async () => ({ root: {}, workspace: Promise.resolve() });
-cell.ensureWorkspace = async () => { calls.push(["workspace"]); };
-const worker = entry.namespace.default;
+cell.workspace = async () => { calls.push(["workspace"]); };
 const env = { SESSION: { getByName(id) { assert.equal(id, meta.id); return cell; } } };
 const request = new Request(`https://example.test/api/session/${meta.id}/terminal`, { headers: { Upgrade: "websocket" } });
 
