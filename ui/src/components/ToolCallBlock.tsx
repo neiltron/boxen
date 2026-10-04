@@ -5,7 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import { SessionContext } from "@/components/panel/session-context";
 import { cn } from "@/lib/utils";
-import type { Block } from "@/lib/events";
+import type { Block } from "@/lib/session-client";
 
 type ToolBlock = Extract<Block, { kind: "tool" }>;
 
@@ -29,7 +29,7 @@ function argsPreview(block: ToolBlock): string {
 export function ToolCallBlock({ block }: { block: ToolBlock }) {
   const [open, setOpen] = useState(false);
   const panel = useContext(SessionContext);
-  const artifactId = (block.details as { artifactId?: string } | undefined)?.artifactId;
+  const { artifactId } = block;
   const Icon = toolIcon(block.name);
   const preview = argsPreview(block);
 

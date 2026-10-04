@@ -27,7 +27,7 @@ the panel hidden below chat, using a separate layout from desktop.
 npm ci
 npx playwright install --with-deps chromium  # first run on a supported host
 npm run test:workspace
-node events.check.ts
+node session.check.ts
 npm run build
 npm run check:sessions  # built-app smoke test with HTTP/WebSocket fixtures
 npm run lint

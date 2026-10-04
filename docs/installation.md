@@ -138,9 +138,8 @@ node --test ops/pids.test.ts
 shellcheck install.sh
 npm i --no-save typescript @types/node@24 && npx tsc -p ops   # type-check the manager
 node --experimental-vm-modules assets.check.mjs
-node --experimental-vm-modules terminal.check.mjs
-node preview.check.js
-(cd ui && node events.check.ts)
+node workspace.check.js
+(cd ui && node session.check.ts)
 ```
 
 Live isolated smoke (Docker + celld + esbuild, dependencies installed, UI built):

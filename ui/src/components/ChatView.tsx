@@ -18,7 +18,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
 import type { SessionHandle } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
-import type { Block, ChatItem } from "@/lib/events";
+import type { Block, ChatItem } from "@/lib/session-client";
 
 function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
   const [open, setOpen] = useState(false);
@@ -67,7 +67,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
 }
 
 export function ChatView({ session, onTogglePanel }: { session: SessionHandle; onTogglePanel: () => void }) {
-  const { model, meta, ready, send } = session;
+  const { model, meta, ready } = session;
   const [draft, setDraft] = useState("");
 
   // Stick to the end while the reader is there. The scroller's own follow
@@ -84,8 +84,8 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
 
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
-    send({ type: "prompt", message: text, requestId: crypto.randomUUID() });
+    // Refused while disconnected: the draft stays for the next try.
+    if (!text || !session.prompt(text)) return;
     setDraft("");
     atEnd.current = true; // your own message brings the view back to the end
   };
@@ -179,7 +179,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
               {model.running && (
                 <InputGroupButton
                   type="button" variant="outline" size="icon-sm" className="ml-auto rounded-full"
-                  aria-label="Stop the agent" onClick={() => send({ type: "abort" })}
+                  aria-label="Stop the agent" disabled={!ready} onClick={() => session.abort()}
                 >
                   <StopIcon className="size-3.5" />
                 </InputGroupButton>

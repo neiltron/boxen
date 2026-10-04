@@ -7,9 +7,8 @@
 //                     │ model calls straight from the cell
 //                     └ register/touch/credentials → Directory cell ⇄ WS ⇄ sidebar
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
-import { getSandbox } from "@cloudflare/sandbox";
 import { validateMetadataPatch } from "./session-metadata.js";
-import { previewTarget, validPreviewPort, proxyPreview, listeningPorts } from "./preview.js";
+import { previewTarget, validPreviewPort, sessionWorkspace } from "./workspace.js";
 
 // pi-ai loads OAuth flows through a dynamic import the bundle can't follow;
 // this registers them statically, the way pi's Bun binary does.
@@ -44,8 +43,10 @@ export default {
       if (preview) {
         if (!validPreviewPort(preview.port)) return new Response("Preview ports must be 1024–65535, excluding 3000.", { status: 400 });
         // Only existing sessions: any UUID-shaped host would otherwise boot a sandbox.
-        if (!await env.SESSION.getByName(preview.id).meta()) return new Response("no such session", { status: 404 });
-        return proxyPreview(request, getSandbox(env.Sandbox, preview.id), preview.port, preview.id);
+        // Proxied here, not in the cell, so the streaming response is this request's.
+        const meta = await env.SESSION.getByName(preview.id).meta();
+        if (!meta) return new Response("no such session", { status: 404 });
+        return sessionWorkspace(env, meta).preview(request, preview.port);
       }
       if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
       if (url.pathname === "/api/sessions" && request.method === "GET") {
@@ -122,13 +123,21 @@ export default {
         return json(await session.updateMetadata(patch));
       }
       const m = url.pathname.match(/^\/api\/session\/([0-9a-f-]+)\/(ws|diff|ports|terminal)$/);
-      if (m?.[2] === "ports" && request.method === "GET") {
-        if (!await env.SESSION.getByName(m[1]).meta()) return json({ error: "no such session" }, 404);
-        return json({ ports: await listeningPorts(getSandbox(env.Sandbox, m[1])) });
+      const socket = m?.[2] === "ws" || (m?.[2] === "terminal" && request.method === "GET");
+      if (socket && request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+        return new Response("websocket upgrade required", { status: 426 });
       }
-      if (m?.[2] === "terminal" && request.method === "GET") return await env.SESSION.getByName(m[1]).fetch(request);
       if (m?.[2] === "ws") return env.SESSION.getByName(m[1]).fetch(request);
-      if (m?.[2] === "diff") return json(await env.SESSION.getByName(m[1]).diff());
+      // The Sandbox routes, for existing sessions only: an unknown id would
+      // otherwise create a cell and boot a container.
+      if (m && request.method === "GET") {
+        const session = env.SESSION.getByName(m[1]);
+        const meta = await session.meta();
+        if (!meta) return json({ error: "no such session" }, 404);
+        if (m[2] === "ports") return json({ ports: await sessionWorkspace(env, meta).ports() });
+        if (m[2] === "diff") return json(await session.diff());
+        return await session.fetch(request);
+      }
       // Installed builds serve the UI from celld itself. Keep API misses as
       // JSON, and route preview hosts above before looking up static assets.
       if (env.ASSETS && !url.pathname.startsWith("/api/") && url.pathname !== "/api" &&

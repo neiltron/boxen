@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Panel, Split, Stage, View, ViewType, Workspace, type WorkspaceHandle } from "@danfessler/trellis-react";
 import "@danfessler/trellis/style.css";
 import { ChatView } from "@/components/ChatView";
@@ -6,24 +6,9 @@ import { PANEL_VIEWS } from "@/components/panel/Panel";
 import { SessionContext, useSessionContext, type PanelView } from "@/components/panel/session-context";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSession } from "@/hooks/useSession";
-import type { ChatModel } from "@/lib/events";
 import { bindPanelShortcuts, restorePanels, togglePanels, WORKSPACE_LAYOUT_VERSION } from "@/lib/workspace";
 
 const PANEL_VIEW_IDS = new Set<string>(PANEL_VIEWS.map((v) => v.id));
-
-// Artifact saves in the transcript, oldest first.
-function artifactSaves(model: ChatModel): string[] {
-  const ids: string[] = [];
-  for (const item of model.items) {
-    if (item.kind !== "assistant") continue;
-    for (const b of item.blocks) {
-      const id = (b.kind === "tool" && b.name === "artifact" && b.state === "done" && !b.isError)
-        ? (b.details as { artifactId?: string } | undefined)?.artifactId : undefined;
-      if (id) ids.push(id);
-    }
-  }
-  return ids;
-}
 
 function Chat({ onTogglePanel }: { onTogglePanel: () => void }) {
   return <ChatView session={useSessionContext().session} onTogglePanel={onTogglePanel} />;
@@ -39,14 +24,29 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const mobile = useIsMobile();
   const storageKey = mobile ? "pids.layout.mobile" : "pids.layout";
   const ws = useRef<WorkspaceHandle>(null);
-  const [artifact, setArtifact] = useState<string | null>(null);
 
-  const open = (view: PanelView, artifactId?: string) => {
+  // The artifact on show is the reader's pick, until a save arrives live (not
+  // in the joining snapshot): that one shows instead, and its view comes
+  // forward (the effect below).
+  const { saved } = session;
+  const [pick, setPick] = useState<{ id: string | null; since: typeof saved }>({ id: null, since: null });
+  const artifact = pick.since === saved ? pick.id : saved?.id ?? null;
+  const setArtifact = (id: string | null) => setPick({ id, since: saved });
+
+  const reveal = (view: PanelView) => {
     // Restore docking dependencies too, including when an artifact arrives live.
     if (ws.current) restorePanels(ws.current, PANEL_VIEW_IDS);
     ws.current?.focus(view);
+  };
+  const open = (view: PanelView, artifactId?: string) => {
+    reveal(view);
     if (artifactId) setArtifact(artifactId);
   };
+  const revealSave = useEffectEvent(() => reveal("artifacts"));
+  useEffect(() => {
+    if (saved) revealSave();
+  }, [saved]);
+
   const togglePanel = () => {
     if (ws.current) togglePanels(ws.current, PANEL_VIEW_IDS);
   };
@@ -69,17 +69,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     return () => { unbind(); ws.current = null; };
   }, [fresh]);
 
-  // A save that arrives live (not in the joining snapshot) opens in the panel.
-  const saves = artifactSaves(session.model);
-  const seen = useRef<number | null>(null);
-  useEffect(() => {
-    if (!session.ready) { seen.current = null; return; }
-    if (seen.current !== null && saves.length > seen.current) open("artifacts", saves.at(-1));
-    seen.current = saves.length;
-  });
-
   return (
-    <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, artifactRefresh: saves.length, open }}>
+    <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, open }}>
       <Workspace
         key={storageKey} ref={attach} storageKey={storageKey} version={WORKSPACE_LAYOUT_VERSION} label="Session"
         navigation={false} floating={false} className="pids-workspace h-full"
