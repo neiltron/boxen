@@ -157,7 +157,7 @@ describe('sources and files', () => {
   test('source hash excludes secrets, dependencies and builds', () => {
     const root = source();
     const before = pids.sourceRevision(root);
-    for (const name of ['ui/node_modules/lib', 'ui/dist/app.js', 'ui/.env.local', 'ops/__pycache__/cache']) {
+    for (const name of ['apps/ui/node_modules/lib', 'apps/ui/dist/app.js', 'apps/ui/.env.local', 'ops/__pycache__/cache']) {
       fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
       fs.writeFileSync(path.join(root, name), 'not a source file');
     }
@@ -300,14 +300,21 @@ describe('sources and files', () => {
     const root = source();
     const revision = pids.sourceRevision(root);
     const release = path.join(paths.ROOT, 'releases', revision);
-    fakeRun((argv) => {
+    const builds: string[][] = [];
+    fakeRun((argv, options) => {
       if (argv[0] !== 'runuser') return;
+      builds.push([...argv, `cwd=${options.cwd}`]);
       for (const name of ['node_modules/pkg/index.js', 'apps/worker/node_modules/.bin/esbuild', 'apps/worker/ui-dist/index.html']) {
         fs.mkdirSync(path.dirname(path.join(release, name)), { recursive: true });
         fs.writeFileSync(path.join(release, name), 'build output');
       }
     });
     assert.equal(pids.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }), release);
+    const pnpm = ['runuser', '-u', 'pids', '--', 'npx', '--yes', 'pnpm@12.9.1'];
+    assert.deepEqual(builds, [
+      [...pnpm, 'install', '--frozen-lockfile', `cwd=${release}`],
+      [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir', `cwd=${release}`],
+    ]);
     assert.ok(fs.existsSync(path.join(release, 'apps/worker/wrangler.install.jsonc')));
     assert.equal(pids.sourceRevision(release), revision);
   });
