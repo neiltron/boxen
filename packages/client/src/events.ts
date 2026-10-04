@@ -4,6 +4,7 @@
 // commit. User messages and tool results arrive as messages like any other.
 // Internal to the session client (session-client.ts), which decides when a
 // model is built and swapped in; components only read the ChatModel.
+import type { AgentState } from "./protocol.ts";
 
 export type ToolState = "building" | "running" | "done";
 
@@ -26,11 +27,6 @@ export type ChatItem =
   | { kind: "user"; seq: number; text: string; steer: boolean }
   | { kind: "assistant"; seq: number; blocks: Block[]; streaming: boolean }
   | { kind: "system"; seq: number; text: string; level: "info" | "error" };
-
-export interface AgentState {
-  model?: { provider: string; modelId: string };
-  thinkingLevel?: string;
-}
 
 export interface LoggedEvent {
   n: number;

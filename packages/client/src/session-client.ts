@@ -1,10 +1,10 @@
 // The session client: one handle on a Session cell. Behind it sit the
-// reconnecting socket, the reducer that folds agent events into the chat
-// model (events.ts), the facts derived while folding, and the command
-// vocabulary of src/session.js webSocketMessage. No React here: the hook in
-// hooks/useSession.ts is a thin binding, and session.check.ts drives this
-// module through a scripted socket. (Relative .ts imports, so Node can load
-// it without Vite's aliases.)
+// reconnecting socket (socket.ts), the reducer that folds agent events into
+// the chat model (events.ts), the facts derived while folding, and the
+// commands of the Session WebSocket protocol (protocol.ts). No React or DOM
+// here: the caller passes the transport, the web app's useSession hook is a
+// thin binding, and session.check.ts drives this module through a scripted
+// socket.
 //
 // Interface, beyond the types:
 // - connect() joins and keeps rejoining until the function it returns runs.
@@ -21,11 +21,14 @@
 //   refreshes it). `meta` is replaced by each join's meta frame.
 // - An `error` frame is the cell rejecting a command, not an agent event: it
 //   becomes an error line in the transcript, and stays out of the Events log.
-import { appendError, applyEvent, emptyModel, type AgentState, type ChatModel } from "./events.ts";
+import { appendError, applyEvent, emptyModel, type ChatModel } from "./events.ts";
+import type { components } from "./openapi.ts";
+import type { AgentState, ModelInfo, SessionCommand, SessionFrame } from "./protocol.ts";
 import { reconnecting, type SocketDeps } from "./socket.ts";
-import type { ModelInfo, SessionMeta } from "./api.ts";
 
-export type { AgentState, Block, ChatItem, ChatModel, LoggedEvent } from "./events.ts";
+export type { Block, ChatItem, ChatModel, LoggedEvent } from "./events.ts";
+
+type SessionMeta = components["schemas"]["Session"];
 
 export interface SessionState {
   model: ChatModel; // mutated in place; the state object changes with it
@@ -48,28 +51,13 @@ export interface SessionClient extends SessionCommands {
   subscribe(listener: () => void): () => void;
 }
 
-// What the browser sends; `sub` and `ping` belong to the socket.
-type Command =
-  | { type: "prompt"; message: string; requestId: string } // the cell dedupes a resend by requestId
-  | { type: "abort" }
-  | { type: "configure"; model?: AgentState["model"]; thinkingLevel?: string }
-  | { type: "models" };
-
-// What the cell sends back.
-type Frame =
-  | { type: "meta"; meta: SessionMeta }
-  | { type: "events"; events: { type: string }[] }
-  | { type: "ready" }
-  | { type: "models"; models: ModelInfo[] }
-  | { type: "error"; error: string };
-
 export const emptySession = (): SessionState =>
   ({ model: emptyModel(), meta: null, ready: false, models: null, saved: null });
 
-export function sessionClient(url: string, deps?: SocketDeps): SessionClient {
+export function sessionClient(url: string, deps: SocketDeps): SessionClient {
   let state = emptySession();
   let joining: ChatModel | null = null; // built from the snapshot until ready
-  let socket: ReturnType<typeof reconnecting<Frame>> | null = null;
+  let socket: ReturnType<typeof reconnecting<SessionFrame>> | null = null;
   const listeners = new Set<() => void>();
 
   const set = (next: Partial<SessionState>) => {
@@ -77,7 +65,7 @@ export function sessionClient(url: string, deps?: SocketDeps): SessionClient {
     for (const listener of listeners) listener();
   };
 
-  const receive = (frame: Frame) => {
+  const receive = (frame: SessionFrame) => {
     switch (frame.type) {
       case "meta":
         // A subscription snapshot can race a mutation broadcast while the
@@ -107,11 +95,11 @@ export function sessionClient(url: string, deps?: SocketDeps): SessionClient {
     }
   };
 
-  const command = (cmd: Command) => state.ready && !!socket?.send(cmd);
+  const command = (cmd: SessionCommand) => state.ready && !!socket?.send(cmd);
 
   return {
     connect() {
-      const self = reconnecting<Frame>(url, {
+      const self = reconnecting<SessionFrame>(url, {
         open: () => { joining = emptyModel(); },
         message: receive,
         drop: () => {

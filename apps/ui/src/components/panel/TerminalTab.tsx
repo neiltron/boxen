@@ -69,7 +69,7 @@ export function TerminalTab() {
     const connect = () => {
       if (disposed) return;
       ready = false;
-      // Raw PTY bytes with its own backoff and give-up, so not lib/socket.ts.
+      // Raw PTY bytes with its own backoff and give-up, so not the shared client's reconnecting socket.
       const ws = new WebSocket(`${WS_BASE}/api/session/${sessionId}/terminal`);
       ws.binaryType = "arraybuffer";
       socket = ws;

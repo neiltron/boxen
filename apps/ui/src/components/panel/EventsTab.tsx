@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ChatModel, LoggedEvent } from "@/lib/session-client";
+import type { ChatModel, LoggedEvent } from "@pi-durable-sessions/client";
 import { cn } from "@/lib/utils";
 
 // Streaming deltas and usage ticks outnumber everything else by far.

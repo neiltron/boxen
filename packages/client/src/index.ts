@@ -1,9 +1,16 @@
 // The typed client for the worker's REST API. Request and response types come
 // from openapi.json through src/openapi.ts (pnpm run generate); nothing here
-// restates them. Runs wherever fetch does: the browser and Node.
+// restates them. Runs wherever fetch does: the browser and Node. The Session
+// WebSocket, which OpenAPI does not describe, is protocol.ts and the session
+// client.
 import createClient from "openapi-fetch";
 import spec from "../openapi.json" with { type: "json" };
 import type { components, paths } from "./openapi.ts";
+
+export * from "./protocol.ts";
+export * from "./session-client.ts";
+export { reconnecting, type Clock, type SocketDeps, type Transport, type Wire } from "./socket.ts";
+export { browserSocket } from "./browser.ts";
 
 type Schemas = components["schemas"];
 export type Session = Schemas["Session"];

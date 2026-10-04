@@ -1,5 +1,5 @@
 import { apiClient, type SandboxToken, type Session } from "@pi-durable-sessions/client";
-export type { Artifact, ArtifactSummary, AuthStatus, ProviderInfo, Repo, SandboxToken } from "@pi-durable-sessions/client";
+export type { Artifact, ArtifactSummary, AuthStatus, ModelInfo, ProviderInfo, Repo, SandboxToken } from "@pi-durable-sessions/client";
 export { PREVIEW_PORTS, SANDBOX_TOKENS, validPreviewPort } from "@pi-durable-sessions/client";
 
 // Default: same-origin, proxied by the vite dev server to the celld node.
@@ -15,13 +15,6 @@ const api = apiClient(API_BASE);
 
 // Named after the repo (or "untitled") until the first message titles it.
 export const createSession = api.createSession;
-
-export interface ModelInfo {
-  provider: string;
-  id: string;
-  name: string;
-  thinkingLevels: string[];
-}
 
 export const finishLogin = api.finishLogin;
 export const logout = api.logout;

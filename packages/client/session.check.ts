@@ -2,8 +2,8 @@
 // A scripted socket stands in for the browser's WebSocket and a manual clock
 // for timers, so drops, retries and pings run without waiting.
 import assert from "node:assert/strict";
-import { PING_MS, RETRY_MS, type Clock, type Transport } from "./src/lib/socket.ts";
-import { sessionClient, type SessionClient } from "./src/lib/session-client.ts";
+import { PING_MS, RETRY_MS, type Clock, type Transport } from "./src/socket.ts";
+import { sessionClient, type SessionClient } from "./src/session-client.ts";
 
 // The test adapter at the transport seam: each socket the client opens,
 // driven by hand.

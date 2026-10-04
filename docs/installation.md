@@ -137,8 +137,8 @@ Offline, from the workspace root after `pnpm install`:
 
 ```sh
 pnpm run check:ops   # node --test ops/pids.test.ts, tsc -p ops, shellcheck install.sh (fails if shellcheck is missing)
-pnpm --filter @pi-durable-sessions/worker run check   # includes assets.check.mjs and workspace.check.js
-(cd apps/ui && node session.check.ts)
+pnpm --filter @pi-durable-sessions/worker run check   # includes assets.check.mjs, workspace.check.js and protocol.check.mjs
+pnpm --filter @pi-durable-sessions/client run check   # includes session.check.ts
 pnpm check           # all of the above plus every other workspace check
 ```
 

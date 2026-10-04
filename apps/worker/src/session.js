@@ -241,35 +241,50 @@ export class Session extends DurableObject {
   async webSocketClose(ws) { this.unsubscribe(ws); }
   async webSocketError(ws) { this.unsubscribe(ws); }
 
-  // Commands from any connected browser. A prompt while the agent works
-  // steers it; the user's message shows up in every tab once it is placed.
+  // One handler per command of the Session WebSocket protocol, named by its
+  // type: exactly SESSION_COMMANDS in @pi-durable-sessions/client's
+  // protocol.ts, which protocol.check.mjs holds this table to. Handle no
+  // command outside it: the check can't see one there.
+  static commands = {
+    sub(ws) { return this.subscribe(ws); },
+    ping() {}, // traffic for the proxies on the way; nothing to answer
+    // A prompt while the agent works steers it; the user's message shows up
+    // in every tab once it is placed.
+    async prompt(ws, cmd) {
+      const { root, models } = await this.open();
+      // A retry with the same requestId finds the first submission.
+      await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx);
+      // Awaited here: a cell's I/O must belong to a live request or event.
+      if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
+    },
+    steer(ws, cmd) { return Session.commands.prompt.call(this, ws, cmd); },
+    async models(ws) {
+      const { models } = await this.open();
+      const list = (await models.getAvailable()).map((m) => ({
+        provider: m.provider, id: m.id, name: m.name, thinkingLevels: getSupportedThinkingLevels(m),
+      }));
+      ws.send(JSON.stringify({ type: "models", models: list }));
+    },
+    // Applies from the next model request; a running turn keeps its model.
+    async configure(ws, cmd) {
+      const { root } = await this.open();
+      await root.configure({ model: cmd.model, thinkingLevel: cmd.thinkingLevel }, ctx);
+    },
+    async abort() {
+      const { root } = await this.open();
+      await root.abort(ctx);
+    },
+    rename(ws, cmd) { return this.rename(cmd.name); },
+  };
+
+  // Commands from any connected browser.
   async webSocketMessage(ws, raw) {
     let cmd;
     try { cmd = JSON.parse(raw); } catch { return; }
+    const handle = Object.hasOwn(Session.commands, cmd?.type) ? Session.commands[cmd.type] : null;
+    if (!handle) return;
     try {
-      if (cmd.type === "sub") return await this.subscribe(ws);
-      if (cmd.type === "prompt" || cmd.type === "steer") {
-        const { root, models } = await this.open();
-        // A retry with the same requestId finds the first submission.
-        await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx);
-        // Awaited here: a cell's I/O must belong to a live request or event.
-        if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
-      } else if (cmd.type === "models") {
-        const { models } = await this.open();
-        const list = (await models.getAvailable()).map((m) => ({
-          provider: m.provider, id: m.id, name: m.name, thinkingLevels: getSupportedThinkingLevels(m),
-        }));
-        ws.send(JSON.stringify({ type: "models", models: list }));
-      } else if (cmd.type === "configure") {
-        // Applies from the next model request; a running turn keeps its model.
-        const { root } = await this.open();
-        await root.configure({ model: cmd.model, thinkingLevel: cmd.thinkingLevel }, ctx);
-      } else if (cmd.type === "abort") {
-        const { root } = await this.open();
-        await root.abort(ctx);
-      } else if (cmd.type === "rename") {
-        await this.rename(cmd.name);
-      }
+      await handle.call(this, ws, cmd);
     } catch (e) {
       console.error(`session ${this.state.id}: ${cmd.type} failed`, describe(e));
       if (poisoned(e)) this.reopen();

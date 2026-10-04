@@ -42,11 +42,18 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   (markdown, html, svg, mermaid, code), versioned and full-text searchable,
   readable while sandboxes sleep.
 - **apps/ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
-  Changes, Preview, Terminal, and Events views. The session client
-  (`src/lib/session-client.ts`) is the UI's one handle on a Session cell:
-  the reconnecting socket, the reducer that folds pi-durable agent events
-  (`src/lib/events.ts`), and typed commands. `apps/ui/session.check.ts` checks
-  it against a scripted socket.
+  Changes, Preview, Terminal, and Events views. It reaches a Session cell
+  through the shared client's session client (`useSession` is its React
+  binding).
+- **packages/client/**: the REST contract and its typed client, and the
+  Session WebSocket protocol (`src/protocol.ts`) with the session client
+  (`src/session-client.ts`): the reconnecting socket (`src/socket.ts`, which
+  the Directory socket uses too), the reducer that folds pi-durable agent
+  events (`src/events.ts`), and typed commands. It needs no browser: the
+  caller passes the transport (`src/browser.ts` is the browser's).
+  `packages/client/session.check.ts` checks it against a scripted socket, and
+  `apps/worker/protocol.check.mjs` holds the Session cell's commands to the
+  protocol's.
 - **Repos**: a session can start from a repo URL; the cell clones it into the
   sandbox once; later containers get it back from the checkpoint. `GH_TOKEN` and
   `LINEAR_API_KEY` from a gitignored `.env` go into each sandbox command's
@@ -72,7 +79,7 @@ Programs live in `apps/`, libraries they share in `packages/`.
 |---|---|---|
 | `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
 | `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
-| `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`) and a typed client for it, for the browser and Node |
+| `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`), the Session WebSocket protocol, and typed clients for both, for the browser and Node |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
 ## Install on a Linux PC or server

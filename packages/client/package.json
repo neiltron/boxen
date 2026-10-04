@@ -2,14 +2,14 @@
   "name": "@pi-durable-sessions/client",
   "private": true,
   "type": "module",
-  "description": "The API contract (openapi.json) and a typed client for it, for the browser and Node",
+  "description": "The API contract (openapi.json), the Session WebSocket protocol, and typed clients for both, for the browser and Node",
   "exports": {
     ".": "./src/index.ts",
     "./openapi.json": "./openapi.json"
   },
   "scripts": {
     "generate": "openapi-typescript openapi.json -o src/openapi.ts",
-    "check": "openapi-typescript openapi.json -o src/openapi.ts --check && tsc"
+    "check": "node session.check.ts && openapi-typescript openapi.json -o src/openapi.ts --check && tsc && tsc -p tsconfig.core.json"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"

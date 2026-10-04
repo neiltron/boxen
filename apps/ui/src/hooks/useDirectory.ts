@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import { browserSocket, reconnecting } from "@pi-durable-sessions/client";
 import { WS_BASE, type AuthStatus, type SessionMeta } from "@/lib/api";
-import { reconnecting } from "@/lib/socket";
 
 type Frame = { type: "sessions"; sessions: SessionMeta[]; auth?: AuthStatus };
 
@@ -15,7 +15,7 @@ export function useDirectory(): { sessions: SessionMeta[]; auth: AuthStatus | nu
       message(m) {
         if (m.type === "sessions") { setSessions(m.sessions); setAuth(m.auth ?? null); }
       },
-    });
+    }, { transport: browserSocket });
     return () => socket.close();
   }, []);
 

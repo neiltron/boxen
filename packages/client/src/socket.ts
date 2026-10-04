@@ -5,9 +5,10 @@
 // socket, for the proxies on the way (Vite's dev proxy, Caddy, Tailscale
 // Serve) that may cut quiet connections.
 //
-// The transport is the seam, with two adapters: the browser's WebSocket
-// (browserSocket) and the scripted socket in session.check.ts. The clock is
-// injected too, so checks drive retries and pings without waiting.
+// The transport is the seam, and the caller always passes one: the browser's
+// WebSocket (browserSocket in browser.ts) or the scripted socket in
+// session.check.ts. Nothing here assumes a browser. The clock is injected
+// too, so checks drive retries and pings without waiting.
 
 export interface Wire {
   send(data: string): void; // throws when the socket is not open
@@ -21,24 +22,9 @@ export interface Clock {
 }
 
 export interface SocketDeps {
-  transport?: Transport;
+  transport: Transport;
   clock?: Clock;
 }
-
-export const browserSocket: Transport = (url, on) => {
-  const ws = new WebSocket(url);
-  ws.onopen = () => on.open();
-  ws.onmessage = (e) => on.message(e.data);
-  ws.onclose = () => on.close();
-  return {
-    // A CLOSING socket drops frames silently; refuse instead.
-    send: (data) => {
-      if (ws.readyState !== WebSocket.OPEN) throw new Error("socket not open");
-      ws.send(data);
-    },
-    close: () => ws.close(),
-  };
-};
 
 export const realClock: Clock = {
   after: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); },
@@ -54,7 +40,7 @@ export const PING_MS = 25_000;
 export function reconnecting<Frame>(
   url: string,
   on: { open?(): void; message(frame: Frame): void; drop?(): void },
-  { transport = browserSocket, clock = realClock }: SocketDeps = {},
+  { transport, clock = realClock }: SocketDeps,
 ) {
   let wire: Wire | null = null;
   let cancelRetry = () => {};

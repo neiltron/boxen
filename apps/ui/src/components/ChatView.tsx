@@ -18,7 +18,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 import { ToolCallBlock } from "@/components/ToolCallBlock";
 import type { SessionHandle } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
-import type { Block, ChatItem } from "@/lib/session-client";
+import type { Block, ChatItem } from "@pi-durable-sessions/client";
 
 function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
   const [open, setOpen] = useState(false);
