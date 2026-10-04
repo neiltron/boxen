@@ -124,8 +124,8 @@ are dropped. If that projection fails the request errors; retrying the same
 change repairs Directory. Existing records without `archivedAt` remain active.
 
 Checks (Node 22+). `pnpm check` runs every check in the workspace: the
-installer's tests and type-check (and `shellcheck install.sh` when shellcheck
-is installed), then each package's `check` script (`worker/`: the metadata,
+installer's tests, type-check and `shellcheck install.sh` (install shellcheck
+first; the check fails without it), then each package's `check` script (`worker/`: the metadata,
 assets and workspace checks; `ui/`: session client, lint, Playwright, build,
 built-app smoke).
 
