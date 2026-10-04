@@ -251,9 +251,12 @@ export class Session extends DurableObject {
     // A prompt while the agent works steers it; the user's message shows up
     // in every tab once it is placed.
     async prompt(ws, cmd) {
-      const { root, models } = await this.open();
+      // Until the prompt is admitted, a failure is the cell refusing it: the
+      // error frame names it by requestId, so its sender can tell.
+      const refused = (e) => { throw Object.assign(new Error(e.message, { cause: e }), { requestId: cmd.requestId }); };
+      const { root, models } = await this.open().catch(refused);
       // A retry with the same requestId finds the first submission.
-      await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx);
+      await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx).catch(refused);
       // Awaited here: a cell's I/O must belong to a live request or event.
       if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
     },
@@ -289,7 +292,7 @@ export class Session extends DurableObject {
     } catch (e) {
       console.error(`session ${this.state.id}: ${cmd.type} failed`, describe(e));
       if (poisoned(e)) this.reopen();
-      try { ws.send(JSON.stringify({ type: "error", error: e.message })); } catch {}
+      try { ws.send(JSON.stringify({ type: "error", error: e.message, requestId: e.requestId })); } catch {}
     }
   }
 

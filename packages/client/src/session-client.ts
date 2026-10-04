@@ -24,7 +24,9 @@
 // - run() is one turn for a headless caller (a script, the CLI, the MCP
 //   server): it waits for `ready`, sends the prompt, and resolves with a
 //   TurnResult once the cell settles that prompt (pi-durable's `submission`
-//   event for its requestId). Progress is the state, as for the web app:
+//   event for its requestId); `done` carries the answer entry that record
+//   names. Only an `error` frame with its requestId is its refusal; others
+//   (a failed title, another prompt's) are not its outcome. Progress is the state, as for the web app:
 //   subscribe() and read the reply growing in state().model. Its `signal`
 //   cancels: before the prompt goes out, nothing is sent; after, it sends
 //   `abort`, and the turn resolves as the cell settles it, normally
@@ -32,7 +34,8 @@
 //   once: the cell runs the turn on durably, but a rejoin's snapshot carries
 //   no submission records, so it cannot tell how a turn that ended meanwhile
 //   was settled. The caller decides (check the Session later, or abort it).
-//   run() never resends.
+//   Stopping the client settles a pending run() the same way: `disconnected`
+//   if its prompt went out, `aborted` if not. run() never resends.
 import { appendError, applyEvent, emptyModel, type ChatModel } from "./events.ts";
 import type { components } from "./openapi.ts";
 import type { AgentState, ModelInfo, SessionCommand, SessionFrame } from "./protocol.ts";
@@ -58,7 +61,7 @@ export interface SessionCommands {
 }
 
 export type TurnResult =
-  | { status: "done"; text: string } // the text of the turn's last assistant message
+  | { status: "done"; text: string } // the text of the answer the cell recorded for this prompt
   | { status: "error"; error: string } // the cell refused the prompt, or the turn failed (no model, model error, …)
   | { status: "aborted" } // anyone's abort, or this run's signal
   | { status: "disconnected" }; // the socket dropped mid-turn; the turn goes on in the cell
@@ -70,13 +73,21 @@ export interface SessionClient extends SessionCommands {
   run(text: string, options?: { signal?: AbortSignal }): Promise<TurnResult>; // needs connect()
 }
 
-// The fields of pi-durable's SubmissionRecord a turn ends on.
-type Submission = { requestId?: string; status: string; reason?: string; detail?: unknown };
+// The fields of pi-durable's events a turn reads: the SubmissionRecord it
+// ends on, and the committed entries one of which is its answer.
+type Submission = { requestId?: string; status: string; reason?: string; detail?: unknown; answer?: unknown };
+type Entry = { id?: unknown; model?: { role?: string; content?: { type?: string; text?: string }[] }[] };
 
-const replyText = (model: ChatModel) => {
-  const reply = model.items.findLast((item) => item.kind === "assistant");
-  return reply?.kind === "assistant" ? reply.blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n") : "";
-};
+const answerText = (entry: Entry) =>
+  (entry.model?.[0]?.content ?? []).flatMap((c) => (c.type === "text" ? [c.text ?? ""] : [])).join("\n");
+
+// The Session WebSocket of the system at `base` (http(s), with or without a
+// trailing slash or a path prefix), for callers outside the web app.
+export function sessionSocketUrl(base: string, id: string) {
+  const url = new URL(`api/session/${encodeURIComponent(id)}/ws`, base.endsWith("/") ? base : `${base}/`);
+  url.protocol = url.protocol.replace(/^http/, "ws");
+  return url.href;
+}
 
 export const emptySession = (): SessionState =>
   ({ model: emptyModel(), meta: null, ready: false, models: null, saved: null });
@@ -86,7 +97,7 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
   let joining: ChatModel | null = null; // built from the snapshot until ready
   let socket: ReturnType<typeof reconnecting<SessionFrame>> | null = null;
   const listeners = new Set<() => void>();
-  const turns = new Set<(frame: SessionFrame | null) => void>(); // run()s in flight; null: the socket dropped
+  const turns = new Set<(frame: SessionFrame | "drop" | "stop") => void>(); // run()s in flight
 
   const set = (next: Partial<SessionState>) => {
     state = { ...state, ...next };
@@ -128,10 +139,10 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
     fold(frame);
     for (const turn of [...turns]) turn(frame);
   };
-  const dropped = () => {
+  const dropped = (why: "drop" | "stop") => {
     joining = null;
     if (state.ready) set({ ready: false });
-    for (const turn of [...turns]) turn(null);
+    for (const turn of [...turns]) turn(why);
   };
 
   const command = (cmd: SessionCommand) => state.ready && !!socket?.send(cmd);
@@ -141,14 +152,14 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
       const self = reconnecting<SessionFrame>(url, {
         open: () => { joining = emptyModel(); },
         message: receive,
-        drop: dropped,
+        drop: () => dropped("drop"),
       }, deps);
       socket = self;
       return () => {
         self.close();
         if (socket !== self) return;
         socket = null;
-        dropped();
+        dropped("stop");
       };
     },
     state: () => state,
@@ -163,24 +174,27 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
     run: (text, { signal } = {}) => new Promise((resolve) => {
       const requestId = crypto.randomUUID();
       let sent = false;
-      let admitted = false; // the cell took the prompt: its submission arrived
+      const answers = new Map<unknown, string>(); // assistant entries committed since, by id
       const end = (result: TurnResult) => {
         turns.delete(watch);
         signal?.removeEventListener("abort", cancel);
         resolve(result);
       };
       const send = () => { sent = command({ type: "prompt", message: text, requestId }); };
-      const watch = (frame: SessionFrame | null) => {
+      const watch = (frame: SessionFrame | "drop" | "stop") => {
+        // Stopped: a prompt that went out goes on in the cell; one that did not never will.
+        if (frame === "stop") return end({ status: sent ? "disconnected" : "aborted" });
         if (!sent) return send(); // a frame while ready, or the join's own `ready`
-        if (!frame) return end({ status: "disconnected" });
-        // An error frame goes only to the socket whose command failed.
-        if (frame.type === "error" && !admitted) return end({ status: "error", error: frame.error });
+        if (frame === "drop") return end({ status: "disconnected" });
+        // The cell refusing this prompt; other error frames are not this turn's.
+        if (frame.type === "error" && frame.requestId === requestId) return end({ status: "error", error: frame.error });
         if (frame.type !== "events") return;
         for (const ev of frame.events) {
-          const record = (ev as { record?: Submission }).record;
+          const { record, entry } = ev as { record?: Submission; entry?: Entry };
+          if (ev.type === "message_end" && entry?.model?.[0]?.role === "assistant") answers.set(entry.id, answerText(entry));
           if (ev.type !== "submission" || record?.requestId !== requestId) continue;
-          admitted = true;
-          if (record.status === "done") return end({ status: "done", text: replyText(state.model) });
+          // The answer entry the record names, not the transcript's last item.
+          if (record.status === "done") return end({ status: "done", text: answers.get(record.answer) ?? "" });
           if (record.status !== "unanswered") continue; // queued, placed
           if (record.reason === "aborted") return end({ status: "aborted" });
           return end({ status: "error", error: typeof record.detail === "string" ? record.detail : record.reason ?? "unanswered" });

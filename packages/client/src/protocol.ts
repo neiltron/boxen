@@ -39,7 +39,7 @@ export type SessionFrame =
   | { type: "events"; events: { type: string }[] }
   | { type: "ready" } // the join is complete
   | { type: "models"; models: ModelInfo[] }
-  | { type: "error"; error: string }; // the cell rejected a command
+  | { type: "error"; error: string; requestId?: string }; // the cell rejected a command; requestId when it refused that prompt
 
 // Every command type, at runtime. A Record so the compiler fails when this
 // and SessionCommand disagree in either direction.

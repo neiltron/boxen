@@ -3,7 +3,7 @@
 // for timers, so drops, retries and pings run without waiting.
 import assert from "node:assert/strict";
 import { PING_MS, RETRY_MS, type Clock, type Transport } from "./src/socket.ts";
-import { sessionClient, type SessionClient } from "./src/session-client.ts";
+import { sessionClient, sessionSocketUrl, type SessionClient } from "./src/session-client.ts";
 
 // The test adapter at the transport seam: each socket the client opens,
 // driven by hand.
@@ -372,10 +372,10 @@ const artifactResult = (callId: string, artifactId: string) =>
     ] });
     s.frame({ type: "events", events: [{ type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: "lo" }] }] });
     s.frame(submission("someone-else", "done"));
-    s.frame({ type: "error", error: "a title failed" }); // after admission: not this turn's outcome
+    s.frame({ type: "error", error: "a title failed" }); // no requestId: not this turn's outcome
     assert.equal(await settled(turn), pending);
     s.frame({ type: "events", events: [
-      { type: "message_end", entry: { model: [{ role: "assistant", content: [{ type: "text", text: "Hello" }], stopReason: "stop" }] } },
+      { type: "message_end", entry: { id: 3, model: [{ role: "assistant", content: [{ type: "text", text: "Hello" }], stopReason: "stop" }] } },
       { type: "run_end", inputs: [1] },
       { type: "submission", record: { requestId, status: "done", entry: 2, answer: 3 } },
     ] });
@@ -383,14 +383,54 @@ const artifactResult = (callId: string, artifactId: string) =>
     assert.deepEqual(seen.slice(0, 2), ["Hel", "Hello"], "the reply streams through the state");
   }
 
-  // Error: the cell refuses the prompt, or settles it unanswered.
+  // The reply is the answer entry the submission names, whatever the
+  // transcript shows: here an error line lands mid-stream, after which the
+  // reducer stops following the streamed message.
+  {
+    const { client, net } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const turn = client.run("hi");
+    const { requestId } = promptOf(s)!;
+    s.frame(submission(requestId, "placed"));
+    s.frame({ type: "events", events: [
+      { type: "message_start", message: { role: "assistant", content: [{ type: "text", text: "Using a tool" }] } },
+      { type: "message_end", entry: { id: 2, model: [{ role: "assistant", content: [{ type: "text", text: "Using a tool" }], stopReason: "toolUse" }] } },
+      { type: "message_start", message: { role: "assistant", content: [] } },
+      { type: "message_update", changes: [{ type: "text_start", contentIndex: 0, block: { type: "text", text: "" } }, { type: "text_delta", contentIndex: 0, delta: "Hel" }] },
+    ] });
+    s.frame({ type: "error", error: "a title failed" });
+    s.frame({ type: "events", events: [
+      { type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: "lo" }] },
+      { type: "message_end", entry: { id: 4, model: [{ role: "assistant", content: [{ type: "text", text: "Hello" }], stopReason: "stop" }] } },
+      { type: "message_start", message: { role: "user", content: "queued by someone else" } },
+      { type: "submission", record: { requestId, status: "done", entry: 1, answer: 4 } },
+    ] });
+    assert.deepEqual(await turn, { status: "done", text: "Hello" });
+
+    // An answer committed in an earlier batch (a run that ends after its tools).
+    const ended = client.run("again");
+    s.frame({ type: "events", events: [{ type: "message_end", entry: { id: 6, model: [{ role: "assistant", content: [{ type: "text", text: "Earlier" }] }] } }] });
+    s.frame(submission(s.sent.at(-1)!.requestId, "done", { answer: 6 }));
+    assert.deepEqual(await ended, { status: "done", text: "Earlier" });
+  }
+
+  // Error: the cell refuses the prompt, or settles it unanswered. A refusal
+  // names the prompt's requestId; any other error frame is not this turn's.
   {
     const { client, net } = setup();
     const s = net.last();
     join(s, snapshot([]));
     const refused = client.run("hi");
-    s.frame({ type: "error", error: "Session is poisoned" });
+    const other = client.run("overlapping");
+    const [first, second] = s.sent.filter((c) => c.type === "prompt");
+    s.frame({ type: "error", error: "a title failed" });
+    assert.equal(await settled(refused), pending, "an error frame without its requestId");
+    s.frame({ type: "error", error: "Session is poisoned", requestId: first.requestId });
     assert.deepEqual(await refused, { status: "error", error: "Session is poisoned" });
+    assert.equal(await settled(other), pending, "another prompt's refusal");
+    s.frame({ type: "error", error: "busy", requestId: second.requestId });
+    assert.deepEqual(await other, { status: "error", error: "busy" });
 
     const failed = client.run("hi");
     s.frame(submission(promptOf(s)!.requestId, "queued"));
@@ -450,6 +490,29 @@ const artifactResult = (callId: string, artifactId: string) =>
     join(net.last(), snapshot([], { run: { inputs: [1] } }));
     assert.equal(promptOf(net.last()), undefined, "never resent");
   }
+
+  // Stopping the client settles every run(): one whose prompt went out as
+  // disconnected (the turn goes on in the cell), one whose prompt did not as
+  // aborted (nothing was sent).
+  {
+    const { client, net, stop } = setup();
+    const unsent = client.run("never sent");
+    const s = net.last();
+    s.open();
+    stop();
+    assert.deepEqual(await unsent, { status: "aborted" });
+
+    const other = setup();
+    join(other.net.last(), snapshot([]));
+    const sent = other.client.run("hi");
+    other.stop();
+    assert.deepEqual(await sent, { status: "disconnected" });
+  }
 }
+
+// A Session's socket URL from the system's base URL, as headless callers get it.
+assert.equal(sessionSocketUrl("http://127.0.0.1:8093", "s1"), "ws://127.0.0.1:8093/api/session/s1/ws");
+assert.equal(sessionSocketUrl("https://host.ts.net/", "s1"), "wss://host.ts.net/api/session/s1/ws");
+assert.equal(sessionSocketUrl("https://host/prefix", "a b"), "wss://host/prefix/api/session/a%20b/ws");
 
 console.log("session.check ok");

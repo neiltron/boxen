@@ -126,19 +126,20 @@ node examples/run-turn.ts http://127.0.0.1:8093 "List the files in /workspace"
 node examples/run-turn.ts http://127.0.0.1:8093 "And now?" <session-id>  # an existing Session
 ```
 
-It creates a Session unless given one, streams the reply to stdout, and
-exits 0 when the turn is done, 1 otherwise. Ctrl-C aborts the turn. A prompt
+It creates a Session unless given one, streams the reply to stdout, ends with
+the whole answer, and exits 0 when the turn is done, 1 otherwise. Ctrl-C
+aborts the turn; with no connection in 15 s it gives up. A prompt
 spends model credits, and the Session stays behind.
 
-In code: `sessionClient(url, { transport: webSocketTransport })`, `connect()`,
+In code: `sessionClient(sessionSocketUrl(base, id), { transport: webSocketTransport })`, `connect()`,
 then `await client.run(text, { signal })`. It waits for the join, sends the
 prompt, and resolves when the cell settles that prompt (its pi-durable
 submission record, matched by requestId) with one of:
 
 | `status` | when | the turn in the cell |
 |---|---|---|
-| `done` (`text`: the last assistant message's text) | the prompt was answered | finished |
-| `error` (`error`: the reason) | the cell refused the prompt (an `error` frame), or settled it unanswered (no model, model error, fault) | never started, or ended |
+| `done` (`text`: the answer's text) | the prompt was answered | finished |
+| `error` (`error`: the reason) | the cell refused the prompt (an `error` frame carrying its requestId), or settled it unanswered (no model, model error, fault) | never started, or ended |
 | `aborted` | anyone's `abort`, including this call's `signal` | stopped |
 | `disconnected` | the socket dropped after the prompt went out | **may still be running** |
 
@@ -146,12 +147,23 @@ Progress is the client's state: `subscribe()` and read the reply growing in
 `state().model.items`. The `signal` sends nothing if the prompt hasn't gone
 out yet; otherwise it sends `abort`, and `run()` resolves when the cell
 settles the turn, normally `aborted`. A drop before the prompt goes out only
-delays it (the socket keeps retrying; pass `AbortSignal.timeout(ms)` to bound
-the wait). A drop after resolves `disconnected` at once instead of following
+delays it (the socket keeps retrying; abort the signal if `ready` hasn't come
+after a while, as the example does, to bound the wait without bounding the
+turn). A drop after resolves `disconnected` at once instead of following
 the turn through the reconnect: the cell runs it on durably, but a rejoin's
 snapshot carries no submission records, so `run()` couldn't tell how a turn
 that ended meanwhile was settled. The caller decides: look at the Session later, or
-abort it. `run()` never resends. `packages/client/session.check.ts` covers
+abort it. Stopping the client (the function `connect()` returned) settles a
+pending `run()` too: `disconnected` if its prompt went out, `aborted` if not.
+`run()` never resends.
+
+`text` is the answer entry the cell records for this prompt, not the last
+line of the transcript, so other callers' prompts and error lines can't cut
+it short. Error frames without the prompt's requestId (a failed automatic
+title, another command's failure) show in the transcript but don't end the
+turn. A worker deployed before the cell named refusals sends them without
+one, so `run()` against it waits on a refused prompt until stopped: deploy
+the worker with the client. `packages/client/session.check.ts` covers
 every outcome with the scripted socket.
 
 ## Rename and archive
