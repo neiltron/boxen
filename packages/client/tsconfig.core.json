@@ -4,5 +4,5 @@
   // Request and Response types.)
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2023"], "types": ["node"] },
-  "include": ["src/session-client.ts", "src/websocket.ts", "session.check.ts", "examples"]
+  "include": ["src/session-client.ts", "src/websocket.ts", "session.check.ts"]
 }

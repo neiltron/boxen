@@ -81,6 +81,7 @@ Programs live in `apps/`, libraries they share in `packages/`.
 |---|---|---|
 | `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
 | `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
+| `apps/cli/` | `@pi-durable-sessions/cli` | `pds`, the command line: list, create and prompt Sessions |
 | `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`), the Session WebSocket protocol, and typed clients for both, for the browser and Node |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
@@ -115,21 +116,36 @@ Write `pnpm run deploy`, not `pnpm deploy`: that is a built-in pnpm command.
 After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
-## Run a turn from Node
+## Drive it from the command line
 
-The shared client drives a Session with no browser. Against a running system
-(here the local one; a tailnet URL works the same):
+`pds` (`apps/cli/`) is the system's one command line. From the workspace, run
+`pnpm pds <command>` or `node apps/cli/pds.ts <command>`:
 
 ```sh
-cd packages/client
-node examples/run-turn.ts http://127.0.0.1:8093 "List the files in /workspace"
-node examples/run-turn.ts http://127.0.0.1:8093 "And now?" <session-id>  # an existing Session
+pnpm pds list                                   # id, status, name per line
+id=$(pnpm pds create --repo https://github.com/you/repo.git)   # prints the new id
+pnpm pds prompt "$id" "List the files in /workspace"           # streams the reply
+pnpm pds prompt "$id" "And now?" --json         # {"status":"done","text":"…"}
+pnpm pds help
 ```
 
-It creates a Session unless given one, streams the reply to stdout, ends with
-the whole answer, and exits 0 when the turn is done, 1 otherwise. Ctrl-C
-aborts the turn; with no connection in 15 s it gives up. A prompt
-spends model credits, and the Session stays behind.
+It talks to `--url`, else `$PDS_URL`, else `http://127.0.0.1:8093` (a tailnet
+URL works the same). `--json` makes any command print one JSON value on
+stdout: the API's Session list or new Session, or the turn's result below
+(nothing while the reply streams). Diagnostics go to stderr. Exit codes: 0 on
+success (for `prompt`, only a `done` turn), 1 on failure (an API error, or a
+turn that ended any other way), 2 for bad usage. Ctrl-C aborts the turn; with no connection in 15 s it gives up. A
+prompt spends model credits, and the Session stays behind. There is no auth
+yet; `system()` in `pds.ts` is where a credential will attach.
+
+The operations commands of #68 (start, stop, deploy, status, logs) will join
+the same binary as a second group in its command table; see the comment above
+`groups` in `apps/cli/pds.ts`.
+
+## Run a turn from Node
+
+The shared client drives a Session with no browser; `apps/cli/pds.ts`
+(`prompt`) is a complete caller, including the streaming printer.
 
 In code: `sessionClient(sessionSocketUrl(base, id), { transport: webSocketTransport })`, `connect()`,
 then `await client.run(text, { signal })`. It waits for the join, sends the
@@ -148,7 +164,7 @@ Progress is the client's state: `subscribe()` and read the reply growing in
 out yet; otherwise it sends `abort`, and `run()` resolves when the cell
 settles the turn, normally `aborted`. A drop before the prompt goes out only
 delays it (the socket keeps retrying; abort the signal if `ready` hasn't come
-after a while, as the example does, to bound the wait without bounding the
+after a while, as `pds prompt` does, to bound the wait without bounding the
 turn). A drop after resolves `disconnected` at once instead of following
 the turn through the reconnect: the cell runs it on durably, but a rejoin's
 snapshot carries no submission records, so `run()` couldn't tell how a turn

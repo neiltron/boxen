@@ -5,6 +5,7 @@
   "description": "pi-sessions rebuilt on pi-durable: the agent runs inside the Session cell, no host process",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
+    "pds": "node apps/cli/pds.ts",
     "ui": "pnpm --filter @pi-durable-sessions/ui run dev",
     "build": "pnpm --filter @pi-durable-sessions/ui run build",
     "deploy": "pnpm --filter @pi-durable-sessions/worker run deploy",

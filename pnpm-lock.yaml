@@ -173,6 +173,16 @@ importers:
         specifier: ~6.0.2
         version: 6.0.3
 
+  apps/cli:
+    dependencies:
+      '@pi-durable-sessions/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+    devDependencies:
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+
   apps/ui:
     dependencies:
       '@danfessler/trellis':
