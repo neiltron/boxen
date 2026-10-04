@@ -83,12 +83,12 @@ dependency was added to this workspace.
    as follows:
    - *`Pinned Forge OpenAPI changed for PUT /accounts/{account_id}/workers/…`*:
      a check that is specific to Cloudflare's spec. We commented it out
-     (patch below).
+     (recipe below).
    - *`Root hand-written command "auth" collides with a generated product`*:
      `cf`'s own `auth` command took the name. We renamed our group to `oauth`.
    - *`17 command(s) failed to generate`*: all 17 are `cf`'s hand-written
      commands (`containers build`, `tunnels run`, …), whose operations are not
-     in our spec. We let the transformer return instead of throwing (patch
+     in our spec. We let the transformer return instead of throwing (recipe
      below).
 
    It then wrote 32 files: 29 command modules, about 2,000 lines, plus 3 JSON
@@ -101,17 +101,79 @@ dependency was added to this workspace.
    the overlay. Second, it could not find `core/pagination/Page.js`, because
    `cf`'s runtime imports Fern helpers that are emitted only for Cloudflare's
    spec. We restored the 19 missing `core/` files from `cf`'s committed SDK
-   with `git checkout HEAD -- …`. After that it ran with
-   `CLOUDFLARE_API_BASE_URL=http://127.0.0.1:18093`,
-   `CLOUDFLARE_API_TOKEN=dummy-token`, `CF_SEND_TELEMETRY=false` and
-   `DO_NOT_TRACK=1`, with `HOME` set to the scratch directory, against two
-   servers:
-   - The #75 stand-in (`standin.mjs`, port 18093) for sessions and artifacts.
-   - A 15-line server on port 18094 that streams NDJSON for
-     `POST /api/auth/login` and answers 500 to everything else.
+   (the last command in the recipe below). After that, the generated commands
+   ran against the stand-in below, with a dummy Cloudflare token and telemetry
+   off. A second copy of the stand-in with `FAIL=1` supplied the 500 case.
 
-The overlay, run with
-`jq -f overlay.jq openapi.json > openapi.forge.json`:
+The comparison first ran against the #75 stand-in plus a separate NDJSON
+server, which are not kept. The stand-in below combines the parts of both that
+the comparison used. On 2026-10-04 the recipe was followed again from an empty
+directory with this stand-in: it generated 20 SDK operations and wrote 32 CLI
+files, the restore loop put back all 19 files, and every result in the table
+below came out the same.
+
+### Reproduce
+
+Requirements: Node 22 or later (26.2.0 here), pnpm 12, Docker, `jq` and
+`perl`. Work in an empty directory outside this repo. Save the overlay and the
+stand-in below into it as `overlay.jq` and `standin.mjs`. The generate step
+pulls `fernapi/fern-typescript-sdk:3.80.1` and re-tags it locally; remove it
+afterwards with `docker rmi fernapi/fern-typescript-sdk:3.80.1`. If `TMPDIR`
+is a long path, run it through `node --import tsx` as below, not the `tsx`
+CLI, whose IPC socket path then exceeds the Unix limit.
+
+```sh
+W=$PWD
+cp <this repo>/pi-durable-sessions/packages/client/openapi.json .
+git clone https://github.com/cloudflare/cf.git
+git -C cf checkout 1f0303ea605b458c800f0a9b0040f674a8096c3d
+cd cf
+pnpm install --frozen-lockfile --ignore-scripts
+# 1. skip a check that only holds for Cloudflare's spec
+sed -i 's|^preserveWorkersSecretUpdatePositional(cliSource);|// &|' packages/cli/generate.ts
+# 2. do not fail on cf's own hand-written commands, whose operations are not in our spec
+perl -0pi -e 's/(\t\tthrow new Error\(\n\t\t\t`\$\{generationErrors\.length\} command)/\t\tif (process.env.FORGE_EVAL) return;\n$1/' \
+  packages/cli/generator/index.ts
+jq -f "$W/overlay.jq" "$W/openapi.json" > "$W/openapi.forge.json"
+cd packages/cli
+FORGE_EVAL=1 FORGE_OPENAPI_BUNDLE="$W/openapi.forge.json" \
+  PATH=$PWD/node_modules/.bin:$PATH node --import tsx generate.ts
+# 3. put back the Fern core files cf's runtime imports but our SDK does not emit (19)
+git ls-tree -r --name-only HEAD src/sdk/sdk/core | while read -r f; do [ -e "$f" ] || git checkout HEAD -- "$f"; done
+```
+
+Steps 1 and 2 (forge's core alone) can be run from `cf/packages/cli`. They
+print `0 []` for `openapi.json` and `20` with the 7 groups for
+`openapi.forge.json`:
+
+```sh
+cat > core-probe.ts <<'EOF'
+import { readFileSync } from "node:fs";
+import { initFromOpenApi } from "@cloudflare/forge";
+const forge = initFromOpenApi(JSON.parse(readFileSync(process.argv[2], "utf8")));
+console.log(forge.methodStats().total, JSON.stringify(forge.methodMap()));
+EOF
+node --import tsx core-probe.ts "$W/openapi.json"; node --import tsx core-probe.ts "$W/openapi.forge.json"
+```
+
+To run the commands, stay in `cf/packages/cli`:
+
+```sh
+node "$W/standin.mjs" &                  # port 18093
+PORT=18094 FAIL=1 node "$W/standin.mjs" &  # the 500 case
+mkdir -p "$W/home"
+gen() { env HOME="$W/home" CF_SEND_TELEMETRY=false DO_NOT_TRACK=1 \
+  CLOUDFLARE_API_BASE_URL="${BASE:-http://127.0.0.1:18093}" CLOUDFLARE_API_TOKEN=dummy-token \
+  node --no-deprecation --import tsx src/dev.ts "$@"; }
+gen sessions list; gen sessions create --name x; gen artifacts get a1; gen artifacts get nope
+gen artifacts list --session s1        # the stand-in logs q=false
+gen sessions socket s1; gen oauth login --provider anthropic; gen sessions create --nmae typo
+BASE=http://127.0.0.1:18094 gen sessions list; BASE=http://127.0.0.1:18099 gen sessions list
+# pds, for the other column: node <this repo>/pi-durable-sessions/apps/cli/pds.ts list --url http://127.0.0.1:18093
+```
+
+`overlay.jq`, which gives every operation a group and a method name, and the
+server Fern needs before it emits `environments.ts`:
 
 ```jq
 {
@@ -133,18 +195,46 @@ The overlay, run with
 | .servers = [{url: "http://localhost:8093", "x-fern-server-name": "Default"}]
 ```
 
-The patch to `cf` at `1f0303ea`:
+`standin.mjs`, which serves only the routes the comparison called. Any server
+that answers these routes according to `openapi.json` will do:
 
-```diff
---- a/packages/cli/generate.ts
-+++ b/packages/cli/generate.ts
--preserveWorkersSecretUpdatePositional(cliSource);
-+// preserveWorkersSecretUpdatePositional(cliSource);
---- a/packages/cli/generator/index.ts
-+++ b/packages/cli/generator/index.ts
- 		console.error("");
-+		if (process.env.FORGE_EVAL) return;
- 		throw new Error(
+```js
+// What the comparison ran against: the routes the two CLIs called, nothing more.
+// FAIL=1 answers 500 {"error":"Directory unavailable"} to every route but login.
+import http from "node:http";
+const sessions = [{ id: "s1", name: "untitled", cwd: "/workspace", createdAt: 1, metadataRevision: 0, status: "idle", lastActivity: 2 }];
+const art = { id: "a1", session: "s1", title: "Plan", kind: "markdown", language: null, version: 2, createdAt: 1, updatedAt: 2 };
+http.createServer((req, res) => {
+  const u = new URL(req.url, "http://x");
+  const json = (code, body) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(body));
+  console.error(req.method, req.url);
+  if (req.method === "POST" && u.pathname === "/api/auth/login") { // NDJSON: url, keepalive, done
+    res.writeHead(200, { "content-type": "application/x-ndjson" });
+    res.write(JSON.stringify({ url: "https://example.com/authorize" }) + "\n");
+    setTimeout(() => res.write("{}\n"), 1000);
+    return setTimeout(() => res.end(JSON.stringify({ done: true }) + "\n"), 2000);
+  }
+  if (process.env.FAIL) return json(500, { error: "Directory unavailable" });
+  if (req.method === "GET" && u.pathname === "/api/sessions") return json(200, sessions);
+  if (req.method === "POST" && u.pathname === "/api/sessions") {
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    return req.on("end", () => {
+      const b = JSON.parse(body || "{}");
+      const s = { ...sessions[0], id: crypto.randomUUID(), name: b.name ?? "untitled", repo: b.repo ?? null, branch: b.branch ?? null };
+      sessions.push(s);
+      json(200, s);
+    });
+  }
+  if (req.method === "GET" && u.pathname === "/api/artifacts") { // q (any value) searches; else filter by session
+    if (u.searchParams.has("q")) return json(200, [{ ...art, snippet: "[Step] one" }]);
+    const s = u.searchParams.get("session");
+    return json(200, !s || s === "s1" ? [art] : []);
+  }
+  if (req.method === "GET" && u.pathname === "/api/artifacts/a1") return json(200, { ...art, content: "# Plan v2\n\nStep one." });
+  if (req.method === "GET" && u.pathname.startsWith("/api/artifacts/")) return json(404, { error: "No such artifact" });
+  res.writeHead(404).end(); // includes a plain GET of the socket paths
+}).listen(Number(process.env.PORT ?? 18093), "127.0.0.1");
 ```
 
 ## Generated commands compared with `pds`
@@ -152,7 +242,7 @@ The patch to `cf` at `1f0303ea`:
 | | Generated (forge + `cf`'s generator) | `pds` (hand-written) |
 |---|---|---|
 | Coverage | One command per operation, 20/20. `sessions list`, `sessions create`, `artifacts get` and the 500 error worked against the stand-ins. | 3 commands: `list`, `create` (2 of the 17 REST operations) and `prompt` |
-| WebSocket upgrades (3) | Generated as plain GETs. `sessions socket s1` got an HTTP 404 from the stand-in, which only accepts upgrades; per the protocol doc the worker answers 426. They are unusable as commands. | `prompt` runs a turn over the Session socket. The other two sockets are not exposed. |
+| WebSocket upgrades (3) | Generated as plain GETs. `sessions socket s1` got an HTTP 404 from the stand-in, which does not serve the socket paths; per the protocol doc, the worker answers a plain GET with 426. They are unusable as commands. | `prompt` runs a turn over the Session socket. The other two sockets are not exposed. |
 | NDJSON `startLogin` | Waits for the whole stream, then prints `{"ok":false,"error":{"reason":"non-json",…}}` and **exits 0**. The sign-in URL in the first line is shown only after the sign-in ends. | Not a command |
 | Spec/flag collisions | `artifacts list` sends `q=false` on every call, so every listing becomes a search: the spec's `q` parameter collides with `cf`'s global `-q/--quiet`. `--q Plan` fails with `Unknown command: Plan`. | None; the flags are chosen by hand |
 | Text output | None; always pretty-printed JSON, piped or not | One line per Session (`id⇥status⇥name`) or the new id |
@@ -196,9 +286,10 @@ check that fails on a duplicate command name or flag.
 
 ## Kept, and not verified
 
-The generated output is not committed here. It is reproducible with the steps
-above, and the copy from this run was left in the evaluator's scratch
-directory (`output/commands`, `output/sdk`).
+The generated output is not committed here. The recipe above regenerates it
+from `cf` at `1f0303ea` and repeats the comparison against the inline
+stand-in. It was rerun that way once, on 2026-10-04. The result also depends on the external inputs the recipe pins or
+pulls: `cf`'s lockfile and the Fern Docker image `3.80.1`.
 
 Not verified:
 
@@ -207,7 +298,7 @@ Not verified:
   doc.
 - `updateSession`, `listPorts`, `listProviders`, `setApiKey`, `finishLogin`,
   `logout`, `authCallback`, `listRepos`, `listBranches` and both secrets
-  operations, which were generated but not called because the stand-ins do not
+  operations, which were generated but not called because the stand-in does not
   serve them. Nothing was pointed at the live system.
 - Whether `cf`'s generated tree type-checks against our SDK. `cf`'s
   `check:type` was not run; the generated commands ran under tsx, which does
