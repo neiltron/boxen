@@ -1,0 +1,82 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "pi-durable-sessions",
+    "version": "0.1.0",
+    "description": "The worker's REST API (worker/src/index.js). So far only the Session list and create endpoints; worker/contract.check.mjs fails when the worker and this file disagree. The Session WebSocket (/api/session/{id}/ws) is not described here."
+  },
+  "paths": {
+    "/api/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "Every Session, most recently active first",
+        "description": "The Directory cell's rows. The web app gets the same list pushed over /api/directory/ws.",
+        "responses": {
+          "200": {
+            "description": "The Sessions",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Session" } } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createSession",
+        "summary": "Create a Session",
+        "description": "Named after the repo (or \"untitled\") until the first message titles it, unless `name` is given. The Session's sandbox starts cloning `repo` right away.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSession" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The new Session",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateSession": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "An explicit name; otherwise the first message titles the Session" },
+          "repo": { "type": "string", "description": "Git URL cloned into /workspace/<repo name>; blank means none" },
+          "branch": { "type": "string", "description": "Branch to check out; blank means the default" }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "A Session as the create response, the Directory list and the Session cell's meta frame report it. Each carries a different subset of the optional fields.",
+        "required": ["id", "name", "cwd", "createdAt"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "cwd": { "type": "string", "description": "The agent's working directory in the sandbox" },
+          "repo": { "type": ["string", "null"] },
+          "branch": { "type": ["string", "null"] },
+          "createdAt": { "type": "integer", "description": "Milliseconds since the epoch" },
+          "titled": { "type": "boolean", "description": "Named explicitly, by a rename or by the automatic title; not in Directory rows" },
+          "status": { "type": "string", "enum": ["running", "idle"], "description": "Directory rows only" },
+          "lastActivity": { "type": "integer", "description": "Directory rows only; milliseconds since the epoch" },
+          "archivedAt": { "type": ["integer", "null"], "description": "When it was archived; null or absent when active" },
+          "metadataRevision": { "type": "integer" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string" } }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "The request failed: a body that is not JSON, or a cell that threw",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    }
+  }
+}

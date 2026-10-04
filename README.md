@@ -66,12 +66,13 @@ A pnpm workspace. Install pnpm 10 or later; it switches itself to the version
 `packageManager` in `package.json` pins. One `pnpm install` here installs
 everything.
 
-Programs live in `apps/`, libraries they share in `packages/` (none yet).
+Programs live in `apps/`, libraries they share in `packages/`.
 
 | Path | Package | What |
 |---|---|---|
 | `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
 | `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
+| `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`) and a typed client for it, for the browser and Node |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
 ## Install on a Linux PC or server
@@ -128,7 +129,8 @@ change repairs Directory. Existing records without `archivedAt` remain active.
 Checks (Node 22+). `pnpm check` runs every check in the workspace: the
 installer's tests, type-check and `shellcheck install.sh` (install shellcheck
 first; the check fails without it), then each package's `check` script (`apps/worker/`: the metadata,
-assets and workspace checks; `apps/ui/`: session client, lint, Playwright, build,
+assets and workspace checks; `packages/client/`: generated types
+current, type-check; `apps/ui/`: session client, lint, Playwright, build,
 built-app smoke).
 
 ```sh
@@ -137,6 +139,10 @@ pnpm --dir apps/ui exec playwright install --with-deps chromium  # once per mach
 pnpm check
 pnpm --filter @pi-durable-sessions/worker run check  # or one package
 ```
+
+`packages/client/openapi.json` is the REST contract, so far the Session list
+and create endpoints. After editing it, run `pnpm --filter
+@pi-durable-sessions/client run generate` to regenerate the client's types.
 
 The backend check uses real in-memory SQLite with mocked runtime/agent
 boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
