@@ -114,7 +114,20 @@ export class Session extends DurableObject {
         registry,
         // Built per tool call, so a container that lost its disk since the
         // last call gets its files back before the tool runs.
-        env: async ({ cwd }) => (await this.workspace()).env(cwd),
+        //
+        // The prepare goes through an RPC to this cell first. A turn runs in
+        // the background of the prompt that started it, often after that
+        // handler has returned. Once a handler has returned, celld never
+        // completes I/O begun after awaiting another event's promise, and the
+        // prepare init starts is still running when a prompt sent right after
+        // create arrives: joined directly, the turn's next call (the secrets
+        // read) hangs, and the turn never gets past its first step. Inside the
+        // RPC the wait belongs to a handler that is still running, and the
+        // reply is the turn's own I/O.
+        env: async ({ cwd }) => {
+          await this.env.SESSION.getByName(meta.id).prepareWorkspace();
+          return (await this.workspace()).env(cwd);
+        },
         onReport: (e) => this.report(e),
       },
       ctx,
@@ -163,9 +176,11 @@ export class Session extends DurableObject {
 
   // Set while a run goes, so a cell that restarts mid-run (node restart,
   // self-fence after sleep) reopens and resumes it with no browser attached.
-  // The handler holds the run's I/O to a live event until the run ends,
-  // then checkpoints the workspace. celld redelivers an alarm that runs
-  // long (about every 15s), so redeliveries join the one already watching.
+  // The handler stays running until the run ends, then checkpoints the
+  // workspace. It carries only a run its own open() resumes; a run a prompt
+  // started does its I/O under the prompt's event, which the alarm cannot
+  // take over. celld redelivers an alarm that runs long (about every 15s),
+  // so redeliveries join the one already watching.
   alarm() {
     this.watching ??= this.watchRun().finally(() => { this.watching = null; });
     return this.watching;
@@ -196,6 +211,12 @@ export class Session extends DurableObject {
       return sessionWorkspace(this.env, meta, (text, level) => this.note(text, level));
     });
     return this.workspacing;
+  }
+
+  // For the turn's env builder in openHarness: join any prepare in flight
+  // from inside an RPC handler.
+  async prepareWorkspace() {
+    await (await this.workspace()).prepare();
   }
 
   async diff() {
