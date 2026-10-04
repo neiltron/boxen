@@ -13,8 +13,8 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
                         └ register / touch / credentials → Directory cell ⇄ WS ⇄ sidebar
 ```
 
-- **Session cell** (`worker/src/session.js`): opens a Harness on `CellSqlite`
-  (`worker/src/cell-sqlite.js`, pi-durable's SQLite facade over `storage.sql`).
+- **Session cell** (`apps/worker/src/session.js`): opens a Harness on `CellSqlite`
+  (`apps/worker/src/cell-sqlite.js`, pi-durable's SQLite facade over `storage.sql`).
   Transcript, streamed partials, tool output, and the queue are committed
   there. While a run goes, an alarm stays set, so after a node restart or
   self-fence the cell reopens the Harness and resumes the run with no
@@ -22,30 +22,30 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   reopened over the same storage, and browsers reconnect to it. Each WebSocket gets its own
   `watchEvents()` stream (a snapshot, then deltas), which replaces the old
   event log and replay. A prompt sent while the agent works becomes a steer.
-- **Sandbox** (`@cloudflare/sandbox`, image in `worker/Dockerfile`): one Linux
+- **Sandbox** (`@cloudflare/sandbox`, image in `apps/worker/Dockerfile`): one Linux
   container per session. Everything done to it goes through the session's
-  workspace (`worker/src/workspace.js`): restore and clone, the agent's
-  `ExecutionEnv` (`worker/src/sandbox-env.js`: read, write, edit, and bash with
+  workspace (`apps/worker/src/workspace.js`): restore and clone, the agent's
+  `ExecutionEnv` (`apps/worker/src/sandbox-env.js`: read, write, edit, and bash with
   streamed output), the Changes diff, the terminal shell, and previews.
-  `worker/workspace.check.js` drives it with an in-memory sandbox.
-  The container's disk dies with it, so `worker/src/sandbox.js` checkpoints
+  `apps/worker/workspace.check.js` drives it with an in-memory sandbox.
+  The container's disk dies with it, so `apps/worker/src/sandbox.js` checkpoints
   `/workspace` (minus `node_modules`) to the `BACKUP_BUCKET` binding after
   each run and before idle sleep, and restores it into a fresh container
   before the next tool call. Running processes are not restored.
 - **Directory cell**: the session list, plus model providers. Any pi-ai
   provider can take an API key or its own sign-in (Providers, bottom of the
-  sidebar); credentials live here (`worker/src/credentials.js` is the pi-ai
+  sidebar); credentials live here (`apps/worker/src/credentials.js` is the pi-ai
   `CredentialStore`), never copied from the host's pi. OAuth sign-ins
-  redirect to loopback ports, which `ui/vite.config.ts` forwards to the cell;
+  redirect to loopback ports, which `apps/ui/vite.config.ts` forwards to the cell;
   pasting the redirect address is the fallback from another machine.
 - **Artifacts cell**: what the agent's `artifact` tool shows in the panel
   (markdown, html, svg, mermaid, code), versioned and full-text searchable,
   readable while sandboxes sleep.
-- **ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
+- **apps/ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
   Changes, Preview, Terminal, and Events views. The session client
   (`src/lib/session-client.ts`) is the UI's one handle on a Session cell:
   the reconnecting socket, the reducer that folds pi-durable agent events
-  (`src/lib/events.ts`), and typed commands. `ui/session.check.ts` checks
+  (`src/lib/events.ts`), and typed commands. `apps/ui/session.check.ts` checks
   it against a scripted socket.
 - **Repos**: a session can start from a repo URL; the cell clones it into the
   sandbox once; later containers get it back from the checkpoint. `GH_TOKEN` and
@@ -66,10 +66,12 @@ A pnpm workspace. Install pnpm 10 or later; it switches itself to the version
 `packageManager` in `package.json` pins. One `pnpm install` here installs
 everything.
 
+Programs live in `apps/`, libraries they share in `packages/` (none yet).
+
 | Path | Package | What |
 |---|---|---|
-| `worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
-| `ui/` | `@pi-durable-sessions/ui` | the web app |
+| `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
+| `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
 ## Install on a Linux PC or server
@@ -98,9 +100,9 @@ pnpm ui                          # http://localhost:5176
 ```
 
 Write `pnpm run deploy`, not `pnpm deploy`: that is a built-in pnpm command.
-`pnpm build` builds the UI into `ui/dist`.
+`pnpm build` builds the UI into `apps/ui/dist`.
 
-After editing `worker/src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
+After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
 ## Rename and archive
@@ -125,13 +127,13 @@ change repairs Directory. Existing records without `archivedAt` remain active.
 
 Checks (Node 22+). `pnpm check` runs every check in the workspace: the
 installer's tests, type-check and `shellcheck install.sh` (install shellcheck
-first; the check fails without it), then each package's `check` script (`worker/`: the metadata,
-assets and workspace checks; `ui/`: session client, lint, Playwright, build,
+first; the check fails without it), then each package's `check` script (`apps/worker/`: the metadata,
+assets and workspace checks; `apps/ui/`: session client, lint, Playwright, build,
 built-app smoke).
 
 ```sh
 pnpm install
-pnpm --dir ui exec playwright install --with-deps chromium  # once per machine
+pnpm --dir apps/ui exec playwright install --with-deps chromium  # once per machine
 pnpm check
 pnpm --filter @pi-durable-sessions/worker run check  # or one package
 ```
@@ -151,7 +153,7 @@ pick one. The last applied port is saved per session in localStorage; reload
 remounts the iframe, and the adjacent link opens the same URL in a new tab.
 Ports must be 1024–65535 except **3000**, the Sandbox control server; run Next
 on e.g. 3001 instead. On macOS celld can only reach ports the image declares
-with `EXPOSE` (see `worker/Dockerfile`: 3001 4000 4173 4321 5000 5173 5174 8000 8080
+with `EXPOSE` (see `apps/worker/Dockerfile`: 3001 4000 4173 4321 5000 5173 5174 8000 8080
 8787 8888); a new image applies to new containers.
 
 The UI's own dev server is **http://localhost:5176**. The iframe goes straight
@@ -161,7 +163,7 @@ and WebSocket upgrades for HMR. This is a local, plain-HTTP preview: celld
 must be on the browser's machine. App framing restrictions (CSP or
 X-Frame-Options) are preserved; use the new-tab link if embedding is blocked.
 
-Run `node workspace.check.js` in `worker/` for proxy/port checks without a container. On a
+Run `node workspace.check.js` in `apps/worker/` for proxy/port checks without a container. On a
 running stack, also check absolute assets in the Network tab, edit a source
 file to confirm HMR, and switch sessions/reload the UI to check port recall.
 Try port 3000 and 65536 directly in the preview host: both should return 400.
@@ -192,14 +194,14 @@ Browser smoke test (after deploying the worker and starting the UI):
 4. Run `exit`, then use Reconnect. Send the agent a bash task to confirm its
    shell still works. Switch sessions and check that output doesn't leak.
 
-Offline checks, in `worker/`: `node workspace.check.js` (the shell, with an
+Offline checks, in `apps/worker/`: `node workspace.check.js` (the shell, with an
 in-memory sandbox) and `node --experimental-vm-modules assets.check.mjs` (the route).
 They do not test celld's upgrade transport or the container's PTY
 implementation.
 
 ## Notes
 
-- **Runtime shims** (`worker/src/index.js`): pi-ai's OAuth flows are registered
+- **Runtime shims** (`apps/worker/src/index.js`): pi-ai's OAuth flows are registered
   statically (`registerBunOAuthFlows`), and `atob` is patched to accept
   unpadded base64url JWTs.
 - **celld I/O belongs to the request that started it.** A fetch begun in a
