@@ -36,7 +36,8 @@ export const PING_MS = 25_000;
 
 // `send` returns false (and sends nothing) unless the socket is open; the
 // Wire throws for that. `drop` runs when an open or opening socket goes away;
-// `close` stops for good.
+// `close` stops for good. A transport that throws synchronously throws out of
+// this call and leaves nothing running.
 export function reconnecting<Frame>(
   url: string,
   on: { open?(): void; message(frame: Frame): void; drop?(): void },
@@ -74,8 +75,8 @@ export function reconnecting<Frame>(
     wire = self;
   };
 
+  connect(); // a transport that throws (a bad URL) throws here, before any timer starts
   const stopPing = clock.every(PING_MS, () => send({ type: "ping" }));
-  connect();
 
   return {
     send,

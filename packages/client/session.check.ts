@@ -56,7 +56,7 @@ function manualClock() {
     }
     now = end;
   };
-  return { clock, advance };
+  return { clock, advance, pending: () => timers.length };
 }
 
 function setup() {
@@ -84,6 +84,15 @@ const kinds = (c: SessionClient) => c.state().model.items.map((i) => i.kind);
 const artifactCall = (id: string) => ({ type: "toolCall", id, name: "artifact", arguments: { title: "Plan" } });
 const artifactResult = (callId: string, artifactId: string) =>
   ({ role: "toolResult", toolCallId: callId, content: [{ type: "text", text: "saved" }], details: { artifactId } });
+
+// A transport that throws (a bad URL) throws out of connect() and leaves no
+// timer behind to keep a Node process alive.
+{
+  const time = manualClock();
+  const client = sessionClient("ftp://bad", { transport: () => { throw new SyntaxError("bad url"); }, clock: time.clock });
+  assert.throws(() => client.connect(), /bad url/);
+  assert.equal(time.pending(), 0, "no ping or retry timer");
+}
 
 // Metadata: a stale subscription snapshot never replaces a newer broadcast.
 {
