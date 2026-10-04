@@ -82,6 +82,7 @@ Programs live in `apps/`, libraries they share in `packages/`.
 | `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
 | `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
 | `apps/cli/` | `@pi-durable-sessions/cli` | `pds`, the command line: list, create and prompt Sessions |
+| `apps/mcp/` | `@pi-durable-sessions/mcp` | an MCP server, so another agent can list, create and prompt Sessions and read artifacts |
 | `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`), the Session WebSocket protocol, and typed clients for both, for the browser and Node |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
@@ -136,11 +137,64 @@ stdout: the API's Session list or new Session, or the turn's result below
 success (for `prompt`, only a `done` turn), 1 on failure (an API error, or a
 turn that ended any other way), 2 for bad usage. Ctrl-C aborts the turn; with no connection in 15 s it gives up. A
 prompt spends model credits, and the Session stays behind. There is no auth
-yet; `system()` in `pds.ts` is where a credential will attach.
+yet; `system()` in `packages/client/src/index.ts`, which `pds` and the MCP
+server share, is where a credential will attach.
 
 The operations commands of #68 (start, stop, deploy, status, logs) will join
 the same binary as a second group in its command table; see the comment above
 `groups` in `apps/cli/pds.ts`.
+
+## Drive it from another agent (MCP)
+
+`apps/mcp/server.ts` is an MCP server on stdio, so an agent such as Claude
+Code can use Sessions as tools. Like `pds`, it talks to `$PDS_URL`, else
+`http://127.0.0.1:8093`, through the shared client, with no auth yet.
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `list_sessions` | | the API's Session list, as JSON |
+| `create_session` | `name?`, `repo?`, `branch?` | the new Session, as JSON |
+| `run_turn` | `session`, `prompt` | the answer's text once the turn ends; any other outcome as an error saying what happened and what to do |
+| `list_artifacts` | `session?` (all Sessions when omitted) | artifact summaries, as JSON |
+| `search_artifacts` | `query` | the best matches, with a snippet each, as JSON |
+| `read_artifact` | `artifact`, `version?` | the details as JSON, then the content verbatim |
+
+`run_turn` reports progress when the caller asks for it (a progress token):
+one notification when the Session has joined and the prompt went out, one per
+tool call as it starts (its name and arguments), and one per piece of text the
+agent finishes, each clipped to 120 characters. Cancelling the call aborts the
+Session's whole current run, as the web app's stop button does. A turn whose
+connection drops comes back as "outcome unknown", with how to find out.
+
+Register it with Claude Code (use the absolute path of your checkout; leave
+out `-e` for the default address):
+
+```sh
+claude mcp add pds -e PDS_URL=http://127.0.0.1:8093 -- node /path/to/pi-durable-sessions/apps/mcp/server.ts
+```
+
+or, for everyone working in a project, in its `.mcp.json` (Claude Code fills
+in `${PDS_URL:-…}` from the environment it starts in):
+
+```json
+{
+  "mcpServers": {
+    "pds": {
+      "command": "node",
+      "args": ["/path/to/pi-durable-sessions/apps/mcp/server.ts"],
+      "env": { "PDS_URL": "${PDS_URL:-http://127.0.0.1:8093}" },
+      "timeout": 1800000
+    }
+  }
+}
+```
+
+A turn can outlast an MCP client's tool timeout, and a client that times a
+call out cancels it, which aborts the turn. In Claude Code the per-server
+`timeout` above (milliseconds; the `MCP_TOOL_TIMEOUT` environment variable
+sets it for every server) is a hard limit that progress does not extend, so
+set it to the longest turn you will wait for. `node apps/mcp/mcp.check.ts`
+drives every tool through the MCP protocol with no backend.
 
 ## Run a turn from Node
 

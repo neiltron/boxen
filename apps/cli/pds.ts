@@ -9,9 +9,8 @@
 // Exit codes: 0 success, 1 failure (an API error, or a turn that did not end
 // `done`), 2 bad usage.
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
-import { apiClient, sessionClient, sessionSocketUrl, webSocketTransport, type CreateSession, type Transport, type TurnResult } from "@pi-durable-sessions/client";
+import { DEFAULT_URL, sessionSocketUrl, system as connect, webSocketTransport, type CreateSession, type Transport, type TurnResult } from "@pi-durable-sessions/client";
 
-export const DEFAULT_URL = "http://127.0.0.1:8093";
 const CONNECT_MS = 15_000;
 
 // Everything outside the process that a command touches, so cli.check.ts can
@@ -32,15 +31,8 @@ interface Ctx {
   deps: Deps;
 }
 
-// The one place requests to the system are made. Auth, when it comes, attaches
-// here and nowhere else: a credential on `fetch` for REST, and on the socket
-// URL or transport for the Session WebSocket.
-function system({ url, deps }: Ctx) {
-  return {
-    api: apiClient(url, deps.fetch),
-    session: (id: string) => sessionClient(sessionSocketUrl(url, id), { transport: deps.transport }),
-  };
-}
+// Requests to the system go through the client's system(), where auth will attach.
+const system = ({ url, deps }: Ctx) => connect(url, deps);
 
 const print = (ctx: Ctx, value: unknown, text: string) => ctx.deps.out(ctx.json ? `${JSON.stringify(value)}\n` : text);
 

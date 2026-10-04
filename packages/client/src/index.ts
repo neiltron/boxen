@@ -6,6 +6,8 @@
 import createClient from "openapi-fetch";
 import spec from "../openapi.json" with { type: "json" };
 import type { components, paths } from "./openapi.ts";
+import { sessionClient, sessionSocketUrl } from "./session-client.ts";
+import type { Transport } from "./socket.ts";
 
 export * from "./protocol.ts";
 export * from "./session-client.ts";
@@ -91,6 +93,21 @@ export function apiClient(baseUrl: string, fetch?: (request: Request) => Promise
     listBranches: async (repo: string) => ok(await api.GET("/api/github/branches", { params: { query: { repo } } })),
     listSandboxTokens: async () => ok(await api.GET("/api/secrets")),
     setSandboxTokens: async (body: Partial<Record<SandboxToken, string>>) => ok(await api.POST("/api/secrets", { body })),
+  };
+}
+
+// Where callers outside the web app (pds, the MCP server) find the system when
+// neither a flag nor $PDS_URL says otherwise.
+export const DEFAULT_URL = "http://127.0.0.1:8093";
+
+// The system at `baseUrl`, for those callers: its REST API and a session
+// client per Session. The one place they make requests, so auth, when it
+// comes, attaches here and nowhere else: a credential on `fetch` for REST,
+// and on the socket URL or transport for the Session WebSocket.
+export function system(baseUrl: string, deps: { fetch?: (request: Request) => Promise<Response>; transport: Transport }) {
+  return {
+    api: apiClient(baseUrl, deps.fetch),
+    session: (id: string) => sessionClient(sessionSocketUrl(baseUrl, id), { transport: deps.transport }),
   };
 }
 

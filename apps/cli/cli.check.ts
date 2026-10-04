@@ -2,8 +2,8 @@
 // A fake fetch stands in for the REST API and a scripted socket for the
 // Session cell (as in packages/client/session.check.ts), so no backend runs.
 import assert from "node:assert/strict";
-import type { Transport } from "@pi-durable-sessions/client";
-import { DEFAULT_URL, main, type Deps } from "./pds.ts";
+import { DEFAULT_URL, type Transport } from "@pi-durable-sessions/client";
+import { main, type Deps } from "./pds.ts";
 
 const meta = { id: "s1", name: "untitled", cwd: "/workspace", createdAt: 1 };
 const requests: { method: string; url: string; body: unknown }[] = [];
