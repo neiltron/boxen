@@ -778,9 +778,11 @@ function restartCompleted(service: string, saved: Obj): void {
 // The dev wrangler config plus an ASSETS binding, so celld serves the built UI
 // and the API on one origin. Written beside apps/worker/wrangler.jsonc; celld only
 // takes an asset directory inside the project, so the UI is built into it.
+// html_handling none: celld would redirect /m/index.html to /m/, where it
+// finds no index; the worker names the phone app's page instead.
 export function wranglerWithAssets(wrangler: string): string {
   const assets = { assets: { directory: './ui-dist', binding: 'ASSETS', run_worker_first: true,
-    not_found_handling: 'single-page-application' } };
+    not_found_handling: 'single-page-application', html_handling: 'none' } };
   return wrangler.replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ',');
 }
 

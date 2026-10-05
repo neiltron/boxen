@@ -19,6 +19,14 @@ for (const [path, method] of [["/", "GET"], ["/assets/app.js", "GET"], ["/deep/l
   assert.equal(forwarded, request);
 }
 assert.equal(calls, 3);
+// The phone app's page, named outright (celld has no subdirectory index).
+for (const path of ["/m", "/m/"]) {
+  await worker.fetch(new Request(`http://localhost:8093${path}`), env);
+  assert.equal(new URL(forwarded.url).pathname, "/m/index.html");
+}
+await worker.fetch(new Request("http://localhost:8093/m/assets/app.js"), env);
+assert.equal(new URL(forwarded.url).pathname, "/m/assets/app.js");
+calls = 3;
 for (const path of ["/api", "/api/no-such-endpoint"]) {
   const response = await worker.fetch(new Request(`http://localhost:8093${path}`, {
     headers: { accept: "text/html", "sec-fetch-mode": "navigate" },
