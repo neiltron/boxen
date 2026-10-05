@@ -4,6 +4,9 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  // Served at /m/ beside the web app: the installer builds it into the
+  // worker's assets (ops/boxenctl.ts), so the API is same-origin.
+  base: "/m/",
   plugins: [react(), tailwindcss()],
   resolve: {
     // The web app's components, hooks and lib, imported as its own code imports them.
@@ -22,6 +25,8 @@ export default defineConfig({
     // proxy at localhost, not 127.0.0.1:
     //   tailscale serve --bg --https=5177 http://localhost:5177
     allowedHosts: [".oxen.sh", ".ts.net"],
+    // Same-origin API and WebSockets, as apps/ui's dev server does.
+    proxy: { "/api": { target: "http://127.0.0.1:8093", changeOrigin: true, ws: true } },
   },
   // The built app (vite build && vite preview), on the same port and hosts.
   preview: { port: 5177, strictPort: true, allowedHosts: [".oxen.sh", ".ts.net"] },

@@ -809,8 +809,10 @@ function prepareSource(source: string, revision: string, account: Account): stri
     if (!/^pnpm@\d+\.\d+\.\d+$/.test(manager ?? '')) throw new Failure('package.json must pin packageManager to an exact pnpm version.', 2);
     const pnpm = ['npx', '--yes', manager];
     // Arguments after the script name reach its last command, `vite build`.
+    // The phone app goes under /m/ of the same assets (its own base).
     const build = [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir'];
-    for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build]) {
+    const mobile = [...pnpm, '--dir', 'apps/mobile', 'run', 'build', '--outDir', '../worker/ui-dist/m', '--emptyOutDir'];
+    for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build, mobile]) {
       boxenctl.run(['runuser', '-u', USER, '--', ...command], { env: environment, cwd: release, timeout: 1800 });
     }
     atomicWrite(path.join(release, '.built'), 'ok\n', 0o644);

@@ -334,6 +334,7 @@ describe('sources and files', () => {
     assert.deepEqual(builds, [
       [...pnpm, 'install', '--frozen-lockfile', `cwd=${release}`],
       [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir', `cwd=${release}`],
+      [...pnpm, '--dir', 'apps/mobile', 'run', 'build', '--outDir', '../worker/ui-dist/m', '--emptyOutDir', `cwd=${release}`],
     ]);
     assert.ok(fs.existsSync(path.join(release, 'apps/worker/wrangler.install.jsonc')));
     assert.equal(boxenctl.sourceRevision(release), revision);
