@@ -66,7 +66,11 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
   );
 }
 
-export function ChatView({ session, onTogglePanel }: { session: SessionHandle; onTogglePanel: () => void }) {
+// Without onTogglePanel there is no panel button; without actions, no
+// rename or archive menu (the phone app's own conversation has neither).
+export function ChatView({ session, onTogglePanel, actions = true }: {
+  session: SessionHandle; onTogglePanel?: () => void; actions?: boolean;
+}) {
   const { model, meta, ready } = session;
   const [draft, setDraft] = useState("");
 
@@ -100,14 +104,16 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
         )} />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
         {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
-        {meta && <SessionActions session={meta} />}
-        <Button
-          variant="ghost" size="icon-sm" className="ml-auto"
-          aria-label="Show or hide the panel"
-          onClick={onTogglePanel}
-        >
-          <SidebarSimpleIcon className="size-4 -scale-x-100" />
-        </Button>
+        {meta && actions && <SessionActions session={meta} />}
+        {onTogglePanel && (
+          <Button
+            variant="ghost" size="icon-sm" className="ml-auto"
+            aria-label="Show or hide the panel"
+            onClick={onTogglePanel}
+          >
+            <SidebarSimpleIcon className="size-4 -scale-x-100" />
+          </Button>
+        )}
       </header>
 
       <MessageScrollerProvider autoScroll>

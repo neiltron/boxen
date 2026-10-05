@@ -1,0 +1,6 @@
+{
+  "name": "pi",
+  "short_name": "pi",
+  "start_url": "/",
+  "display": "standalone"
+}
