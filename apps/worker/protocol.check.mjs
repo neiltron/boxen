@@ -18,9 +18,10 @@ assert.deepEqual(handled, defined,
 // error after the prompt was admitted (here the automatic title) does not.
 const quiet = console.error;
 console.error = () => {};
-const errors = async (open) => {
+const errors = async (open, stopping = 0) => {
   const cell = new Session({ id: "s" }, {});
   cell.open = open;
+  cell.stopping = stopping;
   cell.reopen = () => {}; // a poisoned Harness; not under test
   cell.meta = async () => ({ titled: false });
   cell.autoTitle = async () => { throw new Error("title failed"); };
@@ -33,5 +34,8 @@ const root = (submit) => async () => ({ root: { submit }, models: {} });
 assert.deepEqual(await errors(root(async () => { throw new Error("Session is poisoned"); })),
   [{ type: "error", error: "Session is poisoned", requestId: "r1" }]);
 assert.deepEqual(await errors(root(async () => {})), [{ type: "error", error: "title failed" }]);
+// While a run is being stopped, a prompt that fails to withdraw itself ends as refused.
+assert.deepEqual(await errors(root(async () => ({ abort: async () => { throw new Error("disk I/O error"); } })), 1),
+  [{ type: "error", error: "disk I/O error", requestId: "r1" }]);
 console.error = quiet;
 console.log(`protocol.check ok (${defined.join(", ")}; prompt refusals name their requestId)`);

@@ -34,8 +34,9 @@ const models = {
 
 const clone = (value) => structuredClone(value);
 // One-shot hooks that put something into a race window: before the cell's
-// next root.submit, and after its next root.abort has resolved.
-const hooks = { submit: null, abort: null };
+// next root.submit, after its next root.abort has resolved, and as the
+// workspace's next checkpoint.
+const hooks = { submit: null, abort: null, checkpoint: null };
 const once = async (name) => { const hook = hooks[name]; hooks[name] = null; await hook?.(); };
 function bridged(root) {
   const [submit, abort] = [root.submit.bind(root), root.abort.bind(root)];
@@ -69,7 +70,7 @@ const { Session } = await load({
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage },
   "./cell-sqlite.js": undefined, // the real one
   "./workspace.js": {
-    sessionWorkspace: () => ({ env: () => undefined, checkpoint: async () => {} }),
+    sessionWorkspace: () => ({ env: () => undefined, checkpoint: () => once("checkpoint") }),
     previewTarget() {}, validPreviewPort() {}, PREVIEW_PORT: 0,
   },
 }, { setTimeout: () => 0 }); // watchRun's 10-minute bound never fires
@@ -242,6 +243,29 @@ async function strand(cell, meanwhile) {
   const { harness } = await cell.open();
   assert.deepEqual(await inbox(cell), [], "B is withdrawn at open");
   assert.deepEqual(outcome(await (await harness.submission(b, ctx)).status(ctx)), WITHDRAWN);
+}
+
+// A run that starts while the alarm finishes after the last one (its
+// workspace checkpoint takes seconds) is watched to its end too: its alarm
+// joins the finishing watch, which must not finish with D left behind C.
+{
+  const cell = session();
+  const ws = await join(cell);
+  await ws.prompt("a");
+  await until(() => requests.length === 1, "A reaches the model");
+  const watching = cell.alarm();
+  hooks.checkpoint = async () => {
+    await ws.prompt("c");
+    await until(() => requests.length === 1, "C reaches the model");
+    assert.equal(cell.alarm(), watching, "C's alarm joins the watch");
+    await ws.prompt("d");
+    requests.shift().resolve(unauthorized());
+    await until(() => ws.record("c")?.status === "unanswered", "C's run ends");
+  };
+  requests.shift().resolve(answer("A answered"));
+  await watching;
+  assert.deepEqual(outcome(ws.record("d")), WITHDRAWN, "D is withdrawn once C's run has ended");
+  assert.deepEqual(await inbox(cell), []);
 }
 
 // ...but a prompt behind a run that is still going stays: a cell stopped

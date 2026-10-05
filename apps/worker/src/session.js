@@ -205,16 +205,21 @@ export class Session extends DurableObject {
     const meta = await this.meta();
     if (!meta) return;
     const { harness } = await this.open();
-    try {
-      const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
-      if (!idle) return void await this.state.storage.setAlarm(Date.now());
-      await this.withdrawLeftovers(harness);
-    } catch (e) {
-      if (poisoned(e)) return void await this.reopen();
-      throw e;
-    }
-    await this.setStatus(meta.id, "idle");
-    await (await this.workspace()).checkpoint();
+    // Again while a prompt is going or waiting once checkpointed: a prompt
+    // that started a run meanwhile (a checkpoint takes seconds) set an alarm
+    // that joined this watch rather than start its own.
+    do {
+      try {
+        const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
+        if (!idle) return void await this.state.storage.setAlarm(Date.now());
+        await this.withdrawLeftovers(harness);
+      } catch (e) {
+        if (poisoned(e)) return void await this.reopen();
+        throw e;
+      }
+      await this.setStatus(meta.id, "idle");
+      await (await this.workspace()).checkpoint();
+    } while ((await harness.inspect(ctx)).submissions.some((s) => s.type === "input"));
   }
 
   // A run that ends by abort or failure leaves the prompts queued behind it
@@ -303,8 +308,9 @@ export class Session extends DurableObject {
     // A prompt while the agent works steers it; the user's message shows up
     // in every tab once it is placed.
     async prompt(ws, cmd) {
-      // Until the prompt is admitted, a failure is the cell refusing it: the
-      // error frame names it by requestId, so its sender can tell.
+      // Until the prompt is admitted, a failure is the cell refusing it, and
+      // a failure to withdraw it while stopping ends it as one: the error
+      // frame names it by requestId, so its sender can tell.
       const refused = (e) => { throw Object.assign(new Error(e.message, { cause: e }), { requestId: cmd.requestId }); };
       const { root, models } = await this.open().catch(refused);
       // A retry with the same requestId finds the first submission.
@@ -312,8 +318,9 @@ export class Session extends DurableObject {
       // A prompt queued behind a run being stopped stops with it, as those
       // queued before the abort do, so the stopped run leaves nothing for the
       // next submission (a workspace note, say) to place and start after
-      // Stop. One placed in an idle Session runs.
-      if (this.stopping) await submission.abort(ctx);
+      // Stop, short of a rare interleaving at the instant the run ends. One
+      // placed in an idle Session runs.
+      if (this.stopping) await submission.abort(ctx).catch(refused);
       // Awaited here: a cell's I/O must belong to a live request or event.
       if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
     },

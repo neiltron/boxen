@@ -61,7 +61,7 @@ app, `pds` and the MCP server all use; it sends commands only once `ready`.
 | `ping` | | the session client, every 25 s | nothing: traffic on an idle socket for the proxies on the way |
 | `prompt` | `message`, `requestId` | the session client (`prompt()`, `run()`) | `events` as the turn runs, ending in its submission record; an `error` frame with the same `requestId` if the cell refuses it (see [a turn's outcome](#a-turns-outcome)) |
 | `steer` | as `prompt` | old clients only | as `prompt`: the cell handles it as one |
-| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops and its prompts settle `unanswered` with reason `aborted`, as do the prompts queued behind it: pi-durable withdraws those queued when the abort lands, and the cell withdraws each one that comes in while the run winds down as soon as it is queued |
+| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops and its prompts settle `unanswered` with reason `aborted`, as do the prompts queued behind it: pi-durable withdraws those queued when the abort lands, and the cell withdraws one that comes in while the run winds down as soon as it is queued. In a rare interleaving at the instant the run ends, or if the cell restarts meanwhile, such a prompt can still be placed and answered |
 | `configure` | `model?`, `thinkingLevel?` | the session client (`configure()`) | `events` (`agent_changed`); applies from the next model request: the request in flight keeps its model, but a turn makes a new request after each tool round, so a turn can change model partway |
 | `models` | | the session client (`listModels()`) | a `models` frame, to this socket only |
 | `rename` | `name` | other clients only | a `meta` frame to every joined socket, as after `PATCH /api/session/{id}` with `{ "name" }` |
@@ -80,9 +80,8 @@ app, `pds` and the MCP server all use; it sends commands only once `ready`.
   idle, or when the Session next opens. A prompt or a workspace note that
   reaches the idle Session first takes all of it along instead, and one run
   answers them together: each prompt's record names that run's answer. Either
-  way no prompt waits behind one that will not run, and after an abort
-  nothing is left for a note to place. A withdrawn prompt is not answered;
-  send it again if it still applies.
+  way no prompt waits behind one that will not run. A withdrawn prompt is not
+  answered; send it again if it still applies.
 - **`steer`** is `prompt`'s old name. The cell still accepts it and does
   exactly what `prompt` does; the session client never sends it.
 - **`rename`** is handled by the cell, which renames the Session as the REST
@@ -102,7 +101,7 @@ Fields and their types are in `SessionFrame`.
 | `events` | `events` | pi-durable's `watchEvents` stream, as it is: a `snapshot` first in each join, then batches of deltas |
 | `ready` | | the join is complete; the client can send commands |
 | `models` | `models` | the answer to `models`: the models the connected providers make available, each with its thinking levels |
-| `error` | `error`, `requestId?` | the cell failed a command. `requestId` only when it refused that prompt (before admitting it: the Harness would not open, or the submission failed). Failures after admission (the automatic title) and of other commands carry none. Not an agent event. |
+| `error` | `error`, `requestId?` | the cell failed a command. `requestId` only when it refused that prompt (before admitting it: the Harness would not open, or the submission failed), or could not withdraw it while a run was being stopped. Other failures after admission (the automatic title) and failures of other commands carry none. Not an agent event. |
 
 The events inside `events` are pi-durable's, not this repo's: the snapshot
 (committed entries, the run in progress and the inbox, the streaming
@@ -131,8 +130,9 @@ is the prompt's:
   `reset`, with `record.detail` when there is one) means the turn failed.
 
 An `error` frame carrying the prompt's `requestId` means the cell refused it,
-and the turn never started. An `error` frame without one is not this prompt's
-outcome.
+and the turn never started; or, while a run was being stopped, that the cell
+could not withdraw it; it is then normally withdrawn once that run has ended.
+An `error` frame without one is not this prompt's outcome.
 
 If the socket drops after the prompt went out, the outcome is unknown: the
 cell runs the turn on, but a rejoin's snapshot carries no submission records.
