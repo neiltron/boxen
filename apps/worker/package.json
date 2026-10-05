@@ -1,0 +1,21 @@
+{
+  "name": "@pi-durable-sessions/worker",
+  "private": true,
+  "type": "module",
+  "description": "The cells (Session, Directory, Sandbox, Artifacts), deployed to celld",
+  "scripts": {
+    "deploy": "AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret celld-0.6.1 deploy . --bucket s3://pid-cells --endpoint http://127.0.0.1:9000",
+    "check": "node --experimental-vm-modules metadata.check.mjs && node --experimental-vm-modules assets.check.mjs && node workspace.check.js && node --experimental-vm-modules contract.check.mjs && node --experimental-vm-modules protocol.check.mjs && node --experimental-vm-modules turn-env.check.mjs"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "^0.12.9",
+    "@earendil-works/chord": "^1.0.0",
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-durable": "^1.0.0",
+    "@pi-durable-sessions/client": "workspace:*"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "esbuild": "0.28.2"
+  }
+}

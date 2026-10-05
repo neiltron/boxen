@@ -1,6 +1,6 @@
 {
   // Type-check only: the manager runs as-is on Node through type stripping.
-  // npm i --no-save typescript @types/node@24 && npx tsc -p ops
+  // pnpm run check:ops (the workspace root supplies typescript and @types/node)
   "compilerOptions": {
     "target": "es2023",
     "lib": ["ES2023"],

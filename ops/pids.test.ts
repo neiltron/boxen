@@ -39,10 +39,13 @@ function source(): string {
   const root = path.join(base, 'source');
   fs.mkdirSync(root, { recursive: true });
   for (const name of SOURCE_FILES) fs.writeFileSync(path.join(root, name), '{}');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@12.9.1"}');
   for (const name of SOURCE_DIRS) {
     fs.mkdirSync(path.join(root, name), { recursive: true });
     fs.writeFileSync(path.join(root, name, 'example.txt'), name);
   }
+  fs.mkdirSync(path.join(root, 'apps/worker'));
+  fs.writeFileSync(path.join(root, 'apps/worker/wrangler.jsonc'), '{}');
   return root;
 }
 
@@ -154,18 +157,27 @@ describe('sources and files', () => {
   test('source hash excludes secrets, dependencies and builds', () => {
     const root = source();
     const before = pids.sourceRevision(root);
-    for (const name of ['ui/node_modules/lib', 'ui/dist/app.js', 'ui/.env.local', 'ops/__pycache__/cache']) {
+    for (const name of ['apps/ui/node_modules/lib', 'apps/ui/dist/app.js', 'apps/ui/.env.local', 'ops/__pycache__/cache']) {
       fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
       fs.writeFileSync(path.join(root, name), 'not a source file');
     }
     assert.equal(pids.sourceRevision(root), before);
-    fs.writeFileSync(path.join(root, 'src/example.txt'), 'changed');
+    fs.writeFileSync(path.join(root, 'apps/example.txt'), 'changed');
     assert.notEqual(pids.sourceRevision(root), before);
+  });
+
+  test('this checkout is a source with every workspace package', () => {
+    const root = path.join(HERE, '..');
+    const workspace = fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
+    // Globs of whole directories (apps/*), each one copied as a source directory.
+    const globs = [...workspace.matchAll(/^ {2}- (\S+)$/gm)].map((match) => match[1]);
+    assert.deepEqual(globs.map((glob) => glob.replace(/^'?([a-z]+)\/\*'?$/, '$1')), SOURCE_DIRS.filter((name) => name !== 'ops'));
+    assert.match(pids.sourceRevision(root), /^[0-9a-f]{20}$/);
   });
 
   test('source symlink rejected', async () => {
     const root = source();
-    fs.symlinkSync('/etc/passwd', path.join(root, 'src/link'));
+    fs.symlinkSync('/etc/passwd', path.join(root, 'apps/link'));
     await rejects(() => pids.sourceRevision(root), /Symlinks/);
   });
 
@@ -270,16 +282,50 @@ describe('sources and files', () => {
     const root = source();
     const revision = pids.sourceRevision(root);
     pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, source: root }));
-    fakeRun((argv) => {
+    const { calls } = fakeRun((argv) => {
       if (argv[0] === 'runuser') throw new Failure('simulated build failure');
     });
     await rejects(() => pids.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }),
       /build failure/);
+    assert.deepEqual(calls.at(-1), ['runuser', '-u', 'pids', '--', 'npx', '--yes', 'pnpm@12.9.1', 'install', '--frozen-lockfile']);
     const retained = path.join(paths.ROOT, 'releases', revision);
     assert.equal((pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj).source, retained);
-    assert.ok(fs.existsSync(path.join(retained, 'src/example.txt')));
+    assert.ok(fs.existsSync(path.join(retained, 'apps/example.txt')));
     assert.ok(!fs.existsSync(path.join(retained, '.built')));
-    assert.match(fs.readFileSync(path.join(retained, 'wrangler.install.jsonc'), 'utf8'), /^\{"assets":\{"directory":"\.\/ui\/dist","binding":"ASSETS"/);
+    assert.match(fs.readFileSync(path.join(retained, 'apps/worker/wrangler.install.jsonc'), 'utf8'), /^\{"assets":\{"directory":"\.\/ui-dist","binding":"ASSETS"/);
+    assert.equal(fs.readFileSync(path.join(retained, 'apps/worker/.dockerignore'), 'utf8'), 'node_modules\nui-dist\n.env*\n');
+  });
+
+  test('a built release keeps its source revision, so a rerun reuses it', async () => {
+    const root = source();
+    const revision = pids.sourceRevision(root);
+    const release = path.join(paths.ROOT, 'releases', revision);
+    const builds: string[][] = [];
+    fakeRun((argv, options) => {
+      if (argv[0] !== 'runuser') return;
+      builds.push([...argv, `cwd=${options.cwd}`]);
+      for (const name of ['node_modules/pkg/index.js', 'apps/worker/node_modules/.bin/esbuild', 'apps/worker/ui-dist/index.html']) {
+        fs.mkdirSync(path.dirname(path.join(release, name)), { recursive: true });
+        fs.writeFileSync(path.join(release, name), 'build output');
+      }
+    });
+    assert.equal(pids.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }), release);
+    const pnpm = ['runuser', '-u', 'pids', '--', 'npx', '--yes', 'pnpm@12.9.1'];
+    assert.deepEqual(builds, [
+      [...pnpm, 'install', '--frozen-lockfile', `cwd=${release}`],
+      [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir', `cwd=${release}`],
+    ]);
+    assert.ok(fs.existsSync(path.join(release, 'apps/worker/wrangler.install.jsonc')));
+    assert.equal(pids.sourceRevision(release), revision);
+  });
+
+  test('build refuses a source without an exact pnpm pin', async () => {
+    const root = source();
+    fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@latest"}');
+    const { calls } = fakeRun();
+    await rejects(() => pids.prepareSource(root, pids.sourceRevision(root), { uid: process.getuid!(), gid: process.getgid!(), home: base }),
+      /exact pnpm version/);
+    assert.ok(!calls.some((argv) => argv[0] === 'runuser'));
   });
 
   test('installed manager runs on the private Node and replaces the Python one', () => {

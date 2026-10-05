@@ -1,0 +1,553 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "pi-durable-sessions",
+    "version": "0.1.0",
+    "description": "The worker's REST API (apps/worker/src/index.js). The worker routes from this file: a request reaches a handler only through an operation here, the handler named by its operationId, so the worker serves no API route the spec lacks. apps/worker/contract.check.mjs drives every operation and fails when a response disagrees with the spec. The three WebSocket paths are listed for their upgrade only; the messages on them are not described here. The Session WebSocket's are, in [docs/session-protocol.md](session-protocol.md) (the link is relative to the reference that `pnpm reference` builds into docs/)."
+  },
+  "paths": {
+    "/api/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "Every Session, most recently active first",
+        "description": "The Directory cell's rows. The web app gets the same list pushed over /api/directory/ws.",
+        "responses": {
+          "200": {
+            "description": "The Sessions",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Session" } } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createSession",
+        "summary": "Create a Session",
+        "description": "Named after the repo (or \"untitled\") until the first message titles it, unless `name` is given. The Session's sandbox starts cloning `repo` right away.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSession" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The new Session",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/session/{id}": {
+      "patch": {
+        "operationId": "updateSession",
+        "summary": "Rename or archive a Session",
+        "description": "Neither opens the agent nor wakes the sandbox, and does not bump `lastActivity`. Every viewer gets the new meta.",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionPatch" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The Session after the change",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NoSuchSession" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/session/{id}/diff": {
+      "get": {
+        "operationId": "getDiff",
+        "summary": "The Session's Changes",
+        "description": "The working tree against HEAD, untracked files included. Restores or clones the files first if the sandbox lost them.",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "The patch",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Diff" } } }
+          },
+          "404": { "$ref": "#/components/responses/NoSuchSession" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/session/{id}/ports": {
+      "get": {
+        "operationId": "listPorts",
+        "summary": "Ports listening in the Session's sandbox",
+        "description": "Only ports a Preview can show. A Preview is served at http://p<port>-<id>.localhost:8093/, outside this API.",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": {
+            "description": "The ports, ascending",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["ports"],
+              "additionalProperties": false,
+              "properties": { "ports": { "type": "array", "items": { "$ref": "#/components/schemas/PreviewPort" } } }
+            } } }
+          },
+          "404": { "$ref": "#/components/responses/NoSuchSession" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/session/{id}/ws": {
+      "get": {
+        "operationId": "sessionSocket",
+        "summary": "The Session WebSocket",
+        "description": "The agent's events and the commands that drive it. Its messages are described in [docs/session-protocol.md](session-protocol.md).",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "101": { "$ref": "#/components/responses/SwitchingProtocols" },
+          "426": { "$ref": "#/components/responses/UpgradeRequired" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/session/{id}/terminal": {
+      "get": {
+        "operationId": "terminalSocket",
+        "summary": "A shell in the Session's sandbox, over WebSocket",
+        "description": "Every viewer attaches to the same shell, separate from the agent's.",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "101": { "$ref": "#/components/responses/SwitchingProtocols" },
+          "404": { "$ref": "#/components/responses/NoSuchSession" },
+          "426": { "$ref": "#/components/responses/UpgradeRequired" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/directory/ws": {
+      "get": {
+        "operationId": "directorySocket",
+        "summary": "The Session list and sign-in state, pushed over WebSocket",
+        "description": "Its messages are not described here.",
+        "responses": {
+          "101": { "$ref": "#/components/responses/SwitchingProtocols" },
+          "426": { "$ref": "#/components/responses/UpgradeRequired" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "summary": "Every model provider, how it signs in, and whether it is connected",
+        "responses": {
+          "200": {
+            "description": "The providers",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProviderInfo" } } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/providers/{provider}/key": {
+      "post": {
+        "operationId": "setApiKey",
+        "summary": "Connect a provider with an API key",
+        "description": "New Sessions get one of its models if none is set yet.",
+        "parameters": [{ "$ref": "#/components/parameters/Provider" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["key"],
+            "properties": { "key": { "type": "string" } }
+          } } }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/AuthStatus" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "startLogin",
+        "summary": "Start a provider's sign-in, streaming its steps",
+        "description": "The response stays open for the whole sign-in, because the token exchange belongs to the request that started it. A new sign-in cancels one still waiting.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["provider"],
+            "properties": { "provider": { "type": "string" } }
+          } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Newline-delimited JSON (NDJSON): one LoginStep per line, each ending in \\n. The schema describes one line; OpenAPI 3.1 cannot describe the items of a stream. The first step is {url}, with {code} for a device sign-in: open the URL, then post the address the provider redirects to to /api/auth/finish. A sign-in that needs no browser sends {done} first instead. The last line is {done: true} or {error}, and the response ends. Lines of {} are keepalives, about every 15 seconds.",
+            "content": { "application/x-ndjson": { "schema": { "$ref": "#/components/schemas/LoginStep" } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/auth/finish": {
+      "post": {
+        "operationId": "finishLogin",
+        "summary": "Finish the waiting sign-in with the provider's redirect",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["redirectUrl"],
+            "properties": { "redirectUrl": { "type": "string", "description": "The full address the provider redirected the browser to" } }
+          } } }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/AuthStatus" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "summary": "Disconnect a provider",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["provider"],
+            "properties": { "provider": { "type": "string" } }
+          } } }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/AuthStatus" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/auth/callback": {
+      "get": {
+        "operationId": "authCallback",
+        "summary": "Finish the waiting sign-in from the browser's redirect",
+        "description": "What the web app's dev server forwards from the loopback port a provider redirects to: the same as /api/auth/finish, answered with a page for the browser tab.",
+        "parameters": [{ "name": "u", "in": "query", "required": true, "description": "The full redirect address", "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Signed in; the page closes itself", "content": { "text/html": { "schema": { "type": "string" } } } },
+          "400": { "description": "The sign-in failed, and the page says why", "content": { "text/html": { "schema": { "type": "string" } } } },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/artifacts": {
+      "get": {
+        "operationId": "listArtifacts",
+        "summary": "One Session's artifacts, or a search across all of them",
+        "description": "With `q`, a full-text search, best match first (at most 50). Otherwise the artifacts of `session`, or of every Session (at most 200), most recently updated first.",
+        "parameters": [
+          { "name": "session", "in": "query", "description": "A Session id", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "description": "Search terms; wins over `session`", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The artifacts, without their content",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ArtifactSummary" } } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/artifacts/{artifactId}": {
+      "get": {
+        "operationId": "getArtifact",
+        "summary": "An artifact with its content",
+        "parameters": [
+          { "$ref": "#/components/parameters/ArtifactId" },
+          { "name": "v", "in": "query", "description": "An earlier version; the latest when absent, 0 or not a number. A version that doesn't exist is a 404.", "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The artifact",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Artifact" } } }
+          },
+          "404": { "description": "No such artifact, or no such version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/repos": {
+      "get": {
+        "operationId": "listRepos",
+        "summary": "Repos the GitHub token can see, most recently pushed first",
+        "description": "At most 300. Fails without a GH_TOKEN sandbox token.",
+        "responses": {
+          "200": {
+            "description": "The repos",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Repo" } } } }
+          },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/branches": {
+      "get": {
+        "operationId": "listBranches",
+        "summary": "A repo's branches, default first",
+        "description": "Public repos work without a GitHub token. At most 100.",
+        "parameters": [{ "name": "repo", "in": "query", "required": true, "description": "owner/name", "schema": { "type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$" } }],
+        "responses": {
+          "200": {
+            "description": "The branches",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["defaultBranch", "branches"],
+              "additionalProperties": false,
+              "properties": {
+                "defaultBranch": { "type": "string" },
+                "branches": { "type": "array", "items": { "type": "string" } }
+              }
+            } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/secrets": {
+      "get": {
+        "operationId": "listSandboxTokens",
+        "summary": "Which sandbox tokens are set",
+        "description": "Names only; values never come back.",
+        "responses": {
+          "200": { "$ref": "#/components/responses/SandboxTokens" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "setSandboxTokens",
+        "summary": "Set or clear sandbox tokens",
+        "description": "Merged into the stored tokens; an empty value removes one. An unknown name fails the whole request.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "propertyNames": { "$ref": "#/components/schemas/SandboxToken" },
+            "additionalProperties": { "type": "string" }
+          } } }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SandboxTokens" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "SessionId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-f-]+$" } },
+      "Provider": { "name": "provider", "in": "path", "required": true, "description": "A provider id from /api/providers", "schema": { "type": "string", "pattern": "^[\\w.-]+$" } },
+      "ArtifactId": { "name": "artifactId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[\\w-]+$" } }
+    },
+    "schemas": {
+      "CreateSession": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "An explicit name; otherwise the first message titles the Session" },
+          "repo": { "type": "string", "description": "Git URL cloned into /workspace/<repo name>; blank means none" },
+          "branch": { "type": "string", "description": "Branch to check out; blank means the default" }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "A Session as the create response, the Directory list and the Session cell's meta frame report it. Each carries a different subset of the optional fields.",
+        "required": ["id", "name", "cwd", "createdAt"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "cwd": { "type": "string", "description": "The agent's working directory in the sandbox" },
+          "repo": { "type": ["string", "null"] },
+          "branch": { "type": ["string", "null"] },
+          "createdAt": { "type": "integer", "description": "Milliseconds since the epoch" },
+          "titled": { "type": "boolean", "description": "Named explicitly, by a rename or by the automatic title; not in Directory rows" },
+          "status": { "type": "string", "enum": ["running", "idle"], "description": "Directory rows only" },
+          "lastActivity": { "type": "integer", "description": "Directory rows only; milliseconds since the epoch" },
+          "archivedAt": { "type": ["integer", "null"], "description": "When it was archived; null or absent when active" },
+          "metadataRevision": { "type": "integer" }
+        }
+      },
+      "SessionPatch": {
+        "type": "object",
+        "description": "Only these fields are writable; anything else is a 400.",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "description": "Trimmed, then 1–120 UTF-16 code units (a JavaScript string's length), or the request is a 400. JSON Schema can't count that way, so the schema doesn't constrain the length." },
+          "archived": { "type": "boolean", "description": "false restores" }
+        }
+      },
+      "Diff": {
+        "type": "object",
+        "required": ["repo", "patch"],
+        "additionalProperties": false,
+        "properties": {
+          "repo": { "type": "boolean", "description": "false when the Session's cwd is not a git repo; the patch is empty then" },
+          "patch": { "type": "string", "description": "git diff HEAD output" }
+        }
+      },
+      "PreviewPort": {
+        "type": "integer",
+        "description": "A port a Preview can show: the web app and the worker both read this rule from here. 3000 is the Sandbox's control server.",
+        "minimum": 1024,
+        "maximum": 65535,
+        "not": { "const": 3000 }
+      },
+      "ProviderInfo": {
+        "type": "object",
+        "required": ["id", "name", "apiKey", "oauth", "connected"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "apiKey": {
+            "description": "Set when it takes an API key: the key's name",
+            "oneOf": [{ "type": "null" }, { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" } } }]
+          },
+          "oauth": {
+            "description": "Set when it has its own sign-in",
+            "oneOf": [{ "type": "null" }, {
+              "type": "object",
+              "required": ["name", "label"],
+              "additionalProperties": false,
+              "properties": { "name": { "type": "string" }, "label": { "type": "string", "description": "The sign-in button's text" } }
+            }]
+          },
+          "connected": { "enum": ["api_key", "oauth", null], "description": "How this fleet is connected to it, if at all" }
+        }
+      },
+      "AuthStatus": {
+        "type": "object",
+        "required": ["providers", "agent"],
+        "additionalProperties": false,
+        "properties": {
+          "providers": { "type": "array", "items": { "type": "string" }, "description": "The connected providers' ids" },
+          "agent": {
+            "type": "object",
+            "description": "What new Sessions start on; empty until a provider connects",
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "object",
+                "required": ["provider", "modelId"],
+                "additionalProperties": false,
+                "properties": { "provider": { "type": "string" }, "modelId": { "type": "string" } }
+              },
+              "thinkingLevel": { "type": "string" }
+            }
+          }
+        }
+      },
+      "LoginStep": {
+        "type": "object",
+        "description": "One line of the sign-in stream. Empty is a keepalive.",
+        "additionalProperties": false,
+        "properties": {
+          "url": { "type": "string", "description": "Open this in a browser" },
+          "code": { "type": "string", "description": "Enter this there (device sign-in)" },
+          "done": { "const": true, "description": "Signed in" },
+          "error": { "type": "string", "description": "The sign-in failed" }
+        }
+      },
+      "ArtifactKind": {
+        "type": "string",
+        "description": "markdown; html, a complete page; svg; mermaid, diagram source; code, with a language. The agent's artifact tool offers exactly these.",
+        "enum": ["markdown", "html", "svg", "mermaid", "code"]
+      },
+      "ArtifactSummary": {
+        "type": "object",
+        "description": "An artifact without its content. A search result has a snippet, with matches in [brackets], and no language or createdAt.",
+        "required": ["id", "session", "title", "kind", "version", "updatedAt"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "session": { "type": "string", "description": "The Session that made it" },
+          "title": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ArtifactKind" },
+          "language": { "type": ["string", "null"], "description": "For kind code" },
+          "version": { "type": "integer", "minimum": 1 },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" },
+          "snippet": { "type": "string" }
+        }
+      },
+      "Artifact": {
+        "type": "object",
+        "required": ["id", "session", "title", "kind", "language", "content", "version", "createdAt", "updatedAt"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "session": { "type": "string" },
+          "title": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ArtifactKind" },
+          "language": { "type": ["string", "null"] },
+          "content": { "type": "string" },
+          "version": { "type": "integer", "minimum": 1 },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer", "description": "Of the latest version" }
+        }
+      },
+      "Repo": {
+        "type": "object",
+        "required": ["fullName", "cloneUrl", "pushedAt", "defaultBranch", "private"],
+        "additionalProperties": false,
+        "properties": {
+          "fullName": { "type": "string", "description": "owner/name" },
+          "cloneUrl": { "type": "string" },
+          "pushedAt": { "type": "string", "format": "date-time" },
+          "defaultBranch": { "type": "string" },
+          "private": { "type": "boolean" }
+        }
+      },
+      "SandboxToken": {
+        "type": "string",
+        "description": "A token every sandbox command gets in its environment. The web app and the worker both read the list from here.",
+        "enum": ["GH_TOKEN", "LINEAR_API_KEY"]
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string" } }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "The request failed: a body that is not JSON, or a cell that threw",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "BadRequest": {
+        "description": "The request is invalid",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "NoSuchSession": {
+        "description": "No such Session",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "SwitchingProtocols": { "description": "The WebSocket is open" },
+      "UpgradeRequired": {
+        "description": "The request was not a WebSocket upgrade",
+        "content": { "text/plain": { "schema": { "type": "string" } } }
+      },
+      "AuthStatus": {
+        "description": "The connected providers and what new Sessions start on",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthStatus" } } }
+      },
+      "SandboxTokens": {
+        "description": "The names of the tokens now set",
+        "content": { "application/json": { "schema": {
+          "type": "object",
+          "required": ["keys"],
+          "additionalProperties": false,
+          "properties": { "keys": { "type": "array", "items": { "$ref": "#/components/schemas/SandboxToken" } } }
+        } } }
+      }
+    }
+  }
+}

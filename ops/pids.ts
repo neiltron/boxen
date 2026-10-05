@@ -43,9 +43,14 @@ export const NODE_SHA = '369f2a3668dde7e324697040fafdcf442fd198b8c102317145417b3
 export const RUSTFS_IMAGE = 'rustfs/rustfs@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff';
 export const PROBE_IMAGE = 'busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662';
 export const SANDBOX_NETWORK = 'celld'; // Created by celld; its nftables policy applies to this bridge.
-export const SOURCE_FILES = ['package.json', 'package-lock.json', 'Dockerfile', 'wrangler.jsonc'];
-export const SOURCE_DIRS = ['src', 'ui', 'ops'];
-const SKIP = new Set(['node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store']);
+// The pnpm workspace root, then the directories its globs (pnpm-workspace.yaml)
+// cover, whole, so a new package needs no edit here; then the installer.
+export const SOURCE_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'];
+export const SOURCE_DIRS = ['apps', 'packages', 'ops'];
+const OPTIONAL_DIRS = new Set(['packages']); // Absent until the first library package lands.
+// Also what prepareSource writes into apps/worker/, so a retained release hashes as its source.
+const SKIP = new Set(['node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store',
+  'ui-dist', 'wrangler.install.jsonc', '.dockerignore']);
 export const WARNINGS = [
   'No app accounts yet: every permitted tailnet client has full access. Restrict tailnet grants.',
   'Sandbox workspaces are ephemeral. Restarting celld can lose unpushed work.',
@@ -303,6 +308,7 @@ function* sourceFiles(source: string): Generator<string> {
   }
   for (const name of SOURCE_DIRS) {
     const base = path.join(source, name);
+    if (OPTIONAL_DIRS.has(name) && !lstatOrNull(base)) continue;
     if (!lstatOrNull(base)?.isDirectory()) throw new Failure(`Missing source directory ${base}`, 2);
     yield* walk(base);
   }
@@ -681,9 +687,10 @@ function restartCompleted(service: string, saved: Obj): void {
 }
 
 // The dev wrangler config plus an ASSETS binding, so celld serves the built UI
-// and the API on one origin.
+// and the API on one origin. Written beside apps/worker/wrangler.jsonc; celld only
+// takes an asset directory inside the project, so the UI is built into it.
 export function wranglerWithAssets(wrangler: string): string {
-  const assets = { assets: { directory: './ui/dist', binding: 'ASSETS', run_worker_first: true,
+  const assets = { assets: { directory: './ui-dist', binding: 'ASSETS', run_worker_first: true,
     not_found_handling: 'single-page-application' } };
   return wrangler.replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ',');
 }
@@ -698,16 +705,23 @@ function prepareSource(source: string, revision: string, account: Account): stri
       fs.mkdirSync(path.dirname(target), { recursive: true });
       if (path.resolve(file) !== path.resolve(target)) fs.copyFileSync(file, target);
     }
-    const wrangler = wranglerWithAssets(fs.readFileSync(path.join(release, 'wrangler.jsonc'), 'utf8'));
-    atomicWrite(path.join(release, 'wrangler.install.jsonc'), wrangler, 0o644);
-    atomicWrite(path.join(release, '.dockerignore'), 'node_modules\nui\n.git\ndocs\n.env*\n', 0o644);
+    const wrangler = wranglerWithAssets(fs.readFileSync(path.join(release, 'apps/worker/wrangler.jsonc'), 'utf8'));
+    atomicWrite(path.join(release, 'apps/worker/wrangler.install.jsonc'), wrangler, 0o644);
+    // celld builds the sandbox image with the worker directory as its context.
+    atomicWrite(path.join(release, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n.env*\n', 0o644);
     pids.run(['chown', '-R', `${account.uid}:${account.gid}`, release]);
-    // Persist the retained source BEFORE npm: curl's temporary checkout is
+    // Persist the retained source BEFORE pnpm: curl's temporary checkout is
     // removed even when a build fails. A retry must not depend on it.
     saveConfig({ ...(pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj), source: release });
     const environment = { PATH: `${paths.ROOT}/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
       HOME: paths.DATA, LANG: 'C.UTF-8', npm_config_cache: `${paths.DATA}/npm-cache` };
-    for (const command of [['npm', 'ci'], ['npm', '--prefix', 'ui', 'ci'], ['npm', '--prefix', 'ui', 'run', 'build']]) {
+    // The private Node has no usable corepack for pnpm 12, so npx fetches the pinned pnpm.
+    const manager = (pids.readJson(path.join(release, 'package.json'), {}) as Obj).packageManager;
+    if (!/^pnpm@\d+\.\d+\.\d+$/.test(manager ?? '')) throw new Failure('package.json must pin packageManager to an exact pnpm version.', 2);
+    const pnpm = ['npx', '--yes', manager];
+    // Arguments after the script name reach its last command, `vite build`.
+    const build = [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir'];
+    for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build]) {
       pids.run(['runuser', '-u', USER, '--', ...command], { env: environment, cwd: release, timeout: 1800 });
     }
     atomicWrite(path.join(release, '.built'), 'ok\n', 0o644);
@@ -1004,12 +1018,12 @@ async function setup(args: Args): Promise<Obj> {
     await pids.ensureBucket(config, keys);
     restartCompleted(STORAGE, saved);
     const environment = {
-      PATH: `${paths.ROOT}/bin:${paths.ROOT}/node/bin:${release}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+      PATH: `${paths.ROOT}/bin:${paths.ROOT}/node/bin:${release}/apps/worker/node_modules/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
       HOME: paths.DATA, LANG: 'C.UTF-8', AWS_ACCESS_KEY_ID: keys.access_key, AWS_SECRET_ACCESS_KEY: keys.secret_key,
       AWS_REGION: 'us-east-1', DOCKER_HOST: 'unix:///var/run/docker.sock', CELLD_CONTAINER_PLATFORM: 'linux/amd64',
       DOCKER_BUILDKIT: '0',
     };
-    pids.run(['runuser', '-u', USER, '--', path.join(paths.ROOT, 'bin/celld'), 'deploy', path.join(release, 'wrangler.install.jsonc'),
+    pids.run(['runuser', '-u', USER, '--', path.join(paths.ROOT, 'bin/celld'), 'deploy', path.join(release, 'apps/worker/wrangler.install.jsonc'),
       '--bucket', `s3://${BUCKET}`, '--endpoint', `http://127.0.0.1:${config.storage_port}`, '--json'],
     { cwd: release, env: environment, timeout: 3600 });
     pids.run(['systemctl', saved.pending_restarts.includes(SERVICE) ? 'restart' : 'start', SERVICE]);

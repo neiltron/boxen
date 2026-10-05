@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Isolated live storage + deployment + HTTP smoke. Never installs host services.
- * Requires local Docker, celld 0.6.1, esbuild, npm ci, and npm --prefix ui run build.
+ * Requires local Docker, celld 0.6.1, pnpm install, and pnpm build.
  * Usage: node ops/smoke.ts --celld /path/to/celld-0.6.1
  * Does not start a model turn or test a sandbox PTY/systemd/Tailscale.
  */
@@ -41,8 +41,8 @@ function exited(child: ChildProcess, seconds: number): Promise<boolean> {
 
 async function smoke(binary: string): Promise<void> {
   const source = path.resolve(import.meta.dirname, '..');
-  if (!fs.existsSync(path.join(source, 'ui/dist/index.html')) || !fs.existsSync(path.join(source, 'node_modules'))) {
-    throw new Error('First run npm ci && npm --prefix ui ci && npm --prefix ui run build.');
+  if (!fs.existsSync(path.join(source, 'apps/ui/dist/index.html')) || !fs.existsSync(path.join(source, 'apps/worker/node_modules'))) {
+    throw new Error('First run pnpm install && pnpm build.');
   }
   const name = `pids-smoke-${hex().slice(0, 12)}`;
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'pids-smoke-'));
@@ -53,11 +53,11 @@ async function smoke(binary: string): Promise<void> {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(file, target);
     }
-    fs.cpSync(path.join(source, 'ui/dist'), path.join(project, 'ui/dist'), { recursive: true });
-    fs.symlinkSync(path.join(source, 'node_modules'), path.join(project, 'node_modules'));
-    const wrangler = path.join(project, 'wrangler.jsonc');
+    fs.cpSync(path.join(source, 'apps/ui/dist'), path.join(project, 'apps/worker/ui-dist'), { recursive: true });
+    fs.symlinkSync(path.join(source, 'apps/worker/node_modules'), path.join(project, 'apps/worker/node_modules'));
+    const wrangler = path.join(project, 'apps/worker/wrangler.jsonc');
     fs.writeFileSync(wrangler, wranglerWithAssets(fs.readFileSync(wrangler, 'utf8')));
-    fs.writeFileSync(path.join(project, '.dockerignore'), 'node_modules\nui\n.git\n');
+    fs.writeFileSync(path.join(project, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n');
     const keys = { access_key: hex(), secret_key: hex() + hex() };
     const envFile = path.join(project, 'storage.env');
     pids.atomicWrite(envFile, `RUSTFS_ACCESS_KEY=${keys.access_key}\nRUSTFS_SECRET_KEY=${keys.secret_key}\nRUSTFS_CONSOLE_ENABLE=false\n`);
@@ -72,10 +72,10 @@ async function smoke(binary: string): Promise<void> {
     const env: NodeJS.ProcessEnv = {
       ...process.env, AWS_ACCESS_KEY_ID: keys.access_key, AWS_SECRET_ACCESS_KEY: keys.secret_key, AWS_REGION: 'us-east-1',
       CELLD_WATCH: path.join(project, 'watch'), CELLD_ASSET_CACHE_DIR: path.join(project, 'cache'), CELLD_TTL_MS: '30000',
-      CELLD_FETCH_TIMEOUT_S: '3600', PATH: `${path.join(source, 'node_modules/.bin')}:${process.env.PATH}`,
+      CELLD_FETCH_TIMEOUT_S: '3600', PATH: `${path.join(source, 'apps/worker/node_modules/.bin')}:${process.env.PATH}`,
     };
     delete env.AWS_SESSION_TOKEN;
-    pids.run([binary, 'deploy', project, '--bucket', `s3://${BUCKET}`, '--endpoint', endpoint], { env, timeout: 1800 });
+    pids.run([binary, 'deploy', path.join(project, 'apps/worker'), '--bucket', `s3://${BUCKET}`, '--endpoint', endpoint], { env, timeout: 1800 });
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
     const logFile = path.join(project, 'node.log');

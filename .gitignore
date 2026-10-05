@@ -1,2 +1,4 @@
 .env
 .context/
+# Built by `pnpm reference`, on demand.
+docs/api-reference.html
