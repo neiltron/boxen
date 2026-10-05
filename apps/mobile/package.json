@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "check": "node cell.check.ts && tsc -b"
+    "check": "node cell.check.ts && node remote.check.ts && tsc -b"
   },
   "dependencies": {
     "@earendil-works/chord": "^1.0.0",

@@ -19,6 +19,7 @@ import "@earendil-works/pi-ai/api/google-generative-ai";
 import "@earendil-works/pi-ai/api/openai-completions";
 import "@earendil-works/pi-ai/api/openai-responses";
 import { openAgent, serve } from "./cell.ts";
+import { remoteExtension } from "./remote.ts";
 import { chatgptOAuth } from "./chatgpt-oauth.ts";
 import { WasmSqlite } from "./wasm-sqlite.ts";
 
@@ -65,7 +66,9 @@ async function start() {
   (openai.auth as { oauth?: typeof chatgptOAuth }).oauth = chatgptOAuth; // pi-ai's needs node:http
   const models = createModels({ credentials });
   for (const provider of [anthropicProvider(), openai, openrouterProvider(), googleProvider()]) models.setProvider(provider);
-  return { ...(await openAgent(await SqliteStorage.open(db), models)), credentials, deviceId };
+  // The Sessions of the system that served this app, at its own origin.
+  const remote = remoteExtension(self.location.origin);
+  return { ...(await openAgent(await SqliteStorage.open(db), models, [remote])), credentials, deviceId };
 }
 
 const agent = start();

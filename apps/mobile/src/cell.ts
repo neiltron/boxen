@@ -9,7 +9,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels, type MutableModels } from "@earendil-works/pi-ai/models";
 import {
   createRegistry, defineExtension, Harness, section, watchEvents,
-  type Conversation, type Storage,
+  type Conversation, type Extension, type Storage,
 } from "@earendil-works/pi-durable";
 import type { Session, SessionCommand, SessionFrame } from "@boxen/client";
 
@@ -20,12 +20,12 @@ export const LOCAL_META: Session = { id: "local", name: "On this phone", cwd: "/
 const Phone = defineExtension({
   name: "phone",
   sections: [section("preamble", () =>
-    "You are pi, an assistant running on the user's phone. You have no tools yet. Be concise.", { tag: false })],
+    "You are pi, an assistant running on the user's phone. Be concise: answers are read on a small screen.", { tag: false })],
 });
 
-export async function openAgent(storage: Storage, models: MutableModels): Promise<Agent> {
+export async function openAgent(storage: Storage, models: MutableModels, extensions: Extension[] = []): Promise<Agent> {
   const registry = createRegistry();
-  registry.install(Phone);
+  for (const extension of [Phone, ...extensions]) registry.install(extension);
   // steeringMode "all": as session.js, every queued prompt joins at the next boundary.
   const harness = await Harness.open(storage, { models, registry, settings: { steeringMode: "all" } }, ctx);
   const root = await harness.root(ctx);
