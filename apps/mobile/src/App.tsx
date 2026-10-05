@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { ChatView } from "@/components/ChatView";
+import { SessionActionsProvider } from "@/components/SessionActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarInset, SidebarProvider,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarInset, SidebarMenu,
+  SidebarMenuButton, SidebarMenuItem, SidebarProvider, useSidebar,
 } from "@/components/ui/sidebar";
-import { useSessionClient } from "@/hooks/useSession";
+import { useDirectory } from "@/hooks/useDirectory";
+import { useSession, useSessionClient } from "@/hooks/useSession";
+import { ago, cn } from "@/lib/utils";
 import { finishLogin, listKeys, localSession, setKey, startLogin } from "./local.ts";
 import type { Connected } from "./agent.worker.ts";
 
@@ -70,17 +74,63 @@ function Keys() {
   );
 }
 
+// The conversation on this phone, then the system's Sessions (the Directory's
+// live list, as the web app's sidebar shows it).
+function Conversations({ selected, onSelect }: { selected: string | null; onSelect: (id: string | null) => void }) {
+  const { sessions } = useDirectory();
+  const { setOpenMobile } = useSidebar();
+  const pick = (id: string | null) => { onSelect(id); setOpenMobile(false); };
+  return (
+    <>
+      <SidebarGroup>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton isActive={selected === null} onClick={() => pick(null)}>On this phone</SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
+      <SidebarGroup>
+        <SidebarGroupLabel>Sessions</SidebarGroupLabel>
+        <SidebarMenu>
+          {sessions.filter((s) => s.archivedAt == null).map((s) => (
+            <SidebarMenuItem key={s.id}>
+              <SidebarMenuButton isActive={selected === s.id} onClick={() => pick(s.id)} className="h-auto py-1.5">
+                <span className={cn("size-2 shrink-0 rounded-full", s.status === "running" ? "animate-pulse bg-green-500" : "bg-muted-foreground/40")} />
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                {s.lastActivity != null && <span className="shrink-0 text-xs text-muted-foreground">{ago(s.lastActivity)}</span>}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroup>
+    </>
+  );
+}
+
+function LocalChat() {
+  return <ChatView session={useSessionClient(localSession)} actions={false} />;
+}
+
+function RemoteChat({ id }: { id: string }) {
+  return <ChatView session={useSession(id)} />;
+}
+
 export default function App() {
-  const session = useSessionClient(localSession);
+  const [selected, setSelected] = useState<string | null>(null); // a Session's id, or null for this phone's
   return (
     // h-dvh, not h-screen: iOS Safari's collapsing URL bar (as apps/ui's App).
     <SidebarProvider defaultOpen={false} className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-      <Sidebar>
-        <SidebarContent><Keys /></SidebarContent>
-      </Sidebar>
-      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-        <ChatView session={session} actions={false} />
-      </SidebarInset>
+      <SessionActionsProvider>
+        <Sidebar>
+          <SidebarContent>
+            <Conversations selected={selected} onSelect={setSelected} />
+            <Keys />
+          </SidebarContent>
+        </Sidebar>
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          {selected ? <RemoteChat key={selected} id={selected} /> : <LocalChat />}
+        </SidebarInset>
+      </SessionActionsProvider>
     </SidebarProvider>
   );
 }
