@@ -218,7 +218,7 @@ submission record, matched by requestId) with one of:
 |---|---|---|
 | `done` (`text`: the answer's text) | the prompt was answered | finished |
 | `error` (`error`: the reason) | the cell refused the prompt (an `error` frame carrying its requestId), or settled it unanswered (no model, model error, fault) | never started, or ended |
-| `aborted` | anyone's `abort`, including this call's `signal` | stopped |
+| `aborted` | anyone's `abort`, including this call's `signal`; or the prompt was queued behind a run that ended before it joined (an abort, a model error), so the cell withdrew it | stopped, or never started |
 | `disconnected` (the outcome is unknown) | the socket dropped after the prompt went out, or the cell dropped events mid-turn | **may still be running** |
 
 Progress is the client's state: `subscribe()` and read the reply growing in

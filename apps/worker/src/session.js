@@ -8,7 +8,7 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { createRegistry, defineExtension, defineTool, Harness, section, watchEvents } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, InboxDoc, LiveDoc, section, watchEvents } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
@@ -143,6 +143,7 @@ export class Session extends DurableObject {
       const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
       // A session made before any provider was connected starts without a model.
       if (!(await root.agent(ctx)).model && defaults.model) await root.configure(defaults, ctx);
+      await this.withdrawStranded(root); // left before this cell last stopped, or by older code
       const status = await watchEvents(harness, root.id, ctx);
       status.start(async (events) => this.track(meta.id, events));
       harness.resume();
@@ -195,16 +196,40 @@ export class Session extends DurableObject {
   async watchRun() {
     const meta = await this.meta();
     if (!meta) return;
-    const { harness } = await this.open();
+    const { harness, root } = await this.open();
     try {
       const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
       if (!idle) return void await this.state.storage.setAlarm(Date.now());
+      await this.withdrawStranded(root);
     } catch (e) {
       if (poisoned(e)) return void await this.reopen();
       throw e;
     }
     await this.setStatus(meta.id, "idle");
     await (await this.workspace()).checkpoint();
+  }
+
+  // pi-durable places a queued prompt only at a boundary of the run it was
+  // queued behind, and a run that ends by abort or failure reaches none: the
+  // prompt stays in the inbox with no run, and its sender waits forever (the
+  // next prompt would place it, then wait in its place). So wherever the cell
+  // learns the agent is idle (a run ended, the Harness opened, a prompt came
+  // in), it withdraws such prompts as an abort withdraws those queued when it
+  // lands: unanswered, aborted. One commit, so a prompt is either withdrawn
+  // here or placed by a run. Queued writes (notes) stay; the next submission
+  // places them. Called only where a handler is still running (a command,
+  // open, the alarm), never from track(): a cell's I/O must belong to a live
+  // event.
+  async withdrawStranded(root) {
+    await root.commit(async (tx) => {
+      if ((await tx.doc(LiveDoc, root.id)).run) return; // its boundaries place them
+      const { items } = await tx.doc(InboxDoc, root.id);
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].mode === "write") continue;
+        tx.settleSubmission(items[i].id, STRANDED);
+        items.splice(i, 1);
+      }
+    }, ctx);
   }
 
   // Everything this Session does to its Sandbox goes through one workspace
@@ -282,6 +307,8 @@ export class Session extends DurableObject {
       // error frame names it by requestId, so its sender can tell.
       const refused = (e) => { throw Object.assign(new Error(e.message, { cause: e }), { requestId: cmd.requestId }); };
       const { root, models } = await this.open().catch(refused);
+      // Not behind a prompt an ended run left queued: this one starts its own run.
+      await this.withdrawStranded(root).catch(refused);
       // A retry with the same requestId finds the first submission.
       await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx).catch(refused);
       // Awaited here: a cell's I/O must belong to a live request or event.
@@ -300,9 +327,12 @@ export class Session extends DurableObject {
       const { root } = await this.open();
       await root.configure({ model: cmd.model, thinkingLevel: cmd.thinkingLevel }, ctx);
     },
+    // Resolves once the run has ended; a prompt that came in while it wound
+    // down is withdrawn too.
     async abort() {
       const { root } = await this.open();
       await root.abort(ctx);
+      await this.withdrawStranded(root);
     },
     rename(ws, cmd) { return this.rename(cmd.name); },
   };
@@ -395,6 +425,9 @@ export class Session extends DurableObject {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// What withdrawStranded settles a prompt with; the web app shows the detail.
+const STRANDED = { status: "unanswered", reason: "aborted", detail: "the run ended before this prompt joined it" };
 
 const causes = (e) => (e ? [e, ...causes(e.cause)] : []);
 

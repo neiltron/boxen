@@ -24,6 +24,7 @@ const { Session } = await load({
   "@earendil-works/pi-ai": { Type: new Proxy({}, { get: () => () => ({}) }) },
   "@earendil-works/pi-durable": {
     createRegistry: () => ({ install() {} }), defineExtension: (x) => x, defineTool() {}, section() {}, watchEvents() {},
+    InboxDoc: {}, LiveDoc: {},
     Harness: { async open(storage, o) { options = o; throw new Error("stop: options captured"); } },
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: { async open() {} } },
