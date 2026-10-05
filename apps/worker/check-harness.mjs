@@ -13,7 +13,6 @@ const boundaries = {
   "@earendil-works/pi-ai/providers/all": { builtinModels() {} },
   "@earendil-works/pi-durable": {
     createRegistry() {}, defineExtension: (x) => x, defineTool() {}, Harness: {}, section() {}, watchEvents() {},
-    InboxDoc: {}, LiveDoc: {},
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: {} },
   "@earendil-works/pi-durable/tools": { CodingTools: {} },

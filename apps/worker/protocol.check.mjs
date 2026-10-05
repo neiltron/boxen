@@ -29,7 +29,7 @@ const errors = async (open) => {
   return sent;
 };
 assert.deepEqual(await errors(async () => { throw new Error("no harness"); }), [{ type: "error", error: "no harness", requestId: "r1" }]);
-const root = (submit) => async () => ({ root: { submit, commit: async () => {} }, models: {} });
+const root = (submit) => async () => ({ root: { submit }, models: {} });
 assert.deepEqual(await errors(root(async () => { throw new Error("Session is poisoned"); })),
   [{ type: "error", error: "Session is poisoned", requestId: "r1" }]);
 assert.deepEqual(await errors(root(async () => {})), [{ type: "error", error: "title failed" }]);

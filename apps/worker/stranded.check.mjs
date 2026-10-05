@@ -1,12 +1,14 @@
 // node --experimental-vm-modules stranded.check.mjs
-// No prompt stays queued with no run to place it (#99). pi-durable places a
-// queued prompt only at a boundary of the run it waits behind, and a run that
-// ends by abort or model error reaches none; the cell withdraws what such a
-// run leaves (session.js, withdrawStranded). Real Session module, real
-// pi-durable Harness and SQLite storage (node:sqlite under the cell's
-// CellSqlite); fakes for the model, the Directory and the workspace.
-// pi-durable copies only plain objects of its own realm, and the cell runs in
-// the vm's, so the data the cell hands it is cloned across.
+// No prompt waits forever behind a run that ended (#99). pi-durable leaves
+// what is queued behind a run that ends by abort or failure in the inbox
+// until the next submission places it; the cell sets steeringMode "all", so
+// that submission takes all of it along, withdraws what is left when it sees
+// the agent idle, and withdraws prompts that queue behind a run being
+// stopped (session.js). Real Session module, real pi-durable Harness and
+// SQLite storage (node:sqlite under the cell's CellSqlite); fakes for the
+// model, the Directory and the workspace. pi-durable copies only plain
+// objects of its own realm, and the cell runs in the vm's, so the data the
+// cell hands it is cloned across.
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
@@ -25,20 +27,21 @@ const models = {
   getModel: (provider, id) => ({ provider, id, api: "fake", contextWindow: 0 }),
   streamSimple(model, { messages }, { signal }) {
     const { promise, resolve } = Promise.withResolvers();
-    requests.push({ prompt: text(messages.findLast((m) => m.role === "user").content), signal, resolve });
+    requests.push({ users: messages.filter((m) => m.role === "user").map((m) => text(m.content)), signal, resolve });
     return { async *[Symbol.asyncIterator]() {}, result: () => promise };
   },
 };
 
 const clone = (value) => structuredClone(value);
+// One-shot hooks that put something into a race window: before the cell's
+// next root.submit, and after its next root.abort has resolved.
+const hooks = { submit: null, abort: null };
+const once = async (name) => { const hook = hooks[name]; hooks[name] = null; await hook?.(); };
 function bridged(root) {
-  const [submit, commit] = [root.submit.bind(root), root.commit.bind(root)];
+  const [submit, abort] = [root.submit.bind(root), root.abort.bind(root)];
   return Object.assign(root, {
-    submit: (draft, cx) => submit(clone(draft), cx),
-    commit: (change, cx) => commit((tx) => {
-      const settle = tx.settleSubmission.bind(tx);
-      return change(Object.assign(tx, { settleSubmission: (id, settlement) => settle(id, clone(settlement)) }));
-    }, cx),
+    async submit(draft, cx) { await once("submit"); return submit(clone(draft), cx); },
+    async abort(cx) { await abort(cx); await once("abort"); },
   });
 }
 const Harness = {
@@ -61,7 +64,7 @@ const { Session } = await load({
       return { install() {}, snapshot: () => registry.snapshot(), subscribe: (f) => registry.subscribe(f) };
     },
     defineExtension: (x) => x, defineTool() {}, section() {},
-    Harness, watchEvents: durable.watchEvents, InboxDoc: durable.InboxDoc, LiveDoc: durable.LiveDoc,
+    Harness, watchEvents: durable.watchEvents,
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage },
   "./cell-sqlite.js": undefined, // the real one
@@ -99,16 +102,15 @@ async function join(cell) {
   const ws = { send: (m) => frames.push(JSON.parse(m)) };
   const send = (cmd) => cell.webSocketMessage(ws, JSON.stringify(cmd));
   await send({ type: "sub" });
-  const record = (requestId) => frames.flatMap((f) => (f.type === "events" ? f.events : []))
-    .filter((e) => e.type === "submission" && e.record.requestId === requestId).at(-1)?.record;
-  return { send, record, prompt: (id) => send({ type: "prompt", message: id.toUpperCase(), requestId: id }) };
+  const events = () => frames.flatMap((f) => (f.type === "events" ? f.events : []));
+  const record = (requestId) => events().filter((e) => e.type === "submission" && e.record.requestId === requestId).at(-1)?.record;
+  const notes = () => events().filter((e) => e.type === "entry_appended" && e.entry.kind === "app.note").map((e) => e.entry.data.text);
+  return { send, record, notes, prompt: (id) => send({ type: "prompt", message: id.toUpperCase(), requestId: id }) };
 }
-const outcome = (r) => r && { status: r.status, ...(r.reason && { reason: r.reason }), ...(r.detail && { detail: r.detail }) };
-const WITHDRAWN = { status: "unanswered", reason: "aborted", detail: "the run ended before this prompt joined it" };
-const inbox = async (cell) => {
-  const { harness, root } = await cell.open();
-  return (await harness.snapshot(durable.InboxDoc, root.id, ctx)).items.map((item) => item.id);
-};
+const outcome = (r) => r && { status: r.status, ...(r.reason && { reason: r.reason }) };
+const WITHDRAWN = { status: "unanswered", reason: "aborted" };
+const DONE = { status: "done" };
+const inbox = async (cell) => (await (await cell.open()).harness.inspect(ctx)).submissions.filter((s) => s.status === "queued").map((s) => s.id);
 async function until(done, what) {
   for (let i = 0; i < 1000; i++) {
     if (done()) return;
@@ -116,39 +118,80 @@ async function until(done, what) {
   }
   assert.fail(`never happened: ${what}`);
 }
-// A runs into a model error with B queued behind it: B is left with no run.
-async function strand(cell) {
+// A runs into a model error with B (and whatever `meanwhile` adds) queued
+// behind it: B is left in the inbox with no run.
+async function strand(cell, meanwhile) {
   const ws = await join(cell);
   await ws.prompt("a");
   await until(() => requests.length === 1, "A reaches the model");
   await ws.prompt("b");
   assert.equal(ws.record("b")?.status, "queued", "B waits behind A's run");
+  await meanwhile?.();
   requests.shift().resolve(unauthorized());
   await until(() => ws.record("a")?.status === "unanswered", "A's run ends");
-  assert.deepEqual(outcome(ws.record("a")), { status: "unanswered", reason: "model_error", detail: "401 Incorrect API key provided" });
-  assert.deepEqual(await inbox(cell), [ws.record("b").id], "B is stranded");
+  assert.deepEqual(outcome(ws.record("a")), { status: "unanswered", reason: "model_error" });
+  assert.equal((await inbox(cell))[0], ws.record("b").id, "B is left behind");
   return ws;
 }
 
-// Withdrawn when the run ends: the alarm track sets at run_start waits for
-// idle, then withdraws B. The next prompt runs on its own.
+// A run fails with a prompt queued: the alarm track sets at run_start waits
+// for idle, then withdraws B. A note queued behind A stays, as pi-durable
+// keeps writes, and the next submission places it. The next prompt runs on
+// its own.
 {
   const cell = session();
-  const ws = await strand(cell);
+  const ws = await strand(cell, () => cell.note("cloned into /workspace"));
   await cell.alarm();
   assert.deepEqual(outcome(ws.record("b")), WITHDRAWN, "B is told, when A's run ends");
-  assert.deepEqual(await inbox(cell), []);
+  assert.equal((await inbox(cell)).length, 1, "only the note waits");
   await ws.prompt("c");
   await until(() => requests.length === 1, "C reaches the model");
-  assert.equal(requests[0].prompt, "C", "C runs on its own, not B");
+  assert.deepEqual(requests[0].users, ["A", "C"], "C runs on its own, not with B");
+  assert.deepEqual(ws.notes(), ["cloned into /workspace"]);
   requests.shift().resolve(answer("C answered"));
   await until(() => ws.record("c")?.status === "done", "C is answered");
 }
 
-// Stop: what is queued when the abort lands is pi-durable's to withdraw; a
-// prompt that comes in while the run winds down (here the model call ignores
-// the abort, as a running sandbox command does, #86) is the cell's, once the
-// abort handler sees the run end.
+// ...or a prompt reaches the idle Session before the alarm does: it takes B
+// along, and one run answers both.
+{
+  const cell = session();
+  const ws = await strand(cell);
+  await ws.prompt("c");
+  await until(() => requests.length === 1, "B and C reach the model");
+  assert.deepEqual(requests[0].users, ["A", "B", "C"], "one run for B and C");
+  requests.shift().resolve(answer("B and C answered"));
+  await until(() => ws.record("c")?.status === "done", "C is answered");
+  assert.deepEqual([outcome(ws.record("b")), outcome(ws.record("c"))], [DONE, DONE]);
+  assert.deepEqual(await inbox(cell), []);
+}
+
+// Review finding 2: A fails between C's arrival and its admission. With one
+// steer per boundary, C's admission placed B and queued C behind it, the
+// cascade; now it places both.
+{
+  const cell = session();
+  const ws = await join(cell);
+  await ws.prompt("a");
+  await until(() => requests.length === 1, "A reaches the model");
+  await ws.prompt("b");
+  const call = requests.shift();
+  hooks.submit = async () => {
+    call.resolve(unauthorized());
+    await until(() => ws.record("a")?.status === "unanswered", "A's run ends");
+  };
+  await ws.prompt("c");
+  await until(() => requests.length === 1, "the next run reaches the model");
+  assert.deepEqual(requests[0].users, ["A", "B", "C"], "C's admission places B and C together");
+  requests.shift().resolve(answer("B and C answered"));
+  await until(() => ws.record("c")?.status === "done", "C is answered");
+  assert.deepEqual([outcome(ws.record("b")), outcome(ws.record("c"))], [DONE, DONE]);
+  assert.deepEqual(await inbox(cell), []);
+}
+
+// Stop: a prompt queued before it is withdrawn by pi-durable's abort; one
+// that comes in while the run winds down (here the model call ignores the
+// abort, as a running sandbox command does, #86) withdraws itself at once.
 {
   const cell = session();
   const ws = await join(cell);
@@ -158,18 +201,38 @@ async function strand(cell) {
   const call = requests.shift();
   const stopping = ws.send({ type: "abort" });
   await until(() => call.signal.aborted, "the abort lands");
-  assert.deepEqual(outcome(ws.record("b")), { status: "unanswered", reason: "aborted" }, "pi-durable withdraws B");
+  assert.deepEqual(outcome(ws.record("b")), WITHDRAWN, "pi-durable withdraws B");
   await ws.prompt("c");
-  assert.equal(ws.record("c")?.status, "queued", "C waits behind the stopping run");
+  assert.deepEqual(outcome(ws.record("c")), WITHDRAWN, "C is withdrawn while the run winds down");
   call.resolve(answer("A, too late"));
   await stopping;
-  assert.deepEqual(outcome(ws.record("a")), { status: "unanswered", reason: "aborted" });
-  assert.deepEqual(outcome(ws.record("c")), WITHDRAWN, "C is told, when the run ends");
+  assert.deepEqual(outcome(ws.record("a")), WITHDRAWN);
   assert.deepEqual(await inbox(cell), []);
 }
 
-// A Session left stranded (by older code, or a stop before the alarm ran)
-// recovers when the cell next opens...
+// Review finding 1: a workspace note (a restore, a clone) admitted after the
+// stopped run ends and before anything else: admitting it into an idle
+// Session places what is queued, and nothing is.
+{
+  const cell = session();
+  const ws = await join(cell);
+  await ws.prompt("a");
+  await until(() => requests.length === 1, "A reaches the model");
+  const call = requests.shift();
+  const stopping = ws.send({ type: "abort" });
+  await until(() => call.signal.aborted, "the abort lands");
+  await ws.prompt("c");
+  hooks.abort = () => cell.note("restored the workspace from its last checkpoint");
+  call.resolve(answer("A, too late"));
+  await stopping;
+  assert.deepEqual(ws.notes(), ["restored the workspace from its last checkpoint"]);
+  assert.deepEqual(outcome(ws.record("c")), WITHDRAWN, "the note starts no run for C");
+  assert.equal(requests.length, 0, "the model never hears C");
+  assert.deepEqual(await inbox(cell), []);
+}
+
+// A Session left with a prompt behind an ended run (by older code, or a stop
+// before the alarm ran) has it withdrawn when the cell next opens.
 {
   const store = storage();
   const before = session(store);
@@ -181,16 +244,27 @@ async function strand(cell) {
   assert.deepEqual(outcome(await (await harness.submission(b, ctx)).status(ctx)), WITHDRAWN);
 }
 
-// ...or when it is next prompted: the prompt runs on its own.
+// ...but a prompt behind a run that is still going stays: a cell stopped
+// mid-run (a node restart) reopens, resumes the run, and the prompt joins it.
 {
-  const cell = session();
-  const ws = await strand(cell);
-  await ws.prompt("c");
-  assert.deepEqual(outcome(ws.record("b")), WITHDRAWN, "B is withdrawn before C is admitted");
-  await until(() => requests.length === 1, "C reaches the model");
-  assert.equal(requests[0].prompt, "C", "C runs on its own, not B");
-  requests.shift().resolve(answer("C answered"));
-  await until(() => ws.record("c")?.status === "done", "C is answered");
+  const store = storage();
+  const before = session(store);
+  const ws = await join(before);
+  await ws.prompt("a");
+  await until(() => requests.length === 1, "A reaches the model");
+  await ws.prompt("b");
+  const closing = (await before.open()).harness.close(ctx);
+  requests.shift().resolve(answer("A, cut off"));
+  await closing;
+  const cell = session(store);
+  const again = await join(cell);
+  await until(() => requests.length === 1, "the resumed run asks again");
+  assert.deepEqual(await inbox(cell), [ws.record("b").id], "B still waits behind A");
+  requests.shift().resolve(answer("A answered"));
+  await until(() => requests.length === 1, "B reaches the model");
+  assert.deepEqual(requests[0].users, ["A", "B"]);
+  requests.shift().resolve(answer("B answered"));
+  await until(() => again.record("b")?.status === "done", "B is answered");
 }
 
 // Unchanged: a steer into a run that ends normally is placed at its final
@@ -203,11 +277,11 @@ async function strand(cell) {
   await ws.prompt("b");
   requests.shift().resolve(answer("A answered"));
   await until(() => requests.length === 1, "B reaches the model");
-  assert.equal(requests[0].prompt, "B");
+  assert.deepEqual(requests[0].users, ["A", "B"]);
   const watching = cell.alarm();
   requests.shift().resolve(answer("B answered"));
   await watching;
-  assert.deepEqual([outcome(ws.record("a")), outcome(ws.record("b"))], [{ status: "done" }, { status: "done" }]);
+  assert.deepEqual([outcome(ws.record("a")), outcome(ws.record("b"))], [DONE, DONE]);
   assert.deepEqual(await inbox(cell), []);
 }
-console.log("stranded.check ok (a prompt an ended run leaves queued is withdrawn: at run end, on abort, at open, before the next prompt)");
+console.log("stranded.check ok (nothing waits behind an ended run: taken along by the next submission, withdrawn at idle, open and Stop)");

@@ -426,6 +426,25 @@ const artifactResult = (callId: string, artifactId: string) =>
     assert.deepEqual(await ended, { status: "done", text: "Earlier" });
   }
 
+  // One run can answer several prompts: the cell has every queued prompt join
+  // at once, so a prompt left behind a failed run goes with the next one. Each
+  // turn settles on its own record; both name the run's answer.
+  {
+    const { client, net } = setup();
+    const s = net.last();
+    join(s, snapshot([]));
+    const left = client.run("left behind");
+    const next = client.run("next");
+    const [b, c] = s.sent.filter((m) => m.type === "prompt").map((m) => m.requestId);
+    s.frame({ type: "events", events: [
+      { type: "message_end", entry: { id: 9, model: [{ role: "assistant", content: [{ type: "text", text: "Both" }], stopReason: "stop" }] } },
+      { type: "run_end", inputs: [1, 2] },
+      { type: "submission", record: { id: 1, requestId: b, status: "done", entry: 5, answer: 9 } },
+      { type: "submission", record: { id: 2, requestId: c, status: "done", entry: 6, answer: 9 } },
+    ] });
+    assert.deepEqual([await left, await next], [{ status: "done", text: "Both" }, { status: "done", text: "Both" }]);
+  }
+
   // A snapshot mid-turn replaces batches pi-durable dropped (its watch queue
   // overflowed). The answer can be in its entries; the turn goes on while
   // the snapshot lists its submission in the run or the inbox. Otherwise the
