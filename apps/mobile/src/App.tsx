@@ -13,9 +13,11 @@ import { ago, cn } from "@/lib/utils";
 import { finishLogin, listKeys, localSession, setKey, startLogin } from "./local.ts";
 import type { Connected } from "./agent.worker.ts";
 
-const PROVIDERS: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter", google: "Google" };
+// Model providers, and a GitHub token for the github tool (read-only use;
+// a fine-grained token with read access to the repos you'll ask about).
+const PROVIDERS: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter", google: "Google", github: "GitHub" };
 
-// API keys and sign-ins for the agent on this phone. They stay in this app's
+// API keys, sign-ins and the GitHub token for the agent on this phone. They stay in this app's
 // storage and go only to the provider they belong to.
 function Keys() {
   const [connected, setConnected] = useState<Connected[]>([]);
@@ -35,7 +37,7 @@ function Keys() {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Model keys</SidebarGroupLabel>
+      <SidebarGroupLabel>Keys</SidebarGroupLabel>
       <SidebarGroupContent className="space-y-2 px-2 text-sm">
         {connected.map(({ provider: id, type }) => (
           <div key={id} className="flex items-center justify-between">

@@ -8,6 +8,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { sessionClient, type Transport } from "@boxen/client";
 import { openAgent, serve, type Agent } from "./src/cell.ts";
+import { githubExtension } from "./src/github.ts";
 import { remoteExtension } from "./src/remote.ts";
 
 const faux = fauxProvider();
@@ -105,4 +106,28 @@ assert.match(await call("list_artifacts", { session: "s1" }), /a1 {2}markdown v2
 assert.match(await call("read_artifact", { id: "a1" }), /"Plan" \(markdown v2\)\n\n# Plan/);
 
 for (const { agent } of sessions.values()) await agent.harness.close(ctx);
+
+// github: GET only, token attached, links dropped but html_url, never off the API.
+const seen: { url: string; headers: Record<string, string> }[] = [];
+const gh = githubExtension(async () => "ghp_test", async (input, init) => {
+  seen.push({ url: String(input), headers: init?.headers as Record<string, string> });
+  if (String(input).endsWith("/nope")) return new Response('{"message":"Not Found"}', { status: 404 });
+  if ((init?.headers as Record<string, string>).accept.includes("diff")) return new Response("diff --git a/x b/x");
+  return Response.json([{ sha: "abc", url: "https://api…", html_url: "https://github.com/o/r/commit/abc", node_id: "N", author: { login: "neil", avatar_url: "x" } }]);
+});
+const ghCall = async (args: object) => {
+  const result = await (gh.tools![0].execute as Function)(args, {}, ctx);
+  return result.content[0].text as string;
+};
+assert.equal(await ghCall({ path: "/repos/o/r/commits?per_page=1" }),
+  '[{"sha":"abc","html_url":"https://github.com/o/r/commit/abc","author":{"login":"neil"}}]');
+assert.equal(seen[0].url, "https://api.github.com/repos/o/r/commits?per_page=1");
+assert.equal(seen[0].headers.authorization, "Bearer ghp_test");
+assert.equal(await ghCall({ path: "/repos/o/r/pulls/1", format: "diff" }), "diff --git a/x b/x");
+for (const path of ["//evil.example/x", "https://evil.example/x", "repos/o/r"]) {
+  await assert.rejects(ghCall({ path }), /path must be a path on api\.github\.com/);
+}
+assert.equal(seen.length, 2, "nothing left the API");
+await assert.rejects(ghCall({ path: "/nope" }), /GitHub 404: \{"message":"Not Found"\}/);
+
 console.log("remote.check: ok");

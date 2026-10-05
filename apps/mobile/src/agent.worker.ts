@@ -21,6 +21,7 @@ import "@earendil-works/pi-ai/api/openai-responses";
 import { openAgent, serve } from "./cell.ts";
 import { remoteExtension } from "./remote.ts";
 import { chatgptOAuth } from "./chatgpt-oauth.ts";
+import { githubExtension } from "./github.ts";
 import { WasmSqlite } from "./wasm-sqlite.ts";
 
 export type WorkerRequest =
@@ -68,7 +69,12 @@ async function start() {
   for (const provider of [anthropicProvider(), openai, openrouterProvider(), googleProvider()]) models.setProvider(provider);
   // The Sessions of the system that served this app, at its own origin.
   const remote = remoteExtension(self.location.origin);
-  return { ...(await openAgent(await SqliteStorage.open(db), models, [remote])), credentials, deviceId };
+  // A GitHub token sits with the model keys, under "github"; public repos read without one.
+  const github = githubExtension(async () => {
+    const stored = await credentials.read("github");
+    return stored?.type === "api_key" ? stored.key : undefined;
+  });
+  return { ...(await openAgent(await SqliteStorage.open(db), models, [remote, github])), credentials, deviceId };
 }
 
 const agent = start();
@@ -101,9 +107,10 @@ globalThis.fetch = async (input, init) => {
 const connect = serve(agent);
 
 // The first credential picks the model, as the Directory's does on the web.
+// (A GitHub token is no model provider's.)
 async function connected(provider: string) {
   const { models, root } = await agent;
-  if (!(await root.agent(ctx)).model) {
+  if (models.getProviders().some((p) => p.id === provider) && !(await root.agent(ctx)).model) {
     const modelId = DEFAULT_MODELS[provider] ?? (await models.getAvailable(provider))[0]?.id;
     if (modelId) await root.configure({ model: { provider, modelId }, thinkingLevel: "medium" }, ctx);
   }
