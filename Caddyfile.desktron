@@ -4,7 +4,8 @@
 #   tailscale serve --bg --tcp 443 tcp://127.0.0.1:8444
 # 8444, not 8443: boxen-legacy's Caddy claims 8443 on this host. The Cloudflare token
 # is boxen-legacy's; the ts.net cert comes from tailscaled (the user is its operator).
-# Run by the user unit ops/boxen-caddy.service:
+# The installation is on local access (sudo boxenctl setup --access local), so
+# setup leaves 443 alone. Run by the user unit ops/boxen-caddy.service:
 #   cp Caddyfile.desktron ~/.config/boxen/Caddyfile
 #   cp ops/boxen-caddy.service ~/.config/systemd/user/ && systemctl --user enable --now boxen-caddy
 {

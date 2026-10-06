@@ -68,6 +68,11 @@ sudo boxenctl setup --yes --no-input  # repair/redeploy the retained source
 # Explicit source update, after obtaining a newer checkout:
 sudo boxenctl setup --source "$PWD" --yes --no-input
 
+# Switch from Tailscale Serve to local access, when something else fronts the
+# app from then on (a reverse proxy on your own domain). Serve's route is
+# removed only while it is still the one setup made. The one in-place change:
+sudo boxenctl setup --access local --yes --no-input
+
 sudo boxenctl uninstall --yes --no-input
 ```
 
