@@ -51,68 +51,66 @@ async function controlled(page: Page) {
 }
 
 test.describe("resume works even without service worker support", () => {
-test.use({ serviceWorkers: "block" });
+  test.use({ serviceWorkers: "block" });
 
-test("selection survives reload, home-screen launch, back/forward and another tab", async ({ page, context }) => {
-  await mockAPI(page);
-  await page.goto("/");
-  await select(page, "Alpha session");
-  await expect(composer(page)).toBeEnabled();
-  await composer(page).fill("unsent draft");
-  await page.reload();
-  await expect(page).toHaveURL(/session=alpha/);
-  await expect(composer(page)).toHaveValue("unsent draft");
-  await select(page, "Beta session");
-  await expect(composer(page)).toHaveValue("");
-  await page.goBack();
-  await expect(page).toHaveURL(/session=alpha/);
-  await expect(composer(page)).toHaveValue("unsent draft");
-  await page.goForward();
-  await expect(page).toHaveURL(/session=beta/);
+  test("selection survives reload, home-screen launch, history and changes to the fallback", async ({ page }) => {
+    await mockAPI(page);
+    await page.goto("/");
+    await select(page, "Alpha session");
+    await expect(composer(page)).toBeEnabled();
+    await composer(page).fill("unsent draft");
+    await page.reload();
+    await expect(page).toHaveURL(/session=alpha/);
+    await expect(composer(page)).toHaveValue("unsent draft");
+    await select(page, "Beta session");
+    await expect(composer(page)).toHaveValue("");
+    await page.goBack();
+    await expect(page).toHaveURL(/session=alpha/);
+    await expect(composer(page)).toHaveValue("unsent draft");
+    await page.goForward();
+    await expect(page).toHaveURL(/session=beta/);
+    await expect(composer(page)).toBeEnabled();
 
-  const other = await context.newPage();
-  // A lightweight same-origin tab writes the fallback, as another session
-  // picker would. No second Trellis/terminal renderer is needed for this check.
-  await other.goto("/manifest.webmanifest");
-  await other.evaluate(() => localStorage.setItem("pids.selectedSession", "alpha"));
-  await other.close();
-  await page.reload(); // this tab's URL wins over the other tab's storage
-  await expect(page).toHaveURL(/session=beta/);
-  await page.goto("/"); // a new home-screen launch uses the last session
-  await expect(page).toHaveURL(/session=beta/);
-  expect(await page.locator('script[src*="@vite/client"]').count()).toBe(0);
-});
-
-test("foreground reconnect retains transcript, scroll and draft without reloading", async ({ page }) => {
-  const api = await mockAPI(page);
-  await page.goto("/?session=alpha");
-  await expect(composer(page)).toBeEnabled();
-  await composer(page).fill("keep this draft");
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  const viewport = page.locator('[data-slot="message-scroller-viewport"]');
-  await viewport.evaluate((el) => { el.scrollTop = 400; });
-  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(400);
-  const before = api.state.connections;
-  api.state.hold = true;
-  await page.evaluate(() => {
-    (window as any).resumeSentinel = true;
-    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
-    document.dispatchEvent(new Event("visibilitychange"));
-    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-    document.dispatchEvent(new Event("visibilitychange"));
-    delete (document as any).visibilityState;
+    // Simulate another tab updating the home-screen fallback. This tab's URL
+    // must win on reload, without needing a second heavy renderer in small CI.
+    await page.evaluate(() => localStorage.setItem("pids.selectedSession", "alpha"));
+    await page.reload();
+    await expect(page).toHaveURL(/session=beta/);
+    await expect(composer(page)).toBeEnabled(); // wait for restore/persistence
+    await page.goto("/");
+    await expect(page).toHaveURL(/session=beta/);
+    expect(await page.locator('script[src*="@vite/client"]').count()).toBe(0);
   });
-  await expect.poll(() => api.state.connections).toBeGreaterThan(before);
-  await expect(composer(page)).toBeDisabled();
-  await expect(page.getByText("Message 0:", { exact: false })).toBeAttached();
-  expect(await viewport.evaluate((el) => el.scrollTop)).toBe(400);
-  api.release();
-  await expect(composer(page)).toBeEnabled();
-  await expect(composer(page)).toHaveValue("keep this draft");
-  expect(await viewport.evaluate((el) => el.scrollTop)).toBe(400);
-  expect(await page.evaluate(() => (window as any).resumeSentinel)).toBe(true);
-});
 
+  test("foreground reconnect retains transcript, scroll and draft without reloading", async ({ page }) => {
+    const api = await mockAPI(page);
+    await page.goto("/?session=alpha");
+    await expect(composer(page)).toBeEnabled();
+    await composer(page).fill("keep this draft");
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const viewport = page.locator('[data-slot="message-scroller-viewport"]');
+    await viewport.evaluate((el) => { el.scrollTop = 400; });
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(400);
+    const before = api.state.connections;
+    api.state.hold = true;
+    await page.evaluate(() => {
+      (window as any).resumeSentinel = true;
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      delete (document as any).visibilityState;
+    });
+    await expect.poll(() => api.state.connections).toBeGreaterThan(before);
+    await expect(composer(page)).toBeDisabled();
+    await expect(page.getByText("Message 0:", { exact: false })).toBeAttached();
+    expect(await viewport.evaluate((el) => el.scrollTop)).toBe(400);
+    api.release();
+    await expect(composer(page)).toBeEnabled();
+    await expect(composer(page)).toHaveValue("keep this draft");
+    expect(await viewport.evaluate((el) => el.scrollTop)).toBe(400);
+    expect(await page.evaluate(() => (window as any).resumeSentinel)).toBe(true);
+  });
 });
 
 test("install metadata and offline shell, without API caching or API navigation fallback", async ({ page, context }) => {
@@ -131,7 +129,6 @@ test("install metadata and offline shell, without API caching or API navigation 
     expect(png.readUInt32BE(16)).toBe(size);
     expect(png.readUInt32BE(20)).toBe(size);
   }
-  // Remove mocks before offline checks so only the actual worker/network runs.
   await page.unroute("**/api/**");
   api.state.hold = true;
   await context.setOffline(true);
@@ -150,9 +147,8 @@ test("install metadata and offline shell, without API caching or API navigation 
   });
   expect(cached.length).toBeGreaterThan(0);
   expect(cached.some((url) => new URL(url).pathname.startsWith("/api"))).toBe(false);
-  // A navigation to an API endpoint must not receive the cached app HTML.
-  const apiPage = await context.newPage();
-  await expect(apiPage.goto("http://127.0.0.1:4176/api/sessions")).rejects.toThrow();
+  // Reuse this page: a second renderer is unnecessary for the navigation check.
+  await expect(page.goto("http://127.0.0.1:4176/api/sessions")).rejects.toThrow();
 });
 
 test("a waiting update never reloads until accepted, then restores session and draft", async ({ page }) => {
