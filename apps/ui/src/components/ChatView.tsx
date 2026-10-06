@@ -142,7 +142,7 @@ export function ChatView({ session, onTogglePanel, actions = true }: {
                   {item.kind === "assistant" && <AssistantItem item={item} />}
                   {item.kind === "system" && (
                     <Marker variant="separator">
-                      <MarkerContent className={cn("max-w-[70%] truncate", item.level === "error" && "text-destructive")}>
+                      <MarkerContent className={cn("max-w-[70%]", item.level === "error" ? "whitespace-normal break-words text-destructive" : "truncate")}>
                         {item.text}
                       </MarkerContent>
                     </Marker>
