@@ -49,7 +49,8 @@ function Keys() {
           <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); void finishLogin(redirect.trim()).then(done, failed); }}>
             <a href={signInUrl} target="_blank" rel="noopener noreferrer" className="block font-medium underline">Open ChatGPT sign-in</a>
             <p className="text-muted-foreground">
-              After signing in, the page fails to load. Copy its address (it starts with http://127.0.0.1:1455) and paste it here.
+              After signing in, the page fails to load. Copy its whole address (Share → Copy, or tap the address bar and select all;
+              it starts with http://127.0.0.1:1455/auth/callback?code=) and paste it here.
             </p>
             <Input placeholder="http://127.0.0.1:1455/auth/callback?…" value={redirect} onChange={(e) => setRedirect(e.target.value)} />
             <div className="flex gap-2">

@@ -26,20 +26,22 @@ async function pkce() {
   return { verifier, challenge };
 }
 
-function fromRedirect(input: string, expectedState: string) {
-  let url: URL;
-  try { url = new URL(input.trim()); } catch { throw new Error("Paste the full address the sign-in ended on"); }
-  const expected = new URL(REDIRECT_URI);
-  if (url.origin !== expected.origin || url.pathname !== expected.pathname) {
-    throw new Error(`The pasted address must start with ${REDIRECT_URI}`);
+// What the sign-in ended on, however it was copied: the whole address, the
+// address without http://, or only its query. iOS Safari shows a page that
+// failed to load as its host alone, so a copy can come out short; the error
+// then shows what arrived. The state ties it to this sign-in.
+export function fromRedirect(input: string, expectedState: string) {
+  const text = input.trim();
+  const params = new URLSearchParams((text.includes("?") ? text.slice(text.indexOf("?") + 1) : text).split("#")[0]);
+  const error = params.get("error");
+  if (error) throw new Error(`ChatGPT sign-in failed: ${params.get("error_description") ?? error}`);
+  const code = params.get("code");
+  const state = params.get("state");
+  const clientId = params.get("client_id")?.trim();
+  if (!code || !state || !clientId) {
+    throw new Error(`That isn't the whole address: it needs its code, state and client_id. Pasted: "${text.slice(0, 60)}${text.length > 60 ? "…" : ""}"`);
   }
-  const error = url.searchParams.get("error");
-  if (error) throw new Error(`ChatGPT sign-in failed: ${error}`);
-  const code = url.searchParams.get("code");
-  const clientId = url.searchParams.get("client_id")?.trim();
-  if (!code) throw new Error("Missing authorization code");
-  if (url.searchParams.get("state") !== expectedState) throw new Error("This address is from another sign-in; start again");
-  if (!clientId) throw new Error("The address has no issued client ID");
+  if (state !== expectedState) throw new Error("This address is from another sign-in; start again");
   return { code, clientId };
 }
 

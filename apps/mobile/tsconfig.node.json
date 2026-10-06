@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "cell.check.ts", "remote.check.ts"]
+  "include": ["vite.config.ts", "*.check.ts"]
 }
