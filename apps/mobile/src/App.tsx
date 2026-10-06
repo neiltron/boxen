@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChatView } from "@/components/ChatView";
 import { SessionActionsProvider } from "@/components/SessionActions";
+import { SessionView } from "@/components/SessionView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,7 +9,7 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarProvider, useSidebar,
 } from "@/components/ui/sidebar";
 import { useDirectory } from "@/hooks/useDirectory";
-import { useSession, useSessionClient } from "@/hooks/useSession";
+import { useSessionClient } from "@/hooks/useSession";
 import { ago, cn } from "@/lib/utils";
 import { finishLogin, listKeys, localSession, setKey, startLogin } from "./local.ts";
 import type { Connected } from "./agent.worker.ts";
@@ -114,10 +115,6 @@ function LocalChat() {
   return <ChatView session={useSessionClient(localSession)} actions={false} />;
 }
 
-function RemoteChat({ id }: { id: string }) {
-  return <ChatView session={useSession(id)} />;
-}
-
 export default function App() {
   const [selected, setSelected] = useState<string | null>(null); // a Session's id, or null for this phone's
   return (
@@ -131,7 +128,8 @@ export default function App() {
           </SidebarContent>
         </Sidebar>
         <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-          {selected ? <RemoteChat key={selected} id={selected} /> : <LocalChat />}
+          {/* A Session as the web app shows it on a phone: chat, with the panel (Artifacts, Changes, Preview, Terminal, Events) below. */}
+          {selected ? <SessionView key={selected} sessionId={selected} /> : <LocalChat />}
         </SidebarInset>
       </SessionActionsProvider>
     </SidebarProvider>
