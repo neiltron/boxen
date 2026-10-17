@@ -28,7 +28,9 @@ export default {
       const command = getOrThrow(await env.exec(["node", "-e", "process.stdout.write(process.argv[1]);process.stderr.write('err')", "$HOME; 'literal'"], {
         onOutput: (text, _context, info) => { if (info.stream === "stdout") stdout += text; else stderr += text; },
       }, ctx));
-      check(command.exitCode === 0 && stdout === "$HOME; 'literal'" && stderr === "err", `argv or stream labels failed: ${JSON.stringify({ command, stdout, stderr })}`);
+      // SDK 0.12.9's HTTP command stream terminates a final partial line.
+      // Record that behavior; do not trim arbitrary command output in the adapter.
+      check(command.exitCode === 0 && stdout === "$HOME; 'literal'\n" && stderr === "err\n", `argv or stream labels failed: ${JSON.stringify({ command, stdout, stderr })}`);
       const nonzero = getOrThrow(await env.exec("exit 7", { onOutput() {} }, ctx));
       check(nonzero.exitCode === 7, "stream lost nonzero exit code");
       return Response.json({ ok: true });
