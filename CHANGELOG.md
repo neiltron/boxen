@@ -9,13 +9,14 @@ Pi runtime upgrade candidate. Not yet published or production-certified.
 - Return artifact tool data in `output`; transcript messages still use `content`. Nonzero bash exits now produce the upstream error result and `exit_code` diagnostic.
 - Recover through typed `SessionFailed` errors and `harness.closed`. Stop subscribers and wait for the old Harness to close before reopening. Preserve workspace preparation through self-RPC.
 - Fix **#102** in the shared client: interleaved status notes no longer discard assistant deltas or prevent message settlement.
+- Stop takes effect while a tool runs. The prompt handler now holds its cell event until the run is idle: the run's I/O belongs to that event, and once it had returned, the abort's commit refused the run's reply commit at celld's input gate and failed the Harness, leaving the tool spinning with no result. The shared client also settles a tool call its aborted or failed answer never answered, live and from a snapshot. The sandbox process itself still runs to completion (#86).
 - Add real Harness/CellSqlite tests, a generated 1.0.0 store fixture, and isolated live SDK reader/argv checks. No subagents, code mode, or application rename.
 
 ### Upgrade and compatibility
 
 Active `pi.tool` tasks migrate from version 1 to version 2. Tests cover retained history, a safe pending tool, queued input, request deduplication, storage failure, pending waiters, and reopen. They do **not** certify a host upgrade or replay of unsafe tools. Keep `supportedUpgradeFrom` empty and state/API generations at **1**.
 
-Quiesce work, verify workspace checkpoints, and take an off-machine storage backup before upgrading. **Do not downgrade a mutated store to pi-durable 1.0.0.** Restore the pre-upgrade storage and matching workspace checkpoints instead; old source alone is not rollback. See [release notes and manual gates](docs/releases.md). Real provider turns, hot adoption, node restart recovery, terminal/preview, and quiet-bash Stop still require live validation.
+Quiesce work, verify workspace checkpoints, and take an off-machine storage backup before upgrading. **Do not downgrade a mutated store to pi-durable 1.0.0.** Restore the pre-upgrade storage and matching workspace checkpoints instead; old source alone is not rollback. See [release notes and manual gates](docs/releases.md). Real provider turns, hot adoption, node restart recovery, and terminal/preview still require live validation. Stop during a running bash was validated on an isolated celld 0.6.2 node; it ends the turn at once but does not kill the command (#86).
 
 ## 0.1.0-rc.2 — unreleased
 

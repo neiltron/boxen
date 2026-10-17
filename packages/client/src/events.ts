@@ -143,6 +143,9 @@ function endAssistant(m: ChatModel, msg: any) {
   a.streaming = false;
   m.assistantSeq = null;
   if (msg.stopReason === "error" || msg.stopReason === "aborted") {
+    // No result is coming for a call the run left behind; a Stop that failed
+    // the Harness ends this way, and so does its snapshot afterwards.
+    for (const b of a.blocks) if (b.kind === "tool" && b.state !== "done") settle(m, b, undefined);
     push(m, { kind: "system", level: msg.stopReason === "error" ? "error" : "info",
       text: msg.errorMessage ?? msg.stopReason });
   }

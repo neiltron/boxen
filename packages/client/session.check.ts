@@ -340,6 +340,16 @@ const artifactResult = (callId: string, artifactId: string) =>
   assert.equal(m().running, false);
   assert.deepEqual(m().items.at(-1), { kind: "system", level: "error", text: "boom", seq: 4 });
 
+  // A Stop while a tool runs: the answer ends aborted with no result for the call, live and from a snapshot.
+  const stopped = { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "bash", arguments: { command: "sleep 9" } }], stopReason: "aborted" };
+  live({ type: "message_start", message: { ...stopped, stopReason: undefined } }, { type: "tool_execution_start", toolCallId: "c2", toolName: "bash" });
+  const aborted = () => (m().items.at(-2) as any).blocks[0]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  live({ type: "message_end", entry: { model: [stopped] } }, { type: "run_end" });
+  assert.deepEqual([aborted().state, aborted().isError, (m().items.at(-1) as any).text], ["done", true, "aborted"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const reloaded = setup();
+  join(reloaded.net.last(), snapshot([{ model: [stopped] }]));
+  assert.equal((reloaded.client.state().model.items[0] as any).blocks[0].state, "done"); // eslint-disable-line @typescript-eslint/no-explicit-any
+
   // Setup notes show as system lines, live and from a snapshot.
   live({ type: "entry_appended", entry: { kind: "app.note", data: { text: "cloned", level: "info" } } });
   assert.equal((m().items.at(-1) as any).text, "cloned"); // eslint-disable-line @typescript-eslint/no-explicit-any

@@ -222,6 +222,19 @@ export class Session extends DurableObject {
     return this.workspacing;
   }
 
+  // The run a prompt starts does its I/O under that prompt's event, so the
+  // handler stays until the run is idle. Once it has returned, a commit of
+  // the run that queues behind another event's transaction is refused by
+  // celld ("the cell event ended before it could acquire an input gate") or
+  // never completes, and the Harness fails. Stop did that every time: the
+  // abort's own commit signals the run, whose reply commit lands right behind
+  // it. The hold survives the browser closing its socket. A run longer than
+  // the bound goes on as before, exposed to that race until the alarm resumes
+  // it after a reopen.
+  async holdRun(harness) {
+    await Promise.race([harness.waitForIdle(ctx).catch(() => {}), sleep(10 * 60_000)]);
+  }
+
   // For the turn's env builder in openHarness: join any prepare in flight
   // from inside an RPC handler.
   async prepareWorkspace() {
@@ -284,11 +297,12 @@ export class Session extends DurableObject {
       // Until the prompt is admitted, a failure is the cell refusing it: the
       // error frame names it by requestId, so its sender can tell.
       const refused = (e) => { throw Object.assign(new Error(e.message, { cause: e }), { requestId: cmd.requestId }); };
-      const { root, models } = await this.open().catch(refused);
+      const { harness, root, models } = await this.open().catch(refused);
       // A retry with the same requestId finds the first submission.
       await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx).catch(refused);
       // Awaited here: a cell's I/O must belong to a live request or event.
       if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
+      await this.holdRun(harness);
     },
     steer(ws, cmd) { return Session.commands.prompt.call(this, ws, cmd); },
     async models(ws) {
