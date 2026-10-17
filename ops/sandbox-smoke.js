@@ -28,7 +28,7 @@ export default {
       const command = getOrThrow(await env.exec(["node", "-e", "process.stdout.write(process.argv[1]);process.stderr.write('err')", "$HOME; 'literal'"], {
         onOutput: (text, _context, info) => { if (info.stream === "stdout") stdout += text; else stderr += text; },
       }, ctx));
-      check(command.exitCode === 0 && stdout === "$HOME; 'literal'" && stderr === "err", "argv or stream labels failed");
+      check(command.exitCode === 0 && stdout === "$HOME; 'literal'" && stderr === "err", `argv or stream labels failed: ${JSON.stringify({ command, stdout, stderr })}`);
       return Response.json({ ok: true });
     } catch (e) {
       console.error("sandbox runtime smoke failed", e);

@@ -23,6 +23,7 @@ export function localSandbox(cwd) {
   return {
     stats,
     async exec(command, options) { return launch(command, options).done; },
+    async execWithOutput(command, options) { return launch(command, options).done; },
     async startReaderProcess(command) {
       const p = launch(command);
       const id = String(p.child.pid);

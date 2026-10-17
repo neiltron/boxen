@@ -126,7 +126,8 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
           const vars = Object.entries(options.env ?? {}).map(([key, value]) => shellQuote(`${key}=${value}`)).join(" ");
           script = `env -i -- ${vars} ${script}`;
         }
-        const r = await sandbox.exec(script, {
+        const exec = options.onOutput ? sandbox.execWithOutput.bind(sandbox) : sandbox.exec.bind(sandbox);
+        const r = await exec(script, {
           cwd: options.cwd ?? env.cwd,
           env: { ...secretEnv(secrets), ...options.env },
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,

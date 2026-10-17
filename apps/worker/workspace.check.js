@@ -46,6 +46,7 @@ function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", dup
       if (r.stderr) options.onOutput?.("stderr", r.stderr);
       return { success: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
     },
+    async execWithOutput(command, options) { return sb.exec(command, options); },
     async createSession({ id, cwd }) {
       if (sb.shells.has(id)) throw duplicate;
       sb.shells.set(id, { cwd });
