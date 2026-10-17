@@ -29,6 +29,8 @@ export default {
         onOutput: (text, _context, info) => { if (info.stream === "stdout") stdout += text; else stderr += text; },
       }, ctx));
       check(command.exitCode === 0 && stdout === "$HOME; 'literal'" && stderr === "err", `argv or stream labels failed: ${JSON.stringify({ command, stdout, stderr })}`);
+      const nonzero = getOrThrow(await env.exec("exit 7", { onOutput() {} }, ctx));
+      check(nonzero.exitCode === 7, "stream lost nonzero exit code");
       return Response.json({ ok: true });
     } catch (e) {
       console.error("sandbox runtime smoke failed", e);

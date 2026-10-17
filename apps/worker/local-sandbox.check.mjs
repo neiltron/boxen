@@ -23,7 +23,18 @@ export function localSandbox(cwd) {
   return {
     stats,
     async exec(command, options) { return launch(command, options).done; },
-    async execWithOutput(command, options) { return launch(command, options).done; },
+    async execStream(command, options) {
+      let p, canceled = false;
+      const encoder = new TextEncoder();
+      return new ReadableStream({
+        start(controller) {
+          const send = (event) => { if (!canceled) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)); };
+          p = launch(command, { ...options, onOutput: (type, data) => send({ type, data }) });
+          p.done.then((result) => { if (!canceled) { send({ type: "complete", exitCode: result.exitCode }); controller.close(); } }, (e) => { if (!canceled) controller.error(e); });
+        },
+        async cancel() { canceled = true; p.child.kill(); await p.done.catch(() => {}); },
+      });
+    },
     async startReaderProcess(command) {
       const p = launch(command);
       const id = String(p.child.pid);

@@ -3,6 +3,7 @@
 // tools call is implemented; the rest of FileSystem answers "not_supported".
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
 import { openSandboxReader } from "./sandbox-reader.js";
+import { sandboxEvents } from "./sandbox-events.js";
 
 const ok = (value) => ({ ok: true, value });
 const err = (error) => ({ ok: false, error });
@@ -126,15 +127,26 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
           const vars = Object.entries(options.env ?? {}).map(([key, value]) => shellQuote(`${key}=${value}`)).join(" ");
           script = `env -i -- ${vars} ${script}`;
         }
-        const exec = options.onOutput ? sandbox.execWithOutput.bind(sandbox) : sandbox.exec.bind(sandbox);
-        const r = await exec(script, {
+        const settings = {
           cwd: options.cwd ?? env.cwd,
           env: { ...secretEnv(secrets), ...options.env },
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,
-          stream: options.onOutput !== undefined,
-          onOutput: (stream, data) => options.onOutput?.(data, context, { stream }),
-          signal: context?.abortSignal,
-        });
+        };
+        if (options.onOutput) {
+          const stream = await sandbox.execStream(script, settings);
+          for await (const event of sandboxEvents(stream, context?.abortSignal)) {
+            if (event.type === "stdout" || event.type === "stderr") {
+              try { options.onOutput(event.data ?? "", context, { stream: event.type }); }
+              catch (e) { return err(new ExecutionError("callback_error", String(e?.message ?? e))); }
+            } else if (event.type === "complete") {
+              const exitCode = event.exitCode ?? event.result?.exitCode;
+              if (!Number.isInteger(exitCode)) throw new Error("Command completion has no exit code");
+              return ok({ exitCode });
+            } else if (event.type === "error") throw new Error(event.data ?? event.error ?? "Command failed");
+          }
+          throw new Error("Command stream ended without a completion event");
+        }
+        const r = await sandbox.exec(script, { ...settings, signal: context?.abortSignal });
         return ok({ exitCode: r.exitCode });
       } catch (e) {
         if (context?.abortSignal?.aborted) return err(new ExecutionError("aborted", "Command aborted"));

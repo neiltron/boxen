@@ -7,6 +7,28 @@ import { getOrThrow, LineScanner } from "@earendil-works/pi-durable/env";
 import { createReadTool } from "@earendil-works/pi-durable/tools";
 import { sandboxEnv } from "./src/sandbox-env.js";
 import { localSandbox } from "./local-sandbox.check.mjs";
+import { sandboxEvents } from "./src/sandbox-events.js";
+
+// SSE frames can span arbitrary transport chunks, including a UTF-8 character.
+{
+  const bytes = new TextEncoder().encode(': comment\r\ndata: {"type":"stdout",\r\ndata: "data":"é"}\r\n\r\ndata: [DONE]\n\n');
+  const stream = new ReadableStream({ start(controller) {
+    for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+    controller.close();
+  } });
+  const events = [];
+  for await (const event of sandboxEvents(stream)) events.push(event);
+  assert.deepEqual(events, [{ type: "stdout", data: "é" }]);
+  const controller = new AbortController();
+  let canceled = false;
+  const quiet = new ReadableStream({ cancel() { canceled = true; } });
+  const next = sandboxEvents(quiet, controller.signal).next();
+  controller.abort();
+  await assert.rejects(next, /aborted/);
+  assert(canceled, "abort cancels the stream reader without waiting for another chunk");
+  const noCompletion = sandboxEnv({ async execStream() { return new ReadableStream({ start(c) { c.close(); } }); } }, "test", "/");
+  assert.equal((await noCompletion.exec("true", { onOutput() {} }, ctx)).error.code, "unknown", "EOF is not a successful exit");
+}
 
 const cwd = await mkdtemp(join(tmpdir(), "pds-env-"));
 const sandbox = localSandbox(cwd);

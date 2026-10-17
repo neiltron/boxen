@@ -47,28 +47,15 @@ function cellStorage(db) {
   };
 }
 
-// SDK Process methods are capabilities, not serializable data. SDK output
-// callbacks also return RPC promises that the SDK itself does not await.
+// SDK Process methods are capabilities, not serializable data.
 {
   const { Sandbox } = await load({
     "./sandbox.js": undefined,
     "@cloudflare/sandbox": { getSandbox() {}, Sandbox: class {
       async startProcess() { return { id: "reader-id", kill() {} }; }
-      async exec(_command, options) {
-        options.onOutput("stdout", "one");
-        options.onOutput("stderr", "two");
-        return { exitCode: 0 };
-      }
     } },
   });
-  const sandbox = new Sandbox();
-  assert.equal(await sandbox.startReaderProcess("reader"), "reader-id");
-  const chunks = [];
-  await sandbox.execWithOutput("command", { async onOutput(stream, data) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    chunks.push([stream, data]);
-  } });
-  assert.deepEqual(chunks, [["stdout", "one"], ["stderr", "two"]], "drain ordered RPC output before returning");
+  assert.equal(await new Sandbox().startReaderProcess("reader"), "reader-id");
 }
 
 // A copy of a real 1.0.0 database, not records invented using the new types.

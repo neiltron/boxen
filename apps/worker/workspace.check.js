@@ -46,7 +46,16 @@ function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", dup
       if (r.stderr) options.onOutput?.("stderr", r.stderr);
       return { success: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
     },
-    async execWithOutput(command, options) { return sb.exec(command, options); },
+    async execStream(command, options) {
+      const encoder = new TextEncoder();
+      const chunks = [];
+      const result = await sb.exec(command, { ...options, onOutput: (type, data) => chunks.push({ type, data }) });
+      chunks.push({ type: "complete", exitCode: result.exitCode });
+      return new ReadableStream({ start(controller) {
+        for (const event of chunks) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        controller.close();
+      } });
+    },
     async createSession({ id, cwd }) {
       if (sb.shells.has(id)) throw duplicate;
       sb.shells.set(id, { cwd });

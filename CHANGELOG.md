@@ -5,7 +5,7 @@
 Pi runtime upgrade candidate. Not yet published or production-certified.
 
 - Pin pi-durable, pi-ai, and Chord **1.0.0 → 1.3.0** together. Retain celld **0.6.2**, Sandbox SDK/image **0.12.9**, Node **24.5.0**, pnpm **12.9.1**, and existing native/container pins. Lockfile changes are confined to the new runtime dependency graph.
-- Add bounded Sandbox binary readers, upstream UTF-8 line scanning, literal argv execution, and stdout/stderr labels. Readers retain the opened file across renames and replacement. Directory readers and watches remain explicitly unsupported. Keep SDK process handles inside the Sandbox cell, and drain output callback RPCs before returning an exec result.
+- Add bounded Sandbox binary readers, upstream UTF-8 line scanning, literal argv execution, and stdout/stderr labels. Readers retain the opened file across renames and replacement. Directory readers and watches remain explicitly unsupported. Keep SDK process handles inside the Sandbox cell, and consume command event streams in the caller rather than forwarding output callback RPCs.
 - Return artifact tool data in `output`; transcript messages still use `content`. Nonzero bash exits now produce the upstream error result and `exit_code` diagnostic.
 - Recover through typed `SessionFailed` errors and `harness.closed`. Stop subscribers and wait for the old Harness to close before reopening. Preserve workspace preparation through self-RPC.
 - Fix **#102** in the shared client: interleaved status notes no longer discard assistant deltas or prevent message settlement.

@@ -19,21 +19,6 @@ export class Sandbox extends BaseSandbox {
     return (await this.startProcess(command)).id;
   }
 
-  // The SDK invokes onOutput without awaiting it. Across a cell boundary it
-  // returns an RPC promise, so exec can finish before the caller sees output.
-  // Preserve order and drain those calls before returning the command result.
-  async execWithOutput(command, options) {
-    let pending = Promise.resolve();
-    try {
-      return await this.exec(command, { ...options, onOutput: (stream, data) => {
-        pending = pending.then(() => options.onOutput(stream, data));
-        pending.catch(() => {}); // observed again by the awaited drain below
-      } });
-    } finally {
-      await pending;
-    }
-  }
-
   // Returns "restored" when this call brought the files back, else "ready".
   // Concurrent callers share one restore.
   prepare() {
