@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "celld": {
-    "version": "0.6.1",
-    "url": "https://github.com/denoland/celld/releases/download/v0.6.1/celld-x86_64-unknown-linux-gnu.gz",
-    "sha256": "79a8253cff5d4e8a4a9f7a2611e393390f7fe9025f00e88467875b007c44866b"
+    "version": "0.6.2",
+    "url": "https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz",
+    "sha256": "ce0ee3552cc8d55dde3998dc3b1b0c8f547bbcb4bc803d2a94842368b047646c"
   },
   "node": {
     "version": "24.5.0",

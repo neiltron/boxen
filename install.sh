@@ -111,7 +111,7 @@ if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 if [[ -z "$source_dir" || ! -f "$source_dir/ops/pids.ts" ]]; then
-  ref="${PIDS_REF:-pi-durable-sessions/v0.1.0-rc.1}"
+  ref="${PIDS_REF:-pi-durable-sessions/v0.1.0-rc.2}"
   if [[ ! "$ref" =~ ^[a-zA-Z0-9._/-]+$ || "$ref" == *..* ]]; then
     echo 'PIDS_REF must be a Git ref or commit SHA, not a URL or path traversal.' >&2
     exit 2

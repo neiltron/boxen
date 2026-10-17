@@ -401,8 +401,8 @@ describe('version-aware runtimes', () => {
     assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'config.json')));
   });
 
-  test('celld upgrade verifies archive pin, replaces binary, and persists restart across retries', () => {
-    const binary = installed('bin/celld', 'celld 0.0.1');
+  test('celld 0.6.1 upgrade verifies archive pin, replaces binary, and persists restart across retries', () => {
+    const binary = installed('bin/celld', 'celld 0.6.1');
     installed('node/bin/node', NODE_VERSION);
     pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ pending_restarts: [STORAGE] }));
     fakeRun(versions);
@@ -421,15 +421,16 @@ describe('version-aware runtimes', () => {
     assert.deepEqual(new Set((pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj).pending_restarts), new Set([SERVICE, STORAGE]));
   });
 
-  test('failed verification leaves the old celld intact', () => {
-    const binary = installed('bin/celld', 'celld 0.0.1');
+  test('failed verification leaves celld 0.6.1 intact', () => {
+    const binary = installed('bin/celld', 'celld 0.6.1');
+    installed('node/bin/node', NODE_VERSION);
     fakeRun(versions);
     stub('download', () => { throw new Failure('Checksum mismatch'); });
     assert.throws(() => pids.toolchain(), /Checksum mismatch/);
-    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.0.1');
+    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.6.1');
     stub('download', (_url, destination) => { fs.writeFileSync(destination, gzipSync('celld 0.0.2')); });
     assert.throws(() => pids.toolchain(), /wrong version/);
-    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.0.1');
+    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.6.1');
     assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'config.json')));
   });
 

@@ -66,6 +66,8 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     assert.equal(metadata.gitCommit, git('rev-parse', 'HEAD'));
     assert.equal(metadata.dirty, false);
     assert.equal(metadata.distribution, 'source');
+    assert.deepEqual(metadata.runtime, JSON.parse(read('ops/runtime.json')));
+    assert.deepEqual(metadata.dependencies, dependencySnapshot(worker(), graph()));
     for (const line of fs.readFileSync(path.join(out, 'SHA256SUMS'), 'utf8').trim().split('\n')) {
       const [expected, file] = line.split('  ');
       const actual = createHash('sha256').update(fs.readFileSync(path.join(out, file))).digest('hex');
@@ -111,8 +113,12 @@ test('development celld wrapper enforces the pin and propagates the runtime exit
     });
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nexit 17\n`, { mode: 0o755 });
     assert.equal(run().status, 17);
-    fs.writeFileSync(binary, '#!/bin/sh\necho "celld 0.0.1"\n');
-    assert.equal(run().status, 2);
+    const deployed = path.join(temporary, 'deployed');
+    fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld 0.6.1'; exit 0; fi\ntouch '${deployed}'\n`);
+    const oldRuntime = run();
+    assert.equal(oldRuntime.status, 2);
+    assert.ok(oldRuntime.stderr.includes(`Expected celld ${version}`));
+    assert.equal(fs.existsSync(deployed), false, 'must not deploy with the baseline runtime');
     fs.writeFileSync(binary, `#!/bin/sh\necho 'celld ${version}-rc.1'\n`);
     assert.equal(run().status, 2);
   } finally {

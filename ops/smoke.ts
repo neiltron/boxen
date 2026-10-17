@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Isolated live storage + deployment + HTTP smoke. Never installs host services.
- * Requires local Docker, celld 0.6.1, pnpm install, and pnpm build.
- * Usage: node ops/smoke.ts --celld /path/to/celld-0.6.1
+ * Requires local Docker, celld 0.6.2, pnpm install, and pnpm build.
+ * Usage: node ops/smoke.ts --celld /path/to/celld-0.6.2
  * Does not start a model turn or test a sandbox PTY/systemd/Tailscale.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
