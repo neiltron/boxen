@@ -26,7 +26,7 @@ import { sandboxEvents } from "./src/sandbox-events.js";
   controller.abort();
   await assert.rejects(next, /aborted/);
   assert(canceled, "abort cancels the stream reader without waiting for another chunk");
-  const noCompletion = sandboxEnv({ async execStream() { return new ReadableStream({ start(c) { c.close(); } }); } }, "test", "/");
+  const noCompletion = sandboxEnv({ async fetch() { return new Response(new ReadableStream({ start(c) { c.close(); } })); } }, "test", "/");
   assert.equal((await noCompletion.exec("true", { onOutput() {} }, ctx)).error.code, "unknown", "EOF is not a successful exit");
 }
 

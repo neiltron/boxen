@@ -1,6 +1,8 @@
 // Consume the SDK's JSON SSE command stream in the caller's isolate. Passing
 // output callbacks through the Sandbox cell would forward RPC capabilities,
-// which celld does not support across that boundary.
+// which celld does not support across that boundary. Native fetch transports
+// response streams; ordinary RPC cannot transfer them either.
+export const SANDBOX_EXEC_URL = "http://pds-exec.internal/";
 export async function* sandboxEvents(stream, signal) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();

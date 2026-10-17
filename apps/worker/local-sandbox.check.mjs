@@ -23,6 +23,10 @@ export function localSandbox(cwd) {
   return {
     stats,
     async exec(command, options) { return launch(command, options).done; },
+    async fetch(request) {
+      const { command, options } = await request.json();
+      return new Response(await this.execStream(command, options));
+    },
     async execStream(command, options) {
       let p, canceled = false;
       const encoder = new TextEncoder();

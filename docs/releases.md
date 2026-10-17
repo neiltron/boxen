@@ -77,7 +77,7 @@ The automated smoke tests deployment, UI HTML/JS, API, storage, and the real San
 - **Do not downgrade the mutated store to pi-durable 1.0.0.** Keep a pre-upgrade, off-machine storage backup and matching workspace checkpoints. Restoring application source alone is not rollback. `supportedUpgradeFrom` stays empty; state/API generations stay 1.
 - Stop new turns and quiesce existing work before upgrade. The test's safe replay tool does not prove that an interrupted bash, write, or artifact operation can be repeated safely.
 - Sandbox reads keep a real descriptor in a short-lived container helper. Unix-socket replies are bounded to 256 KiB of file data. Line scanning uses the upstream UTF-8 scanner and bounded memory, but still transfers the whole file in chunks. Large-file scans can be slow. Close releases the helper; abandoned helpers expire after two idle minutes. A container loss or helper expiry returns an error, never data from a replacement path.
-- Directory paging and filesystem watching explicitly return `not_supported`. Output spill files and the known quiet-bash cancellation limitation remain unchanged. No subagents or code mode are enabled; their upstream packages can appear as transitive dependencies.
+- Directory paging and filesystem watching explicitly return `not_supported`. Command events use an internal native-fetch stream because celld cannot transfer streams or forwarded callbacks through ordinary RPC. This adds no public API route. Output spill files are not implemented; quiet-bash Stop and physical process cancellation remain unverified (#86). No subagents or code mode are enabled; their upstream packages can appear as transitive dependencies.
 
 ## Artifacts and installation
 

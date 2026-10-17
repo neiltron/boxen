@@ -3,7 +3,7 @@
 // tools call is implemented; the rest of FileSystem answers "not_supported".
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
 import { openSandboxReader } from "./sandbox-reader.js";
-import { sandboxEvents } from "./sandbox-events.js";
+import { SANDBOX_EXEC_URL, sandboxEvents } from "./sandbox-events.js";
 
 const ok = (value) => ({ ok: true, value });
 const err = (error) => ({ ok: false, error });
@@ -133,8 +133,12 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,
         };
         if (options.onOutput) {
-          const stream = await sandbox.execStream(script, settings);
-          for await (const event of sandboxEvents(stream, context?.abortSignal)) {
+          const response = await sandbox.fetch(new Request(SANDBOX_EXEC_URL, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ command: script, options: settings }),
+          }));
+          if (!response.ok || !response.body) throw new Error(`Command stream failed: ${await response.text()}`);
+          for await (const event of sandboxEvents(response.body, context?.abortSignal)) {
             if (event.type === "stdout" || event.type === "stderr") {
               try { options.onOutput(event.data ?? "", context, { stream: event.type }); }
               catch (e) { return err(new ExecutionError("callback_error", String(e?.message ?? e))); }

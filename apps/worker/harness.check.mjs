@@ -16,6 +16,7 @@ import { CellSqlite } from "./src/cell-sqlite.js";
 import { sandboxEnv } from "./src/sandbox-env.js";
 import { localSandbox } from "./local-sandbox.check.mjs";
 import { load } from "./check-harness.mjs";
+import { SANDBOX_EXEC_URL } from "./src/sandbox-events.js";
 const { Harness, createRegistry, defineTool, defineExtension, watchEvents, SessionFailed } = durable;
 const model = { provider: "faux", modelId: "faux-1" };
 const answer = (text) => fauxAssistantMessage([fauxText(text)]);
@@ -53,9 +54,16 @@ function cellStorage(db) {
     "./sandbox.js": undefined,
     "@cloudflare/sandbox": { getSandbox() {}, Sandbox: class {
       async startProcess() { return { id: "reader-id", kill() {} }; }
+      async execStream(command) { return new Response(command).body; }
+      async fetch() { return new Response("SDK fetch", { status: 418 }); }
     } },
   });
-  assert.equal(await new Sandbox().startReaderProcess("reader"), "reader-id");
+  const sandbox = new Sandbox();
+  assert.equal(await sandbox.startReaderProcess("reader"), "reader-id");
+  const response = await sandbox.fetch(new Request(SANDBOX_EXEC_URL, { method: "POST", body: JSON.stringify({ command: "stream bytes", options: {} }) }));
+  assert.equal(await response.text(), "stream bytes");
+  assert.equal((await sandbox.fetch(new Request("http://preview/", { method: "POST" }))).status, 418);
+  assert.equal((await sandbox.fetch(new Request(SANDBOX_EXEC_URL))).status, 418);
 }
 
 // A copy of a real 1.0.0 database, not records invented using the new types.

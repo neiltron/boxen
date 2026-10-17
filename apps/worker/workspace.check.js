@@ -46,6 +46,10 @@ function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", dup
       if (r.stderr) options.onOutput?.("stderr", r.stderr);
       return { success: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
     },
+    async fetch(request) {
+      const { command, options } = await request.json();
+      return new Response(await sb.execStream(command, options));
+    },
     async execStream(command, options) {
       const encoder = new TextEncoder();
       const chunks = [];
