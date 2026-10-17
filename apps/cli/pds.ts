@@ -11,6 +11,8 @@
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { DEFAULT_URL, sessionSocketUrl, system as connect, webSocketTransport, type CreateSession, type Transport, type TurnResult } from "@pi-durable-sessions/client";
 
+import pkg from "./package.json" with { type: "json" };
+
 const CONNECT_MS = 15_000;
 
 // Everything outside the process that a command touches, so cli.check.ts can
@@ -151,6 +153,8 @@ function help() {
     lines.push("");
   }
   lines.push(
+    "  pds --version   local CLI application version (not the running server)",
+    "",
     "Options for every command:",
     `  --url <url>   the system (default: $PDS_URL, else ${DEFAULT_URL})`,
     "  --json        print one JSON value on stdout",
@@ -168,6 +172,7 @@ function usage(deps: Deps, message: string) {
 export async function main(argv: string[], deps: Deps): Promise<number> {
   const [name, ...rest] = argv;
   if (!name) return usage(deps, "no command");
+  if (name === "--version" && rest.length === 0) { deps.out(`pi-durable-sessions ${pkg.version} (local CLI)\n`); return 0; }
   if (name === "help" || name === "--help" || name === "-h") { deps.out(help()); return 0; }
   const command = commands[name];
   if (!command) return usage(deps, `unknown command: ${name}`);

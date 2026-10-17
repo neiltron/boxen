@@ -1,5 +1,7 @@
 # pi-durable-sessions — pi-sessions with the agent inside the cell
 
+[Release process and pinned stack](docs/releases.md) · [Changelog](CHANGELOG.md)
+
 Same app as `../pi-sessions`: shared pi agent sessions, many browsers per
 session, live streaming text, thinking, and tool calls. The difference is
 where the agent runs. pi-sessions spawned `pi --mode rpc` on the host behind

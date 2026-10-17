@@ -2,6 +2,7 @@
 // A fake fetch stands in for the REST API and a scripted socket for the
 // Session cell (as in packages/client/session.check.ts), so no backend runs.
 import assert from "node:assert/strict";
+import pkg from "./package.json" with { type: "json" };
 import { DEFAULT_URL, type Transport } from "@pi-durable-sessions/client";
 import { main, type Deps } from "./pds.ts";
 
@@ -52,6 +53,16 @@ async function pds(argv: string[], deps: Partial<Deps> = {}) {
     out: (t) => { out += t; }, err: (t) => { err += t; }, ...deps,
   });
   return { code, out, err };
+}
+
+// Version is local; it must not require a reachable server or valid PDS_URL.
+{
+  const before = requests.length;
+  assert.deepEqual(await pds(["--version"], { env: { PDS_URL: "invalid" } }), {
+    code: 0, out: `pi-durable-sessions ${pkg.version} (local CLI)\n`, err: "",
+  });
+  assert.equal(requests.length, before);
+  assert.equal((await pds(["--version", "unexpected"])).code, 2);
 }
 
 // Help and usage: help on stdout, usage errors on stderr with exit 2.

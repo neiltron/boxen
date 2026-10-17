@@ -10,9 +10,11 @@ fi
 
 # The manager (ops/pids.ts) runs on the same checksum-pinned Node the app uses.
 # Keep these identical to NODE_URL/NODE_SHA in ops/pids.ts; a test enforces it.
+# BEGIN GENERATED BOOTSTRAP PINS
 NODE_URL='https://nodejs.org/dist/v24.5.0/node-v24.5.0-linux-x64.tar.gz'
 NODE_SHA='369f2a3668dde7e324697040fafdcf442fd198b8c102317145417b3c83a9794a'
 NODE_VERSION='v24.5.0'
+# END GENERATED BOOTSTRAP PINS
 INSTALLED_NODE='/opt/pi-durable-sessions/node/bin/node'
 
 # All supplied options are passed through to the manager. Only approval and
@@ -109,7 +111,7 @@ if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 if [[ -z "$source_dir" || ! -f "$source_dir/ops/pids.ts" ]]; then
-  ref="${PIDS_REF:-pi-durable-sessions}"
+  ref="${PIDS_REF:-pi-durable-sessions/v0.1.0-rc.1}"
   if [[ ! "$ref" =~ ^[a-zA-Z0-9._/-]+$ || "$ref" == *..* ]]; then
     echo 'PIDS_REF must be a Git ref or commit SHA, not a URL or path traversal.' >&2
     exit 2

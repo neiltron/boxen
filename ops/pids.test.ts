@@ -5,9 +5,10 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
-import { Failure, NODE_SHA, NODE_URL, PROBE_IMAGE, SANDBOX_NETWORK, SERVICE, SOURCE_DIRS, SOURCE_FILES, STORAGE, main, paths, pids }
+import { APPLICATION_VERSION, CELLD_SHA, CELLD_URL, CELLD_VERSION, Failure, NODE_SHA, NODE_URL, NODE_VERSION, PROBE_IMAGE, SANDBOX_NETWORK, SERVICE, SOURCE_DIRS, SOURCE_FILES, STORAGE, main, paths, pids }
   from './pids.ts';
 import type { Args, Config, Host, Obj, RunOptions, RunResult } from './pids.ts';
 
@@ -39,11 +40,12 @@ function source(): string {
   const root = path.join(base, 'source');
   fs.mkdirSync(root, { recursive: true });
   for (const name of SOURCE_FILES) fs.writeFileSync(path.join(root, name), '{}');
-  fs.writeFileSync(path.join(root, 'package.json'), '{"packageManager":"pnpm@12.9.1"}');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ packageManager: "pnpm@12.9.1", version: APPLICATION_VERSION }));
   for (const name of SOURCE_DIRS) {
     fs.mkdirSync(path.join(root, name), { recursive: true });
     fs.writeFileSync(path.join(root, name, 'example.txt'), name);
   }
+  fs.copyFileSync(path.join(HERE, 'runtime.json'), path.join(root, 'ops/runtime.json'));
   fs.mkdirSync(path.join(root, 'apps/worker'));
   fs.writeFileSync(path.join(root, 'apps/worker/wrangler.jsonc'), '{}');
   return root;
@@ -173,6 +175,20 @@ describe('sources and files', () => {
     const globs = [...workspace.matchAll(/^ {2}- (\S+)$/gm)].map((match) => match[1]);
     assert.deepEqual(globs.map((glob) => glob.replace(/^'?([a-z]+)\/\*'?$/, '$1')), SOURCE_DIRS.filter((name) => name !== 'ops'));
     assert.match(pids.sourceRevision(root), /^[0-9a-f]{20}$/);
+  });
+
+  test('an installer refuses a different application or runtime release before mutations', async () => {
+    const root = source();
+    pids.validateSourceRelease(root);
+    const runtimeFile = path.join(root, 'ops/runtime.json');
+    const runtime = JSON.parse(fs.readFileSync(runtimeFile, 'utf8'));
+    runtime.celld.version = '9.0.0';
+    fs.writeFileSync(runtimeFile, JSON.stringify(runtime));
+    await rejects(pids.setup(args('--source', root, '--access', 'local', '--dry-run')), /does not match this installer/);
+    assert.ok(!fs.existsSync(paths.ROOT));
+    fs.copyFileSync(path.join(HERE, 'runtime.json'), runtimeFile);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '9.0.0' }));
+    assert.throws(() => pids.validateSourceRelease(root), /does not match this installer/);
   });
 
   test('source symlink rejected', async () => {
@@ -347,6 +363,95 @@ describe('sources and files', () => {
     assert.equal(script.match(/^NODE_SHA='([^']+)'$/m)?.[1], NODE_SHA);
     assert.ok(script.includes('ops/pids.ts'));
     assert.ok(!/python/i.test(script));
+  });
+});
+
+describe('version-aware runtimes', () => {
+  function installed(name: string, content: string) {
+    const file = path.join(paths.ROOT, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+    return file;
+  }
+
+  function versions(argv: string[]) {
+    if (argv[1] === '--version') return ok(fs.readFileSync(argv[0], 'utf8'));
+    return ok();
+  }
+
+  test('version probe rejects missing, failed, wrong and prerelease binaries', () => {
+    fakeRun(versions);
+    assert.equal(pids.runtimeMatches('/not-installed', CELLD_VERSION), false);
+    const binary = installed('bin/celld', `celld ${CELLD_VERSION}\n`);
+    assert.equal(pids.runtimeMatches(binary, CELLD_VERSION), true);
+    for (const text of ['celld 0.0.1', `celld ${CELLD_VERSION}-rc.1`, 'garbage']) {
+      fs.writeFileSync(binary, text);
+      assert.equal(pids.runtimeMatches(binary, CELLD_VERSION), false);
+    }
+    stub('run', () => { throw new Failure('broken executable'); });
+    assert.equal(pids.runtimeMatches(binary, CELLD_VERSION), false);
+  });
+
+  test('matching runtimes are reused without downloads or restart requests', () => {
+    installed('bin/celld', `celld ${CELLD_VERSION}`);
+    installed('node/bin/node', NODE_VERSION);
+    fakeRun(versions);
+    stub('download', () => assert.fail('must not download'));
+    pids.toolchain();
+    assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'config.json')));
+  });
+
+  test('celld upgrade verifies archive pin, replaces binary, and persists restart across retries', () => {
+    const binary = installed('bin/celld', 'celld 0.0.1');
+    installed('node/bin/node', NODE_VERSION);
+    pids.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ pending_restarts: [STORAGE] }));
+    fakeRun(versions);
+    const downloads: string[] = [];
+    stub('download', (url, destination, checksum) => {
+      assert.equal(url, CELLD_URL);
+      assert.equal(checksum, CELLD_SHA);
+      downloads.push(url);
+      fs.writeFileSync(destination, gzipSync(`celld ${CELLD_VERSION}`));
+    });
+    pids.toolchain();
+    pids.toolchain();
+    assert.equal(fs.readFileSync(binary, 'utf8'), `celld ${CELLD_VERSION}`);
+    assert.equal(mode(binary), 0o755);
+    assert.equal(downloads.length, 1);
+    assert.deepEqual(new Set((pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj).pending_restarts), new Set([SERVICE, STORAGE]));
+  });
+
+  test('failed verification leaves the old celld intact', () => {
+    const binary = installed('bin/celld', 'celld 0.0.1');
+    fakeRun(versions);
+    stub('download', () => { throw new Failure('Checksum mismatch'); });
+    assert.throws(() => pids.toolchain(), /Checksum mismatch/);
+    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.0.1');
+    stub('download', (_url, destination) => { fs.writeFileSync(destination, gzipSync('celld 0.0.2')); });
+    assert.throws(() => pids.toolchain(), /wrong version/);
+    assert.equal(fs.readFileSync(binary, 'utf8'), 'celld 0.0.1');
+    assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'config.json')));
+  });
+
+  test('Node mismatch is replaced only after staged version verification', () => {
+    installed('bin/celld', `celld ${CELLD_VERSION}`);
+    const binary = installed('node/bin/node', 'v22.0.0');
+    fakeRun((argv) => {
+      if (argv[0] === 'tar') {
+        const stage = argv.at(-1)!;
+        fs.mkdirSync(path.join(stage, 'bin'));
+        fs.writeFileSync(path.join(stage, 'bin/node'), NODE_VERSION);
+        return ok();
+      }
+      return versions(argv);
+    });
+    stub('download', (url, _destination, checksum) => {
+      assert.equal(url, NODE_URL);
+      assert.equal(checksum, NODE_SHA);
+    });
+    pids.toolchain();
+    assert.equal(fs.readFileSync(binary, 'utf8'), NODE_VERSION);
+    assert.ok(!fs.existsSync(path.join(paths.ROOT, 'node.previous')));
   });
 });
 

@@ -1,0 +1,111 @@
+name: pi-durable-sessions
+
+on:
+  pull_request:
+    paths:
+      - 'pi-durable-sessions/**'
+      - '.github/workflows/pi-durable-sessions.yml'
+  push:
+    branches: [main, pi-durable-sessions]
+    tags: ['pi-durable-sessions/v*']
+    paths:
+      - 'pi-durable-sessions/**'
+      - '.github/workflows/pi-durable-sessions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: pi-durable-sessions
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read toolchain pins
+        id: pins
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = require('./ops/runtime.json');
+          const p = require('./package.json');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `node=${r.node.version}\npnpm=${p.packageManager}\n`);
+          JS
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+      - name: Install pinned package manager and dependencies
+        env:
+          PACKAGE_MANAGER: ${{ steps.pins.outputs.pnpm }}
+        run: |
+          npm install --global "$PACKAGE_MANAGER"
+          pnpm install --frozen-lockfile
+      - name: Install check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          pnpm --dir apps/ui exec playwright install --with-deps chromium
+      - name: Release consistency and application checks
+        run: pnpm check
+      - name: Download checksum-pinned celld
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { gunzipSync } from 'node:zlib';
+          const { celld } = JSON.parse(fs.readFileSync('ops/runtime.json', 'utf8'));
+          const archive = `${process.env.RUNNER_TEMP}/celld.gz`;
+          execFileSync('curl', ['--fail', '--location', '--retry', '3', '--proto', '=https', '--tlsv1.2', celld.url, '-o', archive]);
+          const bytes = fs.readFileSync(archive);
+          if (createHash('sha256').update(bytes).digest('hex') !== celld.sha256) throw new Error('celld checksum mismatch');
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/celld`, gunzipSync(bytes), { mode: 0o755 });
+          JS
+      - name: Isolated live deployment, storage, UI and API smoke
+        run: node ops/smoke.ts --celld "$RUNNER_TEMP/celld"
+      - name: Package the tagged source release
+        if: startsWith(github.ref, 'refs/tags/pi-durable-sessions/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'JS'
+          if (process.env.RELEASE_TAG !== `pi-durable-sessions/v${require('./package.json').version}`) throw new Error('Tag/version mismatch');
+          JS
+          node ops/release.mjs pack
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: startsWith(github.ref, 'refs/tags/pi-durable-sessions/v')
+        with:
+          name: pi-durable-sessions-release
+          path: pi-durable-sessions/dist/release/
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/pi-durable-sessions/v')
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pi-durable-sessions-release
+          path: release
+      - name: Create a draft only; a maintainer completes the runtime checklist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd release
+          sha256sum --check SHA256SUMS
+          flags=()
+          if [[ "$RELEASE_TAG" == *-rc.* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" ./* --verify-tag --draft "${flags[@]}" \
+            --title "$RELEASE_TAG" \
+            --notes 'Source release. Exact stack and artifact checksums are in release.json and SHA256SUMS. Automated checks and isolated deployment smoke passed. Before publishing, complete pi-durable-sessions/docs/releases.md and add upgrade/rollback notes; model turns, terminal/preview transport, hot deployment, and restart recovery are not covered by this CI smoke.'

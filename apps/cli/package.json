@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "description": "pds, the one command line for the system: Sessions now, its operations (#68) later",
-  "bin": { "pds": "./pds.ts" },
+  "bin": {
+    "pds": "./pds.ts"
+  },
   "scripts": {
     "check": "node cli.check.ts && tsc"
   },
@@ -12,5 +14,6 @@
   },
   "devDependencies": {
     "typescript": "~6.0.2"
-  }
+  },
+  "version": "0.1.0-rc.1"
 }

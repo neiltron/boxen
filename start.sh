@@ -24,6 +24,7 @@ fi
 wait_port 9000
 
 if ! nc -z 127.0.0.1 8093 2>/dev/null; then
+  PIDS_CELLD="celld-0.6.1" node ops/celld.mjs --version >/dev/null
   # celld cuts outbound fetches (whole response included) at its default
   # timeout, 120s as observed: long model streams and long sandbox commands
   # (npm install under emulation) died with "error decoding response body".
