@@ -12,6 +12,13 @@ const PREPARED = "/tmp/.pds-prepared";
 const TTL = 10 * 365 * 24 * 3600;
 
 export class Sandbox extends BaseSandbox {
+  // celld cannot return the SDK's Process object across isolates: its methods
+  // are RPC stubs. Keep it here and expose only the ID. Reader callers use the
+  // existing getProcessLogs/killProcess methods, whose results are plain data.
+  async startReaderProcess(command) {
+    return (await this.startProcess(command)).id;
+  }
+
   // Returns "restored" when this call brought the files back, else "ready".
   // Concurrent callers share one restore.
   prepare() {

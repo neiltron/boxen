@@ -68,20 +68,23 @@ client.on('error', (e) => { console.error(e.message); process.exitCode = 1; });
 `;
 
 export async function openSandboxReader(sandbox, path, options, context) {
-  let process;
+  let processId;
   const aborted = (ctx) => ctx?.abortSignal?.aborted;
   const abort = () => fail("aborted", "File operation aborted", path);
   if (aborted(context)) return abort();
   try {
-    process = await sandbox.startProcess(command(SERVER, { path, noFollow: !!options?.noFollow }));
-    // A failed open can exit before waitForLog sees it. Its final log still
-    // contains the typed error; a transport/start failure must not hide it.
-    let waitError;
-    try { await process.waitForLog("\n", 10_000); } catch (e) { waitError = e; }
-    const { stdout } = await process.getLogs();
-    if (!stdout.trim()) throw waitError ?? new Error("Reader did not start");
+    processId = await sandbox.startReaderProcess(command(SERVER, { path, noFollow: !!options?.noFollow }));
+    let stdout = "";
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (aborted(context)) throw new Error("File operation aborted");
+      ({ stdout } = await sandbox.getProcessLogs(processId));
+      if (stdout.includes("\n")) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!stdout.trim()) throw new Error("Reader did not start");
     const ready = JSON.parse(stdout.trim());
-    if (!ready.ok) { await process.kill().catch(() => {}); return fail(ready.code, ready.message, path); }
+    if (!ready.ok) { await sandbox.killProcess(processId).catch(() => {}); return fail(ready.code, ready.message, path); }
     let closed = false;
     const call = async (request, ctx) => {
       if (aborted(ctx)) return abort();
@@ -98,7 +101,7 @@ export async function openSandboxReader(sandbox, path, options, context) {
       if (closed) return;
       await call({ op: "close" });
       closed = true;
-      await process.kill().catch(() => {});
+      await sandbox.killProcess(processId).catch(() => {});
     };
     if (aborted(context)) { await close(); return abort(); }
     const chunk = async (offset, length, ctx) => {
@@ -137,7 +140,7 @@ export async function openSandboxReader(sandbox, path, options, context) {
       close,
     });
   } catch (e) {
-    await process?.kill().catch(() => {});
+    if (processId) await sandbox.killProcess(processId).catch(() => {});
     return aborted(context) ? abort() : fail("unknown", String(e?.message ?? e), path);
   }
 }

@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 
 export function localSandbox(cwd) {
   const running = new Set();
+  const processes = new Map();
   const stats = { maxReply: 0 };
   const launch = (command, options = {}) => {
     const child = spawn("bash", ["-c", command], { cwd: options.cwd ?? cwd, env: { ...process.env, ...options.env }, signal: options.signal });
@@ -22,20 +23,19 @@ export function localSandbox(cwd) {
   return {
     stats,
     async exec(command, options) { return launch(command, options).done; },
-    async startProcess(command) {
+    async startReaderProcess(command) {
       const p = launch(command);
-      return {
-        async waitForLog(pattern) {
-          for (let n = 0; n < 100; n++) {
-            if (p.logs().stdout.includes(pattern)) return;
-            if (p.child.exitCode !== null) break;
-            await new Promise((r) => setTimeout(r, 10));
-          }
-          throw new Error("No ready log");
-        },
-        async getLogs() { return p.logs(); },
-        async kill() { p.child.kill(); await p.done; },
-      };
+      const id = String(p.child.pid);
+      processes.set(id, p);
+      return id;
+    },
+    async getProcessLogs(id) { return processes.get(id).logs(); },
+    async killProcess(id) {
+      const p = processes.get(id);
+      if (!p) return;
+      p.child.kill();
+      await p.done;
+      processes.delete(id);
     },
     async readFile(path, options) { return { content: await fs.readFile(path, options?.encoding ?? "utf8") }; },
     async writeFile(path, content, options) { await fs.writeFile(path, content, options?.encoding ?? "utf8"); },
