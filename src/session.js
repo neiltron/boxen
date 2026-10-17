@@ -13,6 +13,7 @@ import { createRegistry, defineExtension, defineTool, Harness, section, watchEve
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
+import { publishArtifact } from "./artifact-content.js";
 import { CellSqlite } from "./cell-sqlite.js";
 import { directoryCredentials } from "./credentials.js";
 import { sandboxEnv, shellQuote } from "./sandbox-env.js";
@@ -43,7 +44,7 @@ const Prompt = defineExtension({
 
 // Shows something in the panel beside the chat. Saves are versioned in the
 // Artifacts cell; the UI opens the artifact from this call's details.
-function artifactExtension(artifacts, session) {
+function artifactExtension(artifacts, session, readFile) {
   const tool = defineTool({
     name: "artifact",
     description:
@@ -51,16 +52,18 @@ function artifactExtension(artifacts, session) {
       "a diagram, a chart, a small interactive demo. Kinds: markdown; html (a complete page; inline CSS/JS, " +
       "CDN scripts allowed, runs sandboxed); svg; mermaid (diagram source); code (set language). " +
       "Pass the id of an artifact you made earlier to revise it instead of creating another. " +
+      "Provide exactly one of content or contentPath. Use contentPath for a generated HTML bundle; its bytes are copied into durable artifact storage. " +
       "Prefer this over long chat replies for anything the user will want to look at or come back to.",
     parameters: Type.Object({
       id: Type.Optional(Type.String({ description: "Existing artifact id, to update it" })),
       title: Type.String(),
       kind: Type.Union(ARTIFACT_KINDS.map((k) => Type.Literal(k))),
       language: Type.Optional(Type.String({ description: "For kind code" })),
-      content: Type.String(),
+      content: Type.Optional(Type.String({ description: "Inline artifact contents; omit when using contentPath" })),
+      contentPath: Type.Optional(Type.String({ description: "UTF-8 file in this session sandbox, absolute or relative to the workspace. Its contents (up to 8 MiB) are copied into the durable artifact; the file is not needed to view it later." })),
     }),
     execute: async (args) => {
-      const saved = await artifacts.save({ ...args, session });
+      const saved = await publishArtifact(args, { session, readFile, save: (value) => artifacts.save(value) });
       return {
         content: [{ type: "text", text: `Artifact ${saved.id} v${saved.version} is showing in the panel.` }],
         details: { artifactId: saved.id, version: saved.version, title: args.title, kind: args.kind },
@@ -110,7 +113,10 @@ export class Session extends DurableObject {
     const registry = createRegistry();
     registry.install(CodingTools);
     registry.install(Prompt);
-    registry.install(artifactExtension(this.env.ARTIFACTS.getByName("main"), meta.id));
+    registry.install(artifactExtension(this.env.ARTIFACTS.getByName("main"), meta.id, async (path) => {
+      const absolute = path.startsWith("/") ? path : `${meta.cwd}/${path}`;
+      return (await sandbox.readFile(absolute)).content;
+    }));
     const harness = await Harness.open(
       await SqliteStorage.open(new CellSqlite(this.state.storage)),
       {
