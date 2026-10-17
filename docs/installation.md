@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/neiltron/celld-test/<COMMIT>/pi-dur
 PIDS_REF=<COMMIT> bash /tmp/pids-install.sh --access tailscale
 ```
 
-A pipe-to-bash invocation works too; downloading first lets you inspect the script. `PIDS_REF` selects the application source, not just the installer. It defaults to the installer’s own application version tag (currently `pi-durable-sessions/v0.1.0-rc.1`), not a moving branch. Until that tag is published, use a checkout or explicitly select a reviewed commit. See [application releases](releases.md) for checksum-verified source artifacts and upgrade procedures. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. Setup replaces installed runtime versions that do not match the selected installer and persists any required restart across retries; use the new release’s installer for an upgrade. The installer itself runs on that same pinned Node, which `install.sh` downloads and verifies first, so the host needs no Python or other runtime. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
+A pipe-to-bash invocation works too; downloading first lets you inspect the script. `PIDS_REF` selects the application source, not just the installer. It defaults to the installer’s own application version tag (currently `pi-durable-sessions/v0.1.0-rc.2`), not a moving branch. Until that tag is published, use a checkout or explicitly select a reviewed commit. See [application releases](releases.md) for checksum-verified source artifacts and upgrade procedures. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. Setup replaces installed runtime versions that do not match the selected installer and persists any required restart across retries; use the new release’s installer for an upgrade. The installer itself runs on that same pinned Node, which `install.sh` downloads and verifies first, so the host needs no Python or other runtime. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
 
 ## Agent/noninteractive installation
 
@@ -82,7 +82,7 @@ Rollback: rerun setup with an earlier source checkout. This redeploys applicatio
 | Component | Location / behavior |
 |---|---|
 | Manager | `/usr/local/bin/pids`, `/opt/pi-durable-sessions/manager/pids.ts`, run by the private Node below |
-| Native runtimes | Private celld 0.6.1 and Node 24.5.0 under `/opt/pi-durable-sessions/`; no global Node replacement |
+| Native runtimes | Private celld 0.6.2 and Node 24.5.0 under `/opt/pi-durable-sessions/`; no global Node replacement |
 | Application sources | `/opt/pi-durable-sessions/releases/<content-revision>/` |
 | Settings | `/etc/pi-durable-sessions/config.json` |
 | Credentials / route ownership | `/etc/pi-durable-sessions/credentials.json`, `celld.env`, `storage.env`, `serve.json`; root-only |
@@ -147,7 +147,7 @@ The installer still imports nothing from the workspace; the root `package.json` 
 Live isolated smoke (Docker + celld, `pnpm install` and `pnpm build` done):
 
 ```sh
-node ops/smoke.ts --celld /path/to/celld-0.6.1
+node ops/smoke.ts --celld /path/to/celld-0.6.2
 ```
 
 This creates a disposable RustFS container/volume, deploys the actual worker, sandbox image and UI assets, starts a separate node, checks storage/API/static assets, and cleans up its own node/container/volume. It does not call a model or exercise a sandbox terminal, Tailscale or systemd.

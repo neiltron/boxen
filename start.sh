@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launch pi-durable-sessions: rustfs (shared, :9000) → celld 0.6.1 node (:8093).
+# Launch pi-durable-sessions: rustfs (shared, :9000) → celld 0.6.2 node (:8093).
 # Needs a Docker daemon for the per-session Sandbox containers.
 # UI is separate: pnpm ui (http://localhost:5176), then sign in from the sidebar.
 set -euo pipefail
@@ -24,7 +24,7 @@ fi
 wait_port 9000
 
 if ! nc -z 127.0.0.1 8093 2>/dev/null; then
-  PIDS_CELLD="celld-0.6.1" node ops/celld.mjs --version >/dev/null
+  PIDS_CELLD="celld-0.6.2" node ops/celld.mjs --version >/dev/null
   # celld cuts outbound fetches (whole response included) at its default
   # timeout, 120s as observed: long model streams and long sandbox commands
   # (npm install under emulation) died with "error decoding response body".
@@ -34,7 +34,7 @@ if ! nc -z 127.0.0.1 8093 2>/dev/null; then
   export CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600 \
     AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret
   nohup bash -c 'while :; do
-    caffeinate -i celld-0.6.1 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 --listen 127.0.0.1:8093
+    caffeinate -i celld-0.6.2 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 --listen 127.0.0.1:8093
     echo "pid-celld-supervisor: celld exited ($?), restarting"; sleep 2
   done' pid-celld-supervisor >> .celld.log 2>&1 &
   echo "celld starting (supervisor pid $!)"

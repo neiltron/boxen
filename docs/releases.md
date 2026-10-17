@@ -2,7 +2,7 @@
 
 A release versions **pi-durable-sessions as a tested stack**, independently of celld's version. Worker, UI, CLI, MCP server and internal client share one version. Nothing is published to npm yet.
 
-The initial candidate is **0.1.0-rc.1**, retaining celld 0.6.1 and pi-durable/pi-ai/chord 1.0.0. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/celld-test/releases) for published releases.
+The current candidate is **0.1.0-rc.2**, upgrading celld to **0.6.2** while retaining pi-durable/pi-ai/chord **1.0.0**. The initial **0.1.0-rc.1** baseline used celld 0.6.1. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/celld-test/releases) for published releases.
 
 ## Sources of truth
 
@@ -30,7 +30,7 @@ The manifest includes exact dependency versions/integrities, runtime pins, Git c
 
 ## Version policy
 
-Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.1`.
+Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.2`.
 
 - `0.x.y` patch: compatible fixes, including compatible dependency updates.
 - `0.x.0` minor: features or breaking changes; explicitly document any breaking behavior.
@@ -40,18 +40,18 @@ Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.1
 
 ## Prepare a candidate
 
-1. Make one intentional dependency/runtime change per PR where practical. Do not combine the first baseline release with the celld 0.6.2 upgrade.
+1. Make one intentional dependency/runtime change per PR where practical. Keep runtime upgrades separate from release-tooling changes.
 2. Edit the app version, relevant pins and changelog. Update `ops/compatibility.json` with actual tested upgrade paths; an empty list means none are certified.
 3. Update the lockfile using pinned pnpm, without opportunistically updating unrelated packages. Sandbox SDK and image tag must match; resolve and review the image digest too.
 4. Run `node ops/release.mjs sync`, then `pnpm install --frozen-lockfile` and `pnpm check`. Commit generated files alongside their inputs.
 5. Run the isolated live smoke with the exact pinned celld binary:
    ```sh
-   node ops/smoke.ts --celld /path/to/celld-0.6.1
+   node ops/smoke.ts --celld /path/to/celld-0.6.2
    ```
 6. Review/merge the candidate. From its clean commit, create and push the version tag **when ready to create a release draft**:
    ```sh
-   git tag -a pi-durable-sessions/v0.1.0-rc.1 -m 'pi-durable-sessions 0.1.0-rc.1'
-   git push origin pi-durable-sessions/v0.1.0-rc.1
+   git tag -a pi-durable-sessions/v0.1.0-rc.2 -m 'pi-durable-sessions 0.1.0-rc.2'
+   git push origin pi-durable-sessions/v0.1.0-rc.2
    ```
 
 CI installs frozen dependencies, runs the checks, and runs isolated RustFS/celld deployment smoke. Tag builds package the source and create a **draft** GitHub release. RC tags also receive the prerelease flag. No automatic production deployment occurs. A rerun does not overwrite an existing draft; inspect it explicitly rather than silently replacing assets.
@@ -85,7 +85,7 @@ For a published release, download all artifacts from its GitHub release page, th
 ```sh
 sha256sum --check SHA256SUMS
 # Substitute the downloaded version. Inspect the installer before executing it.
-tar -xzf pi-durable-sessions-0.1.0-rc.1.tar.gz
+tar -xzf pi-durable-sessions-0.1.0-rc.2.tar.gz
 cd pi-durable-sessions
 ./install.sh --access tailscale
 ```

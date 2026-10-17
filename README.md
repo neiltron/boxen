@@ -104,8 +104,8 @@ follow-ups, not part of this installer.
 
 ## Run it
 
-Needs a Docker daemon (`orbctl start`) and celld ≥ 0.5 for containers. This
-prototype uses `~/.local/bin/celld-0.6.1`; the other prototypes stay on 0.3.0.
+Needs a Docker daemon (`orbctl start`) and the pinned celld **0.6.2**. This
+prototype uses `~/.local/bin/celld-0.6.2`; the other prototypes stay on 0.3.0.
 
 ```sh
 pnpm install && pnpm run deploy  # bundles the worker, saves the sandbox image to the bucket
@@ -116,7 +116,7 @@ pnpm ui                          # http://localhost:5176
 Write `pnpm run deploy`, not `pnpm deploy`: that is a built-in pnpm command.
 `pnpm build` builds the UI into `apps/ui/dist`.
 
-After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.1 nodes pick up a new version
+After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.2 nodes pick up a new version
 in about 15 seconds without a restart, so sandboxes keep their disks.
 
 ## Drive it from the command line

@@ -35,10 +35,10 @@ export const STORAGE = 'pi-durable-sessions-storage';
 export const SERVICE = 'pi-durable-sessions';
 export const BUCKET = 'pid-cells';
 // BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)
-export const APPLICATION_VERSION = '0.1.0-rc.1';
-export const CELLD_VERSION = '0.6.1';
-export const CELLD_URL = 'https://github.com/denoland/celld/releases/download/v0.6.1/celld-x86_64-unknown-linux-gnu.gz';
-export const CELLD_SHA = '79a8253cff5d4e8a4a9f7a2611e393390f7fe9025f00e88467875b007c44866b';
+export const APPLICATION_VERSION = '0.1.0-rc.2';
+export const CELLD_VERSION = '0.6.2';
+export const CELLD_URL = 'https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz';
+export const CELLD_SHA = 'ce0ee3552cc8d55dde3998dc3b1b0c8f547bbcb4bc803d2a94842368b047646c';
 export const NODE_VERSION = 'v24.5.0';
 export const NODE_URL = 'https://nodejs.org/dist/v24.5.0/node-v24.5.0-linux-x64.tar.gz';
 export const NODE_SHA = '369f2a3668dde7e324697040fafdcf442fd198b8c102317145417b3c83a9794a';

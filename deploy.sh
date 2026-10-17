@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy apps/worker/src/ to the running node. celld 0.6.1 adopts a new version on its
+# Deploy apps/worker/src/ to the running node. celld 0.6.2 adopts a new version on its
 # next pointer poll (~15s) without a restart, so cells' sandboxes keep their
 # disks and in-flight sign-ins survive. Restart only if adoption stalls:
 #   ./stop.sh && ./start.sh
