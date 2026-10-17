@@ -2,7 +2,7 @@
 
 A release versions **pi-durable-sessions as a tested stack**, independently of celld's version. Worker, UI, CLI, MCP server and internal client share one version. Nothing is published to npm yet.
 
-The current candidate is **0.1.0-rc.2**, upgrading celld to **0.6.2** while retaining pi-durable/pi-ai/chord **1.0.0**. The initial **0.1.0-rc.1** baseline used celld 0.6.1. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/celld-test/releases) for published releases.
+The current candidate is **0.1.0-rc.3**, upgrading pi-durable/pi-ai/chord to **1.3.0** while retaining celld **0.6.2** from rc.2. The initial **0.1.0-rc.1** baseline used celld 0.6.1. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/celld-test/releases) for published releases.
 
 ## Sources of truth
 
@@ -30,7 +30,7 @@ The manifest includes exact dependency versions/integrities, runtime pins, Git c
 
 ## Version policy
 
-Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.2`.
+Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.3`.
 
 - `0.x.y` patch: compatible fixes, including compatible dependency updates.
 - `0.x.0` minor: features or breaking changes; explicitly document any breaking behavior.
@@ -50,8 +50,8 @@ Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.2
    ```
 6. Review/merge the candidate. From its clean commit, create and push the version tag **when ready to create a release draft**:
    ```sh
-   git tag -a pi-durable-sessions/v0.1.0-rc.2 -m 'pi-durable-sessions 0.1.0-rc.2'
-   git push origin pi-durable-sessions/v0.1.0-rc.2
+   git tag -a pi-durable-sessions/v0.1.0-rc.3 -m 'pi-durable-sessions 0.1.0-rc.3'
+   git push origin pi-durable-sessions/v0.1.0-rc.3
    ```
 
 CI installs frozen dependencies, runs the checks, and runs isolated RustFS/celld deployment smoke. Tag builds package the source and create a **draft** GitHub release. RC tags also receive the prerelease flag. No automatic production deployment occurs. A rerun does not overwrite an existing draft; inspect it explicitly rather than silently replacing assets.
@@ -69,7 +69,15 @@ Before publishing a draft, record the candidate commit, tested platform, results
 - [ ] Verify backup/restore and state clearly whether downgrade is supported. Do not equate retained source directories with safe rollback.
 - [ ] Verify release artifact checksums, version/tag/commit and migration notes.
 
-The automated smoke tests deployment, UI HTML/JS, API and storage—not model execution, PTY transport, upgrade adoption, host services, Tailscale, or workspace recovery. Do not publish a stable release based only on that smoke. The first RC can be published for testing with incomplete checks explicitly disclosed; it must not claim certified upgrade paths.
+The automated smoke tests deployment, UI HTML/JS, API, storage, and the real Sandbox SDK reader/argv/stream-label path. Its test-only worker entry exists only in the temporary deployment. It does not test model execution, PTY transport, upgrade adoption, host services, Tailscale, or workspace recovery. Do not publish a stable release based only on that smoke. The first RC can be published for testing with incomplete checks explicitly disclosed; it must not claim certified upgrade paths.
+
+## rc.3 storage and adapter notes
+
+- pi-durable 1.3 migrates active `pi.tool` tasks from version 1 to version 2. The checked-in 1.0.0 SQLite fixture covers history, a safe in-flight tool, and queued input. Tests use the existing `CellSqlite` facade and no table prefix. This is a bounded migration test, not host-upgrade certification.
+- **Do not downgrade the mutated store to pi-durable 1.0.0.** Keep a pre-upgrade, off-machine storage backup and matching workspace checkpoints. Restoring application source alone is not rollback. `supportedUpgradeFrom` stays empty; state/API generations stay 1.
+- Stop new turns and quiesce existing work before upgrade. The test's safe replay tool does not prove that an interrupted bash, write, or artifact operation can be repeated safely.
+- Sandbox reads keep a real descriptor in a short-lived container helper. Unix-socket replies are bounded to 256 KiB of file data. Line scanning uses the upstream UTF-8 scanner and bounded memory, but still transfers the whole file in chunks. Large-file scans can be slow. Close releases the helper; abandoned helpers expire after two idle minutes. A container loss or helper expiry returns an error, never data from a replacement path.
+- Directory paging and filesystem watching explicitly return `not_supported`. Output spill files and the known quiet-bash cancellation limitation remain unchanged. No subagents or code mode are enabled; their upstream packages can appear as transitive dependencies.
 
 ## Artifacts and installation
 
@@ -85,7 +93,7 @@ For a published release, download all artifacts from its GitHub release page, th
 ```sh
 sha256sum --check SHA256SUMS
 # Substitute the downloaded version. Inspect the installer before executing it.
-tar -xzf pi-durable-sessions-0.1.0-rc.2.tar.gz
+tar -xzf pi-durable-sessions-0.1.0-rc.3.tar.gz
 cd pi-durable-sessions
 ./install.sh --access tailscale
 ```

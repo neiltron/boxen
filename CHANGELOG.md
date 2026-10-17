@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.0-rc.3 — unreleased
+
+Pi runtime upgrade candidate. Not yet published or production-certified.
+
+- Pin pi-durable, pi-ai, and Chord **1.0.0 → 1.3.0** together. Retain celld **0.6.2**, Sandbox SDK/image **0.12.9**, Node **24.5.0**, pnpm **12.9.1**, and existing native/container pins. Lockfile changes are confined to the new runtime dependency graph.
+- Add bounded Sandbox binary readers, upstream UTF-8 line scanning, literal argv execution, and stdout/stderr labels. Readers retain the opened file across renames and replacement. Directory readers and watches remain explicitly unsupported.
+- Return artifact tool data in `output`; transcript messages still use `content`. Nonzero bash exits now produce the upstream error result and `exit_code` diagnostic.
+- Recover through typed `SessionFailed` errors and `harness.closed`. Stop subscribers and wait for the old Harness to close before reopening. Preserve workspace preparation through self-RPC.
+- Fix **#102** in the shared client: interleaved status notes no longer discard assistant deltas or prevent message settlement.
+- Add real Harness/CellSqlite tests, a generated 1.0.0 store fixture, and isolated live SDK reader/argv checks. No subagents, code mode, or application rename.
+
+### Upgrade and compatibility
+
+Active `pi.tool` tasks migrate from version 1 to version 2. Tests cover retained history, a safe pending tool, queued input, request deduplication, storage failure, pending waiters, and reopen. They do **not** certify a host upgrade or replay of unsafe tools. Keep `supportedUpgradeFrom` empty and state/API generations at **1**.
+
+Quiesce work, verify workspace checkpoints, and take an off-machine storage backup before upgrading. **Do not downgrade a mutated store to pi-durable 1.0.0.** Restore the pre-upgrade storage and matching workspace checkpoints instead; old source alone is not rollback. See [release notes and manual gates](docs/releases.md). Real provider turns, hot adoption, node restart recovery, terminal/preview, and quiet-bash Stop still require live validation.
+
 ## 0.1.0-rc.2 — unreleased
 
 Celld-only upgrade candidate. Not yet a published or production-certified release.

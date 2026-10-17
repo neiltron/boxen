@@ -581,3 +581,30 @@ assert.equal(sessionSocketUrl("https://host.ts.net/", "s1"), "wss://host.ts.net/
 assert.equal(sessionSocketUrl("https://host/prefix", "a b"), "wss://host/prefix/api/session/a%20b/ws");
 
 console.log("session.check ok");
+
+// #102: display-only entries and refusals must not change the active message.
+{
+  const { applyEvent, appendError, emptyModel } = await import("./src/events.ts");
+  const m = emptyModel();
+  applyEvent(m, { type: "message_start", message: { role: "assistant", content: [{ type: "text", text: "Before" }] } });
+  applyEvent(m, { type: "entry_appended", entry: { kind: "app.note", data: { text: "Preparing workspace" } } });
+  appendError(m, "another request was refused");
+  applyEvent(m, { type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: " after" }] });
+  assert.equal(m.items[0].kind, "assistant");
+  const assistant = m.items[0] as Extract<(typeof m.items)[number], { kind: "assistant" }>;
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Before after");
+  applyEvent(m, { type: "message_end", entry: { model: [{ role: "assistant", content: [{ type: "text", text: "Committed" }], stopReason: "stop" }] } });
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Committed");
+  assert.equal(assistant.streaming, false);
+  applyEvent(m, { type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: "late" }] });
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Committed", "a stale delta cannot edit a completed message");
+  applyEvent(m, { type: "snapshot", entries: [], tools: [], generation: { message: { role: "assistant", content: [{ type: "thinking", thinking: "resumed" }] } } });
+  applyEvent(m, { type: "entry_appended", entry: { kind: "app.note", data: { text: "restored" } } });
+  applyEvent(m, { type: "message_update", changes: [{ type: "thinking_delta", contentIndex: 0, delta: " stream" }] });
+  const resumed = m.items[0] as typeof assistant;
+  assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].text, "resumed stream");
+  applyEvent(m, { type: "run_end" });
+  assert.equal(resumed.streaming, false);
+  assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].streaming, false);
+  assert.equal(m.assistantSeq, null);
+}

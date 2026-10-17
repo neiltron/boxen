@@ -1,15 +1,11 @@
-// Run with node workspace.check.js; no celld, container or npm install required.
+// Run with node workspace.check.js; no celld or container required.
 // Drives src/workspace.js through its interface with an in-memory sandbox.
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 
-// The two packages the module reaches are the sandbox seam itself and
-// pi-durable's error classes; stand-ins keep this check install-free.
+// The sandbox boundary is stubbed; runtime library types stay real.
 const stubs = {
   "@cloudflare/sandbox": "export function getSandbox() { throw new Error('use the fake sandbox'); }",
-  "@earendil-works/pi-durable/env": `
-    export class ExecutionError extends Error { constructor(code, message) { super(message); this.code = code; } }
-    export class FileError extends Error { constructor(code, message, path) { super(message); this.code = code; this.path = path; } }`,
 };
 registerHooks({
   resolve(specifier, context, next) {
