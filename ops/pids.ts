@@ -34,14 +34,17 @@ export const USER = 'pids';
 export const STORAGE = 'pi-durable-sessions-storage';
 export const SERVICE = 'pi-durable-sessions';
 export const BUCKET = 'pid-cells';
+// BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)
+export const APPLICATION_VERSION = '0.1.0-rc.1';
+export const CELLD_VERSION = '0.6.1';
 export const CELLD_URL = 'https://github.com/denoland/celld/releases/download/v0.6.1/celld-x86_64-unknown-linux-gnu.gz';
 export const CELLD_SHA = '79a8253cff5d4e8a4a9f7a2611e393390f7fe9025f00e88467875b007c44866b';
-// install.sh bootstraps the same Node to run this manager; a test keeps the two pins identical.
 export const NODE_VERSION = 'v24.5.0';
 export const NODE_URL = 'https://nodejs.org/dist/v24.5.0/node-v24.5.0-linux-x64.tar.gz';
 export const NODE_SHA = '369f2a3668dde7e324697040fafdcf442fd198b8c102317145417b3c83a9794a';
 export const RUSTFS_IMAGE = 'rustfs/rustfs@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff';
 export const PROBE_IMAGE = 'busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662';
+// END GENERATED RUNTIME PINS
 export const SANDBOX_NETWORK = 'celld'; // Created by celld; its nftables policy applies to this bridge.
 // The pnpm workspace root, then the directories its globs (pnpm-workspace.yaml)
 // cover, whole, so a new package needs no edit here; then the installer.
@@ -325,12 +328,13 @@ function sourceRevision(source: string): string {
 
 function installPlan(config: Config, host: Host, revision: string): Obj {
   return {
-    host, config, source_revision: revision,
+    host, config, source_revision: revision, application_version: APPLICATION_VERSION,
+    desired_runtime: { celld: CELLD_VERSION, node: NODE_VERSION.slice(1) },
     paths: { application: paths.ROOT, config: paths.CONFIG, data: paths.DATA },
     steps: [
       'Check that sandboxes will get a DNS resolver celld lets them reach',
       'Install/reuse distro Docker and required tools',
-      `Install checksum-pinned celld 0.6.1 and Node ${NODE_VERSION.slice(1)}`,
+      `Install checksum-pinned celld ${CELLD_VERSION} and Node ${NODE_VERSION.slice(1)}`,
       'Create dedicated pids service account and private random storage credentials',
       'Build UI and worker from lockfiles as the service account',
       'Start digest-pinned RustFS on loopback; create private bucket',
@@ -531,21 +535,44 @@ function withTemporaryDirectory<T>(parent: string, body: (directory: string) => 
   }
 }
 
+/** Version probes are read-only. Missing, broken and mismatched binaries are replaced. */
+function runtimeMatches(binary: string, version: string): boolean {
+  if (!fs.existsSync(binary)) return false;
+  try {
+    const result = pids.run([binary, '--version'], { capture: true, check: false, timeout: 15 });
+    const found = result.stdout.trim().match(/^(?:celld\s+|v)(\d+\.\d+\.\d+)(?:\s|$)/)?.[1];
+    return result.returncode === 0 && found === version;
+  } catch {
+    return false; // Broken executable, permission error, timeout, or missing interpreter.
+  }
+}
+
+/** Persist restart intent BEFORE replacement, so retries cannot silently keep an old process. */
+function runtimeRestartRequired(): void {
+  const config = path.join(paths.CONFIG, 'config.json');
+  if (!fs.existsSync(config)) return; // Fresh install: service-unit creation schedules its start.
+  const saved = pids.readJson(config, {}) as Obj;
+  saved.pending_restarts = [...new Set([...(saved.pending_restarts ?? []), SERVICE])].sort();
+  saveConfig(saved);
+}
+
 function toolchain(): void {
   pids.runtimeDirectories();
   const celld = path.join(paths.ROOT, 'bin/celld');
-  if (!fs.existsSync(celld)) {
+  if (!pids.runtimeMatches(celld, CELLD_VERSION)) {
     withTemporaryDirectory(paths.ROOT, (temporary) => {
       const archive = path.join(temporary, 'celld.gz');
       pids.download(CELLD_URL, archive, CELLD_SHA);
       const binary = path.join(temporary, 'celld');
       fs.writeFileSync(binary, gunzipSync(fs.readFileSync(archive)), { mode: 0o755 });
       fs.chmodSync(binary, 0o755);
+      if (!pids.runtimeMatches(binary, CELLD_VERSION)) throw new Failure('Downloaded celld reports the wrong version.');
+      runtimeRestartRequired();
       fs.renameSync(binary, celld);
     });
   }
   const node = path.join(paths.ROOT, 'node');
-  if (!fs.existsSync(path.join(node, 'bin/node'))) {
+  if (!pids.runtimeMatches(path.join(node, 'bin/node'), NODE_VERSION.slice(1))) {
     withTemporaryDirectory(paths.ROOT, (temporary) => {
       const archive = path.join(temporary, 'node.tar.gz');
       pids.download(NODE_URL, archive, NODE_SHA);
@@ -553,8 +580,19 @@ function toolchain(): void {
       fs.mkdirSync(stage);
       pids.run(['tar', '-xzf', archive, '--no-same-owner', '--strip-components=1', '-C', stage]);
       fs.chmodSync(stage, 0o755);
-      fs.rmSync(node, { recursive: true, force: true }); // A partial earlier extract without bin/node.
-      fs.renameSync(stage, node);
+      if (!pids.runtimeMatches(path.join(stage, 'bin/node'), NODE_VERSION.slice(1))) throw new Failure('Downloaded Node reports the wrong version.');
+      runtimeRestartRequired();
+      // Keep the old tree until replacement succeeds. Bootstrap can fetch Node
+      // independently if a power loss leaves only the previous tree in place.
+      const previous = path.join(paths.ROOT, 'node.previous');
+      fs.rmSync(previous, { recursive: true, force: true });
+      if (fs.existsSync(node)) fs.renameSync(node, previous);
+      try { fs.renameSync(stage, node); }
+      catch (error) {
+        if (fs.existsSync(previous)) fs.renameSync(previous, node);
+        throw error;
+      }
+      fs.rmSync(previous, { recursive: true, force: true });
     });
   }
   fs.chmodSync(node, 0o755);
@@ -949,11 +987,24 @@ function installManager(): void {
     `${manager}/pids.ts "$@"\n`, 0o755);
 }
 
+/** A retained manager must never install a different release's source with its own old pins. */
+function validateSourceRelease(source: string): void {
+  const pkg = pids.readJson(path.join(source, 'package.json'), {}) as Obj;
+  const runtime = pids.readJson(path.join(source, 'ops/runtime.json'), {}) as Obj;
+  const matches = pkg.version === APPLICATION_VERSION &&
+    runtime.celld?.version === CELLD_VERSION && runtime.celld?.url === CELLD_URL && runtime.celld?.sha256 === CELLD_SHA &&
+    runtime.node?.version === NODE_VERSION.slice(1) && runtime.node?.url === NODE_URL && runtime.node?.sha256 === NODE_SHA &&
+    runtime.rustfsImage === RUSTFS_IMAGE && runtime.probeImage === PROBE_IMAGE;
+  if (!matches) throw new Failure('Source release does not match this installer and its runtime pins.', 2,
+    'Run install.sh from the selected release; do not use an older installed manager to deploy newer source.');
+}
+
 async function setup(args: Args): Promise<Obj> {
   const host = pids.hostInfo();
   const previousConfig = pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj;
   const planned = await pids.settings(args, previousConfig);
   const source = realpathOrResolve(args.source ?? previousConfig.source ?? path.join(path.dirname(MANAGER_FILE), '..'));
+  pids.validateSourceRelease(source);
   const revision = pids.sourceRevision(source);
   const plan = installPlan(planned, host, revision);
   if (args.dryRun) {
@@ -1003,7 +1054,11 @@ async function setup(args: Args): Promise<Obj> {
     pids.toolchain();
     const keys = pids.credentials();
     pids.installManager();
-    const saved: Obj = { ...config, source, revision, state: 'installing', pending_restarts: previous.pending_restarts ?? [] };
+    const runtimeState = pids.readJson(configFile, {}) as Obj;
+    const saved: Obj = { ...config, source, revision,
+      application_version: (pids.readJson(path.join(source, 'package.json'), {}) as Obj).version ?? null,
+      desired_runtime: { celld: CELLD_VERSION, node: NODE_VERSION.slice(1) },
+      state: 'installing', pending_restarts: runtimeState.pending_restarts ?? previous.pending_restarts ?? [] };
     saveConfig(saved);
     const release = pids.prepareSource(source, revision, account);
     // The bootstrap checkout is temporary. Recovery always uses the retained release copy.
@@ -1055,6 +1110,10 @@ function inspect(args: Args): Obj {
   const ips: string[] = status.Self?.TailscaleIPs ?? status.TailscaleIPs ?? [];
   const result: Obj = {
     host: pids.hostInfo(), installation: pids.readJson(path.join(paths.CONFIG, 'config.json'), {}),
+    runtime_matches_manager: {
+      celld: pids.runtimeMatches(path.join(paths.ROOT, 'bin/celld'), CELLD_VERSION),
+      node: pids.runtimeMatches(path.join(paths.ROOT, 'node/bin/node'), NODE_VERSION.slice(1)),
+    },
     tailscale: { state: status.BackendState ?? null, hostname: selfHostname(status), ips }, warnings: WARNINGS,
   };
   if (args.domain !== undefined) {
@@ -1281,8 +1340,8 @@ export async function main(argv: string[] = process.argv.slice(2),
 
 export const pids = {
   run, which, readJson, atomicWrite, hostInfo, validateHost, settings, prompt, sourceFiles, sourceRevision, installPlan,
-  requireRoot, consent, withInstallLock, portAvailable, isActive, preflightPorts, containerResolvers, sandboxBlocked,
-  preflightSandboxDns, sandboxDnsProbe, installPackages, download, runtimeDirectories, toolchain, serviceAccount,
+  validateSourceRelease, requireRoot, consent, withInstallLock, portAvailable, isActive, preflightPorts, containerResolvers, sandboxBlocked,
+  preflightSandboxDns, sandboxDnsProbe, installPackages, download, runtimeDirectories, runtimeMatches, toolchain, serviceAccount,
   credentials, units, installUnits, restartCompleted, prepareSource, s3Request, ensureBucket, httpOk, waitHttp,
   tailscaleStatus, serveConfig, serveOwned, recordedServe, preflightExposure, ensureTailscale, configureTailscale,
   installManager, setup, inspect, doctor, uninstall, parseCli, helpText,

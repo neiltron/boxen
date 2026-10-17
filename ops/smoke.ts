@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { BUCKET, RUSTFS_IMAGE, pids, wranglerWithAssets } from './pids.ts';
+import { BUCKET, CELLD_VERSION, RUSTFS_IMAGE, pids, wranglerWithAssets } from './pids.ts';
 
 const hex = () => randomUUID().replaceAll('-', '');
 
@@ -115,9 +115,10 @@ async function smoke(binary: string): Promise<void> {
 }
 
 const { values } = parseArgs({ options: { celld: { type: 'string' } } });
-const binary = values.celld ?? pids.which('celld-0.6.1') ?? pids.which('celld');
+const binary = values.celld ?? pids.which(`celld-${CELLD_VERSION}`) ?? pids.which('celld');
 if (!binary) {
-  console.error('Supply --celld /path/to/celld-0.6.1');
+  console.error(`Supply --celld /path/to/celld-${CELLD_VERSION}`);
   process.exit(2);
 }
+if (!pids.runtimeMatches(binary, CELLD_VERSION)) throw new Error(`Smoke requires celld ${CELLD_VERSION}`);
 await smoke(binary);

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "stateGeneration": 1,
+  "apiGeneration": 1,
+  "supportedUpgradeFrom": [],
+  "rollback": "Not yet certified. Restoring earlier application artifacts does not undo state changes or restore sandbox files.",
+  "restartPolicy": "Application-only deploys normally hot-adopt. Runtime changes require a node restart; quiesce sessions and verify workspace checkpoints and an off-machine storage backup first.",
+  "validation": "Automated checks plus isolated deployment/UI/API smoke. Model turns, terminal/preview transport, live hot-deploy and restart recovery require the manual release checklist."
+}

@@ -6,5 +6,5 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.local/bin:$PATH"
-pnpm run deploy 2>&1 | grep -E "Version ID|rror" || true
-echo "deployed; the node adopts it within ~15s"
+pnpm run deploy
+echo "deployment submitted; adoption is not verified here (normally ~15s). Check the node before declaring success."
