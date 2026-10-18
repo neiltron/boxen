@@ -37,6 +37,7 @@ export interface LoggedEvent {
 export interface ChatModel {
   items: ChatItem[];
   running: boolean;
+  assistantSeq: number | null; // active message, independent of interleaved notes
   seq: number; // local React keys; the cell no longer numbers events
   agent: AgentState;
   log: LoggedEvent[]; // raw events for the Events tab, newest last
@@ -49,12 +50,12 @@ export interface ChatModel {
 const LOG_LIMIT = 1000;
 
 export function emptyModel(): ChatModel {
-  return { items: [], running: false, seq: 0, agent: {}, log: [], logged: 0, artifacts: [], mutations: 0 };
+  return { items: [], assistantSeq: null, running: false, seq: 0, agent: {}, log: [], logged: 0, artifacts: [], mutations: 0 };
 }
 
 function currentAssistant(m: ChatModel): Extract<ChatItem, { kind: "assistant" }> | null {
-  const last = m.items[m.items.length - 1];
-  return last?.kind === "assistant" ? last : null;
+  const item = m.items.find((item) => item.seq === m.assistantSeq);
+  return item?.kind === "assistant" ? item : null;
 }
 
 function findTool(m: ChatModel, toolId: string) {
@@ -124,6 +125,7 @@ function applyMessage(m: ChatModel, msg: any, streaming: boolean) {
     push(m, { kind: "user", text: textOf(msg.content), steer: m.running });
   } else if (msg?.role === "assistant") {
     const blocks = (msg.content ?? []).map((c: any) => ({ ...toBlock(c), ...(streaming && c?.type !== "toolCall" ? { streaming } : {}) }));
+    m.assistantSeq = m.seq;
     push(m, { kind: "assistant", blocks, streaming });
     if (!streaming) endAssistant(m, msg);
   } else if (msg?.role === "toolResult") {
@@ -139,7 +141,11 @@ function endAssistant(m: ChatModel, msg: any) {
   a.blocks = (msg.content ?? []).map((c: any) =>
     toBlock(c, a.blocks.find((b) => b.kind === "tool" && b.toolId === c.id)));
   a.streaming = false;
+  m.assistantSeq = null;
   if (msg.stopReason === "error" || msg.stopReason === "aborted") {
+    // No result is coming for a call the run left behind; a Stop that failed
+    // the Harness ends this way, and so does its snapshot afterwards.
+    for (const b of a.blocks) if (b.kind === "tool" && b.state !== "done") settle(m, b, undefined);
     push(m, { kind: "system", level: msg.stopReason === "error" ? "error" : "info",
       text: msg.errorMessage ?? msg.stopReason });
   }
@@ -155,7 +161,7 @@ export function applyEvent(m: ChatModel, ev: any): void {
   if (m.log.length > LOG_LIMIT) m.log.splice(0, m.log.length - LOG_LIMIT);
   switch (ev.type) {
     case "snapshot": {
-      Object.assign(m, { items: [], running: false, seq: 0, artifacts: [], mutations: 0 });
+      Object.assign(m, { items: [], assistantSeq: null, running: false, seq: 0, artifacts: [], mutations: 0 });
       m.agent = ev.agent ?? {};
       for (const entry of ev.entries) {
         applyNote(m, entry);
@@ -188,7 +194,11 @@ export function applyEvent(m: ChatModel, ev: any): void {
     case "run_end": {
       m.running = false;
       const a = currentAssistant(m);
-      if (a) a.streaming = false;
+      if (a) {
+        a.streaming = false;
+        for (const block of a.blocks) if (block.kind !== "tool") block.streaming = false;
+      }
+      m.assistantSeq = null;
       return;
     }
 

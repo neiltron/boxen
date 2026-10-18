@@ -340,6 +340,16 @@ const artifactResult = (callId: string, artifactId: string) =>
   assert.equal(m().running, false);
   assert.deepEqual(m().items.at(-1), { kind: "system", level: "error", text: "boom", seq: 4 });
 
+  // A Stop while a tool runs: the answer ends aborted with no result for the call, live and from a snapshot.
+  const stopped = { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "bash", arguments: { command: "sleep 9" } }], stopReason: "aborted" };
+  live({ type: "message_start", message: { ...stopped, stopReason: undefined } }, { type: "tool_execution_start", toolCallId: "c2", toolName: "bash" });
+  const aborted = () => (m().items.at(-2) as any).blocks[0]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  live({ type: "message_end", entry: { model: [stopped] } }, { type: "run_end" });
+  assert.deepEqual([aborted().state, aborted().isError, (m().items.at(-1) as any).text], ["done", true, "aborted"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const reloaded = setup();
+  join(reloaded.net.last(), snapshot([{ model: [stopped] }]));
+  assert.equal((reloaded.client.state().model.items[0] as any).blocks[0].state, "done"); // eslint-disable-line @typescript-eslint/no-explicit-any
+
   // Setup notes show as system lines, live and from a snapshot.
   live({ type: "entry_appended", entry: { kind: "app.note", data: { text: "cloned", level: "info" } } });
   assert.equal((m().items.at(-1) as any).text, "cloned"); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -581,3 +591,30 @@ assert.equal(sessionSocketUrl("https://host.ts.net/", "s1"), "wss://host.ts.net/
 assert.equal(sessionSocketUrl("https://host/prefix", "a b"), "wss://host/prefix/api/session/a%20b/ws");
 
 console.log("session.check ok");
+
+// #102: display-only entries and refusals must not change the active message.
+{
+  const { applyEvent, appendError, emptyModel } = await import("./src/events.ts");
+  const m = emptyModel();
+  applyEvent(m, { type: "message_start", message: { role: "assistant", content: [{ type: "text", text: "Before" }] } });
+  applyEvent(m, { type: "entry_appended", entry: { kind: "app.note", data: { text: "Preparing workspace" } } });
+  appendError(m, "another request was refused");
+  applyEvent(m, { type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: " after" }] });
+  assert.equal(m.items[0].kind, "assistant");
+  const assistant = m.items[0] as Extract<(typeof m.items)[number], { kind: "assistant" }>;
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Before after");
+  applyEvent(m, { type: "message_end", entry: { model: [{ role: "assistant", content: [{ type: "text", text: "Committed" }], stopReason: "stop" }] } });
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Committed");
+  assert.equal(assistant.streaming, false);
+  applyEvent(m, { type: "message_update", changes: [{ type: "text_delta", contentIndex: 0, delta: "late" }] });
+  assert.equal(assistant.blocks[0].kind === "text" && assistant.blocks[0].text, "Committed", "a stale delta cannot edit a completed message");
+  applyEvent(m, { type: "snapshot", entries: [], tools: [], generation: { message: { role: "assistant", content: [{ type: "thinking", thinking: "resumed" }] } } });
+  applyEvent(m, { type: "entry_appended", entry: { kind: "app.note", data: { text: "restored" } } });
+  applyEvent(m, { type: "message_update", changes: [{ type: "thinking_delta", contentIndex: 0, delta: " stream" }] });
+  const resumed = m.items[0] as typeof assistant;
+  assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].text, "resumed stream");
+  applyEvent(m, { type: "run_end" });
+  assert.equal(resumed.streaming, false);
+  assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].streaming, false);
+  assert.equal(m.assistantSeq, null);
+}

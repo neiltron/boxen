@@ -1,15 +1,11 @@
-// Run with node workspace.check.js; no celld, container or npm install required.
+// Run with node workspace.check.js; no celld or container required.
 // Drives src/workspace.js through its interface with an in-memory sandbox.
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 
-// The two packages the module reaches are the sandbox seam itself and
-// pi-durable's error classes; stand-ins keep this check install-free.
+// The sandbox boundary is stubbed; runtime library types stay real.
 const stubs = {
   "@cloudflare/sandbox": "export function getSandbox() { throw new Error('use the fake sandbox'); }",
-  "@earendil-works/pi-durable/env": `
-    export class ExecutionError extends Error { constructor(code, message) { super(message); this.code = code; } }
-    export class FileError extends Error { constructor(code, message, path) { super(message); this.code = code; this.path = path; } }`,
 };
 registerHooks({
   resolve(specifier, context, next) {
@@ -49,6 +45,20 @@ function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", dup
       if (r.stdout) options.onOutput?.("stdout", r.stdout);
       if (r.stderr) options.onOutput?.("stderr", r.stderr);
       return { success: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    },
+    async fetch(request) {
+      const { command, options } = await request.json();
+      return new Response(await sb.execStream(command, options));
+    },
+    async execStream(command, options) {
+      const encoder = new TextEncoder();
+      const chunks = [];
+      const result = await sb.exec(command, { ...options, onOutput: (type, data) => chunks.push({ type, data }) });
+      chunks.push({ type: "complete", exitCode: result.exitCode });
+      return new ReadableStream({ start(controller) {
+        for (const event of chunks) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        controller.close();
+      } });
     },
     async createSession({ id, cwd }) {
       if (sb.shells.has(id)) throw duplicate;

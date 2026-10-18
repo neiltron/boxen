@@ -4,6 +4,7 @@
 // prepare() restores the newest checkpoint into a fresh container before
 // anything uses it.
 import { Sandbox as BaseSandbox } from "@cloudflare/sandbox";
+import { SANDBOX_EXEC_URL } from "./sandbox-events.js";
 
 const DIR = "/workspace";
 // Outside DIR on purpose: it marks this container, not the files, as prepared.
@@ -12,6 +13,29 @@ const PREPARED = "/tmp/.pds-prepared";
 const TTL = 10 * 365 * 24 * 3600;
 
 export class Sandbox extends BaseSandbox {
+  // Internal capability call only. The public worker/router does not forward
+  // requests to this host; previews keep their original URL and use other paths.
+  // Native fetch can transport a body stream across celld isolates; an ordinary
+  // execStream RPC or an output callback cannot. Preserve SDK fetch otherwise.
+  async fetch(request) {
+    if (request.method === "POST" && request.url === SANDBOX_EXEC_URL) {
+      try {
+        const { command, options } = await request.json();
+        return new Response(await this.execStream(command, options), { headers: { "content-type": "text/event-stream" } });
+      } catch (e) {
+        return Response.json({ error: String(e?.message ?? e) }, { status: 500 });
+      }
+    }
+    return super.fetch(request);
+  }
+
+  // celld cannot return the SDK's Process object across isolates: its methods
+  // are RPC stubs. Keep it here and expose only the ID. Reader callers use the
+  // existing getProcessLogs/killProcess methods, whose results are plain data.
+  async startReaderProcess(command) {
+    return (await this.startProcess(command)).id;
+  }
+
   // Returns "restored" when this call brought the files back, else "ready".
   // Concurrent callers share one restore.
   prepare() {

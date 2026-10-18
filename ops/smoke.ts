@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Isolated live storage + deployment + HTTP smoke. Never installs host services.
+ * Isolated live storage + deployment + HTTP + sandbox adapter smoke. Never installs host services.
  * Requires local Docker, celld 0.6.2, pnpm install, and pnpm build.
  * Usage: node ops/smoke.ts --celld /path/to/celld-0.6.2
  * Does not start a model turn or test a sandbox PTY/systemd/Tailscale.
@@ -56,7 +56,11 @@ async function smoke(binary: string): Promise<void> {
     fs.cpSync(path.join(source, 'apps/ui/dist'), path.join(project, 'apps/worker/ui-dist'), { recursive: true });
     fs.symlinkSync(path.join(source, 'apps/worker/node_modules'), path.join(project, 'apps/worker/node_modules'));
     const wrangler = path.join(project, 'apps/worker/wrangler.jsonc');
-    fs.writeFileSync(wrangler, wranglerWithAssets(fs.readFileSync(wrangler, 'utf8')));
+    // A test-only entry in the temporary copy. Never add this route to the app.
+    const config = wranglerWithAssets(fs.readFileSync(wrangler, 'utf8'));
+    if (!config.includes('"main": "src/index.js"')) throw new Error('Unexpected worker main');
+    fs.writeFileSync(wrangler, config.replace('"main": "src/index.js"', '"main": "smoke.js"'));
+    fs.copyFileSync(path.join(source, 'ops/sandbox-smoke.js'), path.join(project, 'apps/worker/smoke.js'));
     fs.writeFileSync(path.join(project, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n');
     const keys = { access_key: hex(), secret_key: hex() + hex() };
     const envFile = path.join(project, 'storage.env');
@@ -93,8 +97,11 @@ async function smoke(binary: string): Promise<void> {
       if (!script.headers.get('content-type')?.includes('javascript')) throw new Error('JavaScript asset has the wrong type');
       const miss = await fetch(base + '/api/not-a-route', { signal: AbortSignal.timeout(10_000) });
       if (miss.status !== 404 || ((await miss.json()) as { error?: string }).error !== 'unknown route') throw new Error('API misses must not serve the SPA');
+      const runtime = await fetch(base + '/__smoke/sandbox', { signal: AbortSignal.timeout(180_000) });
+      const runtimeBody = await runtime.text();
+      if (!runtime.ok || JSON.parse(runtimeBody).ok !== true) throw new Error(`Sandbox runtime smoke: ${runtime.status} ${runtimeBody}`);
       console.log(JSON.stringify({ ok: true, checks: ['signed bucket create/rerun', 'deploy worker + sandbox image + assets',
-        'UI HTML', 'hashed JavaScript asset', 'API', 'API 404'] }));
+        'UI HTML', 'hashed JavaScript asset', 'API', 'API 404', 'sandbox bounded reader + read tool + argv + stream labels'] }));
     } catch (error) {
       process.stderr.write(fs.readFileSync(logFile, 'utf8').slice(-12_000));
       throw error;

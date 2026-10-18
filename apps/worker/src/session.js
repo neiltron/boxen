@@ -8,7 +8,7 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { createRegistry, defineExtension, defineTool, Harness, section, watchEvents } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, SessionFailed, section, watchEvents } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
@@ -59,7 +59,7 @@ function artifactExtension(artifacts, session) {
     execute: async (args) => {
       const saved = await artifacts.save({ ...args, session });
       return {
-        content: [{ type: "text", text: `Artifact ${saved.id} v${saved.version} is showing in the panel.` }],
+        output: [{ type: "text", text: `Artifact ${saved.id} v${saved.version} is showing in the panel.` }],
         details: { artifactId: saved.id, version: saved.version, title: args.title, kind: args.kind },
       };
     },
@@ -138,6 +138,10 @@ export class Session extends DurableObject {
       },
       ctx,
     );
+    this.activeHarness = harness;
+    harness.closed.then((result) => {
+      if (result.reason === "failed" && this.activeHarness === harness) return this.reopen();
+    }).catch((e) => console.error("session recovery failed", describe(e)));
     try {
       const defaults = await directory.defaultAgent();
       const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
@@ -153,13 +157,10 @@ export class Session extends DurableObject {
     }
   }
 
-  // A commit that fails after storage admission poisons the Harness for
-  // good; pi-durable only reports it. Replace it with a fresh one over the
-  // same storage. The poisoned one can't commit again, so a slow close
-  // can't overlap writes with its successor.
+  // Reports are diagnostic, not a lifecycle signal. In 1.3 the Harness closes
+  // itself on storage failure; `closed` tells us when it can be replaced.
   report(e) {
     console.error(`session ${this.state.id}: harness report`, describe(e));
-    if (poisoned(e)) this.reopen();
   }
 
   reopen() {
@@ -169,10 +170,12 @@ export class Session extends DurableObject {
     this.closing = (async () => {
       const opened = await old?.catch(() => null);
       if (!opened) return;
-      opened.status.stop();
-      for (const stream of this.streams.values()) stream.stop();
+      const stopped = [opened.status.stop(), ...[...this.streams.values()].map((stream) => stream.stop())];
       this.streams.clear();
-      await Promise.race([opened.harness.close(ctx).catch(() => {}), sleep(30_000)]);
+      await opened.harness.close(ctx).catch(() => {});
+      await opened.harness.closed;
+      await Promise.all(stopped);
+      if (this.activeHarness === opened.harness) this.activeHarness = null;
       // Browsers reconnect and subscribe to the new Harness.
       for (const ws of this.state.getWebSockets()) { try { ws.close(4000, "session reopened"); } catch {} }
     })().finally(() => { this.closing = null; });
@@ -200,7 +203,7 @@ export class Session extends DurableObject {
       const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
       if (!idle) return void await this.state.storage.setAlarm(Date.now());
     } catch (e) {
-      if (poisoned(e)) return void await this.reopen();
+      if (failed(e)) return void await this.reopen();
       throw e;
     }
     await this.setStatus(meta.id, "idle");
@@ -217,6 +220,19 @@ export class Session extends DurableObject {
       return sessionWorkspace(this.env, meta, (text, level) => this.note(text, level));
     });
     return this.workspacing;
+  }
+
+  // The run a prompt starts does its I/O under that prompt's event, so the
+  // handler stays until the run is idle. Once it has returned, a commit of
+  // the run that queues behind another event's transaction is refused by
+  // celld ("the cell event ended before it could acquire an input gate") or
+  // never completes, and the Harness fails. Stop did that every time: the
+  // abort's own commit signals the run, whose reply commit lands right behind
+  // it. The hold survives the browser closing its socket. A run longer than
+  // the bound goes on as before, exposed to that race until the alarm resumes
+  // it after a reopen.
+  async holdRun(harness) {
+    await Promise.race([harness.waitForIdle(ctx).catch(() => {}), sleep(10 * 60_000)]);
   }
 
   // For the turn's env builder in openHarness: join any prepare in flight
@@ -281,11 +297,12 @@ export class Session extends DurableObject {
       // Until the prompt is admitted, a failure is the cell refusing it: the
       // error frame names it by requestId, so its sender can tell.
       const refused = (e) => { throw Object.assign(new Error(e.message, { cause: e }), { requestId: cmd.requestId }); };
-      const { root, models } = await this.open().catch(refused);
+      const { harness, root, models } = await this.open().catch(refused);
       // A retry with the same requestId finds the first submission.
       await root.submit({ type: "input", content: cmd.message, whenBusy: "steer", requestId: cmd.requestId }, ctx).catch(refused);
       // Awaited here: a cell's I/O must belong to a live request or event.
       if (!(await this.meta()).titled) await this.autoTitle(models, root, cmd.message);
+      await this.holdRun(harness);
     },
     steer(ws, cmd) { return Session.commands.prompt.call(this, ws, cmd); },
     async models(ws) {
@@ -318,7 +335,7 @@ export class Session extends DurableObject {
       await handle.call(this, ws, cmd);
     } catch (e) {
       console.error(`session ${this.state.id}: ${cmd.type} failed`, describe(e));
-      if (poisoned(e)) this.reopen();
+      if (failed(e)) this.reopen().catch((error) => this.report(error));
       try { ws.send(JSON.stringify({ type: "error", error: e.message, requestId: e.requestId })); } catch {}
     }
   }
@@ -398,8 +415,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const causes = (e) => (e ? [e, ...causes(e.cause)] : []);
 
-// ponytail: matches pi-durable's message; use a typed check if it exports one.
-const poisoned = (e) => causes(e).some((c) => /Session is poisoned/.test(c?.message));
+const failed = (e) => causes(e).some((c) => c instanceof SessionFailed);
 
-// The whole cause chain, so a log shows the failure that poisoned the Harness.
+// The whole cause chain, so a log shows the failure that closed the Harness.
 const describe = (e) => causes(e).map((c) => c?.stack ?? String(c)).join("\ncaused by: ");

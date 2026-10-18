@@ -3,7 +3,7 @@
   "stateGeneration": 1,
   "apiGeneration": 1,
   "supportedUpgradeFrom": [],
-  "rollback": "Not yet certified. Restoring earlier application artifacts does not undo state changes or restore sandbox files.",
+  "rollback": "Not certified. pi-durable 1.3 writes pi.tool v2 tasks. Do not downgrade a mutated store to 1.0.0; restore a pre-upgrade storage backup and matching workspace checkpoints. Restoring application artifacts alone does not undo state changes.",
   "restartPolicy": "Application-only deploys normally hot-adopt. Runtime changes require a node restart; quiesce sessions and verify workspace checkpoints and an off-machine storage backup first.",
-  "validation": "Automated checks plus isolated deployment/UI/API smoke. Model turns, terminal/preview transport, live hot-deploy and restart recovery require the manual release checklist."
+  "validation": "Automated checks include a copied pi-durable 1.0.0 SQLite fixture (history, safe pending tool, queued input), real Harness failure/reopen, and isolated deployment/UI/API/Sandbox adapter smoke. Stop during a running tool was validated live on an isolated node. Host upgrade/downgrade, real provider turns, terminal/preview, hot adoption and restart recovery still require the manual release checklist."
 }

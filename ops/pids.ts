@@ -35,7 +35,7 @@ export const STORAGE = 'pi-durable-sessions-storage';
 export const SERVICE = 'pi-durable-sessions';
 export const BUCKET = 'pid-cells';
 // BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)
-export const APPLICATION_VERSION = '0.1.0-rc.2';
+export const APPLICATION_VERSION = '0.1.0-rc.3';
 export const CELLD_VERSION = '0.6.2';
 export const CELLD_URL = 'https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz';
 export const CELLD_SHA = 'ce0ee3552cc8d55dde3998dc3b1b0c8f547bbcb4bc803d2a94842368b047646c';

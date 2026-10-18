@@ -2,6 +2,8 @@
 // container that celld supervises). Only what the built-in read/write/edit/bash
 // tools call is implemented; the rest of FileSystem answers "not_supported".
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
+import { openSandboxReader } from "./sandbox-reader.js";
+import { SANDBOX_EXEC_URL, sandboxEvents } from "./sandbox-events.js";
 
 const ok = (value) => ({ ok: true, value });
 const err = (error) => ({ ok: false, error });
@@ -43,6 +45,7 @@ export function secretEnv(secrets) {
 }
 
 export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
+  const readers = new Set();
   const unsupported = (name) => async () => err(new FileError("not_supported", `${name} is not available in the sandbox`));
   const env = {
     id,
@@ -61,11 +64,25 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
         return ok(Uint8Array.from(atob(content), (c) => c.charCodeAt(0)));
       } catch (e) { return fileError(e, path); }
     },
+    async openBinaryReader(path, options, context) {
+      const result = await openSandboxReader(sandbox, resolve(env.cwd, path), options, context);
+      if (result.ok) {
+        const reader = result.value;
+        const close = reader.close;
+        reader.close = async () => { await close(); readers.delete(reader); };
+        readers.add(reader);
+      }
+      return result;
+    },
     async writeFile(path, content) {
       try {
         await sandbox.mkdir(path.slice(0, path.lastIndexOf("/")) || "/", { recursive: true });
         if (typeof content === "string") await sandbox.writeFile(path, content);
-        else await sandbox.writeFile(path, btoa(String.fromCharCode(...content)), { encoding: "base64" });
+        else {
+          let binary = "";
+          for (let at = 0; at < content.length; at += 8192) binary += String.fromCharCode(...content.subarray(at, at + 8192));
+          await sandbox.writeFile(path, btoa(binary), { encoding: "base64" });
+        }
         return ok(undefined);
       } catch (e) { return fileError(e, path); }
     },
@@ -89,6 +106,8 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
     flushFile: unsupported("flushFile"),
     renameFile: unsupported("renameFile"),
     listDir: unsupported("listDir"),
+    openDirReader: unsupported("openDirReader"),
+    watch: unsupported("watch"),
     remove: unsupported("remove"),
     createTempDir: unsupported("createTempDir"),
     createTempFile: unsupported("createTempFile"),
@@ -98,21 +117,47 @@ export function sandboxEnv(sandbox, id, cwd, secrets = {}) {
       try {
         // The SDK runs commands in one long-lived shell per sandbox, where an
         // `exit` would kill it; a fresh bash per command, as the Node env does.
-        const r = await sandbox.exec(`bash -c ${shellQuote(command)}`, {
+        if (context?.abortSignal?.aborted) return err(new ExecutionError("aborted", "Command aborted"));
+        if (Array.isArray(command)) {
+          if (!command.length || command.some((s) => typeof s !== "string" || s.includes("\0"))) return err(new ExecutionError("spawn_error", "Invalid argv"));
+          command = `exec -- ${command.map(shellQuote).join(" ")}`;
+        }
+        let script = `bash -c ${shellQuote(command)}`;
+        if (options.inheritEnv === false) {
+          const vars = Object.entries(options.env ?? {}).map(([key, value]) => shellQuote(`${key}=${value}`)).join(" ");
+          script = `env -i -- ${vars} ${script}`;
+        }
+        const settings = {
           cwd: options.cwd ?? env.cwd,
           env: { ...secretEnv(secrets), ...options.env },
           timeout: options.timeout === undefined ? undefined : options.timeout * 1000,
-          stream: options.onOutput !== undefined,
-          onOutput: (_stream, data) => options.onOutput?.(data, context),
-          signal: context?.abortSignal,
-        });
+        };
+        if (options.onOutput) {
+          const response = await sandbox.fetch(new Request(SANDBOX_EXEC_URL, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ command: script, options: settings }),
+          }));
+          if (!response.ok || !response.body) throw new Error(`Command stream failed: ${await response.text()}`);
+          for await (const event of sandboxEvents(response.body, context?.abortSignal)) {
+            if (event.type === "stdout" || event.type === "stderr") {
+              try { options.onOutput(event.data ?? "", context, { stream: event.type }); }
+              catch (e) { return err(new ExecutionError("callback_error", String(e?.message ?? e))); }
+            } else if (event.type === "complete") {
+              const exitCode = event.exitCode ?? event.result?.exitCode;
+              if (!Number.isInteger(exitCode)) throw new Error("Command completion has no exit code");
+              return ok({ exitCode });
+            } else if (event.type === "error") throw new Error(event.data ?? event.error ?? "Command failed");
+          }
+          throw new Error("Command stream ended without a completion event");
+        }
+        const r = await sandbox.exec(script, { ...settings, signal: context?.abortSignal });
         return ok({ exitCode: r.exitCode });
       } catch (e) {
         if (context?.abortSignal?.aborted) return err(new ExecutionError("aborted", "Command aborted"));
         return err(new ExecutionError(/timeout/i.test(e?.message) ? "timeout" : "unknown", String(e?.message ?? e)));
       }
     },
-    async cleanup() {},
+    async cleanup() { await Promise.all([...readers].map((reader) => reader.close())); },
   };
   return env;
 }
