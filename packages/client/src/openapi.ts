@@ -117,7 +117,7 @@ export interface paths {
         };
         /**
          * A shell in the Session's sandbox, over WebSocket
-         * @description Every viewer attaches to the same shell, separate from the agent's.
+         * @description Every viewer attaches to the same shell, separate from the agent's. An explicit reset replaces that shared shell, ending its running commands; ordinary reconnects reuse it.
          */
         get: operations["terminalSocket"];
         put?: never;
@@ -725,7 +725,10 @@ export interface operations {
     };
     terminalSocket: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Send 1 once to restart the shell. Omit on subsequent reconnects. */
+                reset?: "1";
+            };
             header?: never;
             path: {
                 id: components["parameters"]["SessionId"];

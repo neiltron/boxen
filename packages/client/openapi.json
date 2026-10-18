@@ -111,8 +111,16 @@
       "get": {
         "operationId": "terminalSocket",
         "summary": "A shell in the Session's sandbox, over WebSocket",
-        "description": "Every viewer attaches to the same shell, separate from the agent's.",
-        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "description": "Every viewer attaches to the same shell, separate from the agent's. An explicit reset replaces that shared shell, ending its running commands; ordinary reconnects reuse it.",
+        "parameters": [
+          { "$ref": "#/components/parameters/SessionId" },
+          {
+            "name": "reset",
+            "in": "query",
+            "description": "Send 1 once to restart the shell. Omit on subsequent reconnects.",
+            "schema": { "type": "string", "enum": ["1"] }
+          }
+        ],
         "responses": {
           "101": { "$ref": "#/components/responses/SwitchingProtocols" },
           "404": { "$ref": "#/components/responses/NoSuchSession" },
