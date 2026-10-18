@@ -228,11 +228,14 @@ export class Session extends DurableObject {
   // celld ("the cell event ended before it could acquire an input gate") or
   // never completes, and the Harness fails. Stop did that every time: the
   // abort's own commit signals the run, whose reply commit lands right behind
-  // it. The hold survives the browser closing its socket. A run longer than
-  // the bound goes on as before, exposed to that race until the alarm resumes
-  // it after a reopen.
+  // it. The hold survives the browser closing its socket, but not celld's
+  // budget: a WebSocket message handler is killed at 300s ("handler exceeded
+  // 300s budget"), and a kill severs the run's I/O where a return does not,
+  // so the turn stalls at its next step. The hold stops short of that. A run
+  // longer than the bound goes on as before, exposed to the abort race until
+  // the alarm resumes it after a reopen.
   async holdRun(harness) {
-    await Promise.race([harness.waitForIdle(ctx).catch(() => {}), sleep(10 * 60_000)]);
+    await Promise.race([harness.waitForIdle(ctx).catch(() => {}), sleep(HOLD_MS)]);
   }
 
   // For the turn's env builder in openHarness: join any prepare in flight
@@ -412,6 +415,7 @@ export class Session extends DurableObject {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOLD_MS = 240_000; // under celld's 300s WebSocket handler budget (holdRun)
 
 const causes = (e) => (e ? [e, ...causes(e.cause)] : []);
 
