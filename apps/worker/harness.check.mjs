@@ -166,12 +166,17 @@ function cellStorage(db) {
   git("init", "-q");
   git("commit", "-q", "--allow-empty", "-m", "init");
   const initial = git("rev-parse", "HEAD");
+  // A bare origin outside the tree, so a push gives the branch an upstream and GitHub (stubbed) is asked for its pull request.
+  const origin = await mkdtemp(join(tmpdir(), "boxen-origin-"));
+  git("init", "-q", "--bare", origin);
+  git("remote", "add", "origin", origin);
+  const pulls = { requests: [], pull: { number: 7, html_url: "https://github.com/o/app/pull/7", title: "Add file", state: "open", draft: true, head: { sha: "" }, base: { ref: "main" }, updated_at: "2026-10-22T00:00:00Z", merged_at: null } };
   const sandbox = localSandbox(cwd);
   const env = sandboxEnv(sandbox, "test", cwd);
   const db = new DatabaseSync(":memory:");
   const storage = cellStorage(db);
   let alarms = 0, prepares = 0, saved = 0, socketCloses = 0;
-  const meta = { id: "test", cwd, titled: true };
+  const meta = { id: "test", cwd, titled: true, repo: "https://github.com/o/app.git" };
   const kv = new Map([["meta", meta]]);
   Object.assign(storage, { async get(key) { return kv.get(key); }, async put(key, value) { kv.set(key, value); }, async setAlarm() { alarms++; } });
   const models = provider([
@@ -180,6 +185,7 @@ function cellStorage(db) {
     tool("edit", { path: "file.txt", oldText: "second", newText: "changed" }, "edit"),
     tool("bash", { command: "printf out; printf err >&2; exit 7" }, "bash"),
     tool("bash", { command: "git add -A && git -c user.name=pi -c user.email=pi@example.test commit -qm 'add file'" }, "commit"),
+    tool("bash", { command: "git push -q -u origin HEAD" }, "push"),
     tool("artifact", { title: "Plan", kind: "markdown", content: "body" }, "artifact"),
     answer("done"), answer("after recovery"),
   ]);
@@ -213,7 +219,10 @@ function cellStorage(db) {
     "./artifacts.js": { ARTIFACT_KINDS: ["markdown"], Artifacts: class {} },
   }, { setTimeout, clearTimeout });
   const cell = new Session({ id: "test", storage, getWebSockets: () => [{ close() { socketCloses++; } }] }, {
-    DIRECTORY: { getByName: () => ({ async defaultAgent() { return { model }; }, async touch() {}, async secrets() { return {}; } }) },
+    DIRECTORY: { getByName: () => ({
+      async defaultAgent() { return { model }; }, async touch() {}, async secrets() { return {}; },
+      async github(path) { pulls.requests.push(path); return path.includes("?head=") ? [pulls.pull] : pulls.pull; },
+    }) },
     ARTIFACTS: { getByName: () => ({ async save(args) { assert.equal(args.content, "body"); saved++; return { id: "artifact-id", version: 1 }; } }) },
     SESSION: { getByName: () => ({ async prepareWorkspace() { prepares++; } }) },
   });
@@ -259,6 +268,27 @@ function cellStorage(db) {
     const order = (type, call) => events.findIndex((e) => (e.type === "entry_appended" ? e.entry.data?.call : e.toolCallId) === call && e.type === type);
     assert(order("entry_appended", "write") < order("tool_execution_end", "write"), "the change precedes the call's result");
     assert.deepEqual(Object.keys(kv.get("probe").files), [], "the commit left nothing dirty");
+    assert.equal(kv.get("probe").upstream, commit.head, "the push gave the branch an upstream");
+
+    // The push asked GitHub for the branch's pull request, recorded it, and
+    // armed a poll; the poll records a change (merged) and then stops.
+    assert.deepEqual(pulls.requests, [`/repos/o/app/pulls?head=${encodeURIComponent("o:" + commit.branch)}&state=all&per_page=1`]);
+    const prs = () => events.filter((e) => e.type === "entry_appended" && e.entry.kind === "app.pr").map((e) => e.entry.data);
+    assert.deepEqual(prs(), [{ call: "push", number: 7, url: "https://github.com/o/app/pull/7", title: "Add file", state: "open", draft: true, head: "", base: "main", updatedAt: "2026-10-22T00:00:00Z" }]);
+    assert.equal(kv.get("pr").pollMs, 60_000);
+    const armed = alarms;
+    await cell.pollPullRequest();
+    await tick();
+    assert.equal(prs().length, 1, "an unchanged pull request is not recorded again");
+    assert.equal(kv.get("pr").pollMs, 120_000, "the interval grows while nothing changes");
+    assert.equal(alarms, armed + 1, "an open pull request keeps the poll armed");
+    pulls.pull = { ...pulls.pull, draft: false, merged_at: "2026-10-22T01:00:00Z", head: { sha: commit.head } };
+    await cell.pollPullRequest();
+    await tick();
+    assert.deepEqual(prs().at(-1), { call: null, number: 7, url: "https://github.com/o/app/pull/7", title: "Add file", state: "merged", draft: false, head: commit.head, base: "main", updatedAt: "2026-10-22T00:00:00Z" });
+    assert.equal(alarms, armed + 1, "a merged pull request is not polled again");
+    await cell.pollPullRequest();
+    assert.equal(pulls.requests.length, 3, "nothing is asked once it is merged");
 
     const oldAlarms = alarms;
     const failure = new Error("injected commit failure");
@@ -286,6 +316,7 @@ function cellStorage(db) {
     await sandbox.close();
     db.close();
     await rm(cwd, { recursive: true, force: true });
+    await rm(origin, { recursive: true, force: true });
   }
 }
 console.log("real Harness: tools, v1 SQLite migration, pending work, failure, watchers, reopen: ok");

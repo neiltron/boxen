@@ -189,6 +189,7 @@ function open(meta = repo, options = {}) {
     "F\t??\t2222222222222222222222222222222222222222\tnew file.txt",
     "F\t D\t-\tgone.txt",
     `HEAD\t${b}\tfix/x`,
+    `UP\t${a}`,
     `COMMIT\t${b}\t${a}\t1700000000\tpi\tfix: the thing\twith a tab`,
     "TREE\t:100644 100644 0000000000000000000000000000000000000000 3333333333333333333333333333333333333333 M\tsrc/b.js",
     "TREE\t:000000 100644 0000000000000000000000000000000000000000 4444444444444444444444444444444444444444 A\tdocs/c.md",
@@ -202,7 +203,7 @@ function open(meta = repo, options = {}) {
       { status: "??", blob: "2222222222222222222222222222222222222222", path: "new file.txt" },
       { status: "D", blob: null, path: "gone.txt" },
     ],
-    head: b, branch: "fix/x",
+    head: b, branch: "fix/x", upstream: a,
     commits: [{ sha: b, parents: [a], time: 1700000000000, author: "pi", subject: "fix: the thing\twith a tab", files: [
       { status: "M", blob: "3333333333333333333333333333333333333333", path: "src/b.js" },
       { status: "A", blob: "4444444444444444444444444444444444444444", path: "docs/c.md" },
@@ -212,7 +213,7 @@ function open(meta = repo, options = {}) {
   assert.match(script, new RegExp(`\nprev='${a}'\n`), "the previous HEAD bounds the commit list");
   await probe({ exitCode: 0, stdout: "HEAD\t\t\n" }).probe(null);
   assert.match(script, /\nprev=''\n/, "no previous HEAD: no commits listed");
-  assert.deepEqual(await probe({ exitCode: 0, stdout: "HEAD\t\t\n" }).probe(null), { repo: true, files: [], head: null, branch: null, commits: [] }, "an unborn branch");
+  assert.deepEqual(await probe({ exitCode: 0, stdout: "HEAD\t\t\nUP\t\n" }).probe(null), { repo: true, files: [], head: null, branch: null, upstream: null, commits: [] }, "an unborn branch");
   assert.deepEqual(await probe({ exitCode: 4 }).probe(null), { repo: false });
   assert.deepEqual(await open({ id: "gone", cwd: "/workspace/gone" }).ws.probe(null), { repo: false }, "exit 3");
   await assert.rejects(probe({ exitCode: 128, stderr: "fatal: x\n" }).probe(null), { message: "git probe exited 128" });

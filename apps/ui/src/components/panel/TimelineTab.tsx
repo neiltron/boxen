@@ -3,22 +3,23 @@ import type { Block, ChatModel } from "@boxen/client";
 import { cn } from "@/lib/utils";
 
 // The session as a DAG minimap: one row per event in transcript order, in
-// three lanes (session, files, git), linked only by what was recorded. The
-// cell's app.fs and app.git entries name the call whose probe saw each
-// change, git's blob ids tie a version seen in the working tree to the
-// commit that holds it, and the transcript's own order is the only other
-// link. Hover or select a row: its parents light up solid, its children
-// dashed, and the rest fade.
+// four lanes (session, files, git, pull request), linked only by what was
+// recorded. The cell's app.fs and app.git entries name the call whose probe
+// saw each change, git's blob ids tie a version seen in the working tree to
+// the commit that holds it, GitHub names the pull request's head commit,
+// and the transcript's own order is the only other link. Hover or select a
+// row: its parents light up solid, its children dashed, and the rest fade.
 
-type Lane = "session" | "files" | "git";
-type Rule = "order" | "call" | "blob" | "parent";
+type Lane = "session" | "files" | "git" | "pr";
+type Rule = "order" | "call" | "blob" | "parent" | "head";
 const RULES: Record<Rule, [string, string]> = {
   order: ["Transcript order", "The next entry in the transcript. Order, not causation."],
   call: ["Recorded by the cell", "The workspace probe after this call saw the change."],
   blob: ["Recorded by git", "The commit's tree holds this exact blob id at this path."],
   parent: ["Parent commit", "Named as a parent in the commit."],
+  head: ["Recorded by GitHub", "The pull request's head is this commit."],
 };
-const LANE: Record<Lane, string> = { session: "var(--foreground)", files: "var(--terminal-green)", git: "var(--terminal-yellow)" };
+const LANE: Record<Lane, string> = { session: "var(--foreground)", files: "var(--terminal-green)", git: "var(--terminal-yellow)", pr: "var(--terminal-blue)" };
 const FADED = "var(--border)";
 
 interface Node {
@@ -27,6 +28,7 @@ interface Node {
   call?: string | null; // the tool call whose probe recorded this (files, git)
   toolId?: string | null; // a tool node's own call id
   path?: string; blob?: string | null; sha?: string; parents?: string[];
+  head?: string | null; url?: string; // a pull request's head commit and page
 }
 interface Edge { from: number; to: number; rule: Rule }
 
@@ -59,6 +61,11 @@ function buildGraph(model: ChatModel): { nodes: Node[]; edges: Edge[] } {
     if (e.kind === "fs") {
       for (const f of e.files) row(e.seq, { lane: "files", kind: FILE_KIND[f.status] ?? "modified", title: f.path, sub: f.blob ? `blob ${short(f.blob)}` : (FILE_KIND[f.status] ?? f.status), detail: `${f.path}\nstatus ${f.status || "clean"}\nblob ${f.blob ?? "none"}`, call: e.call, path: f.path, blob: f.blob });
       if (e.truncated) row(e.seq, { lane: "files", kind: "note", title: "more paths changed than recorded", sub: "truncated", detail: "", call: e.call });
+    } else if (e.kind === "pr") {
+      row(e.seq, {
+        lane: "pr", kind: e.state === "open" && e.draft ? "draft" : e.state, title: `#${e.number} ${e.title}`, sub: `${e.state}${e.draft && e.state === "open" ? " · draft" : ""}${e.base ? ` → ${e.base}` : ""}`,
+        detail: `${e.url}\n${e.state}${e.draft ? " (draft)" : ""} · head ${short(e.head) || "?"} → ${e.base ?? "?"}${e.updatedAt ? `\nupdated ${e.updatedAt}` : ""}`, call: e.call, head: e.head, url: e.url,
+      });
     } else {
       for (const c of e.commits) row(e.seq, {
         lane: "git", kind: "commit", title: c.subject, sub: `${short(c.sha)} · ${c.files.length} ${c.files.length === 1 ? "file" : "files"}`, call: e.call, sha: c.sha, parents: c.parents,
@@ -84,6 +91,7 @@ function buildGraph(model: ChatModel): { nodes: Node[]; edges: Edge[] } {
       if (seen) link(seen.id, c.id, "blob");
     }
   }
+  for (const n of nodes) if (n.lane === "pr" && n.head && commits.has(n.head)) link(commits.get(n.head)!.id, n.id, "head");
   return { nodes, edges };
 }
 
@@ -113,6 +121,7 @@ function glyph(n: Node, cx: number, cy: number) {
   if (n.kind === "tool") return <rect x={cx - 3.5} y={cy - 3.5} width={7} height={7} fill="var(--background)" stroke="currentColor" strokeWidth={1.5} />;
   if (n.kind === "commit") return <path d={`M${cx},${cy - 5.5}L${cx + 5.5},${cy}L${cx},${cy + 5.5}L${cx - 5.5},${cy}Z`} fill="currentColor" />;
   if (n.kind === "head") return <path d={`M${cx},${cy - 4.5}L${cx + 4.5},${cy}L${cx},${cy + 4.5}L${cx - 4.5},${cy}Z`} fill="var(--background)" stroke="currentColor" strokeWidth={1.5} />;
+  if (n.lane === "pr") return <circle cx={cx} cy={cy} r={5} fill={n.kind === "merged" ? "currentColor" : "var(--background)"} stroke="currentColor" strokeWidth={2} />;
   if (n.lane === "files") return <circle cx={cx} cy={cy} r={3.5} fill={n.kind === "deleted" || n.kind === "reverted" ? "var(--background)" : "currentColor"} stroke="currentColor" strokeWidth={1.5} />;
   return <circle cx={cx} cy={cy} r={n.kind === "note" ? 2.5 : 3.5} fill="currentColor" />;
 }
@@ -155,7 +164,7 @@ export function TimelineTab({ model }: { model: ChatModel }) {
   };
   const selected = sel != null && sel < nodes.length ? nodes[sel] : null;
   const links = selected ? edges.map((e, i) => ({ e, i })).filter(({ e }) => e.from === selected.id || e.to === selected.id) : [];
-  const counts = (["session", "files", "git"] as Lane[]).map((l) => [l, nodes.filter((n) => n.lane === l).length] as const);
+  const counts = (["session", "files", "git", "pr"] as Lane[]).map((l) => [l, nodes.filter((n) => n.lane === l).length] as const);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -201,6 +210,7 @@ export function TimelineTab({ model }: { model: ChatModel }) {
           <div className="flex items-baseline gap-2">
             <span className="shrink-0 text-[10px] font-semibold tracking-wider uppercase" style={{ color: LANE[selected.lane] }}>{selected.lane} · {selected.kind}</span>
             <span className="min-w-0 flex-1 truncate font-medium">{selected.title}</span>
+            {selected.url && <a href={selected.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground">open on GitHub</a>}
             <button type="button" onClick={() => setSel(null)} className="shrink-0 text-muted-foreground hover:text-foreground">close</button>
           </div>
           {links.length ? links.map(({ e, i }) => {

@@ -41,11 +41,13 @@ export interface Commit {
   files: { status: string; blob: string; path: string }[]; // the tree's changes
 }
 // What the cell recorded of the workspace after a file-changing call (the
-// Session's app.fs and app.git entries): `call` is the tool call's id. A
+// Session's app.fs and app.git entries) and of the branch's pull request
+// (app.pr, from GitHub): `call` is the tool call's id, null for a poll. A
 // `git` entry without commits says where HEAD was or went.
 export type TimelineEntry =
   | { kind: "fs"; seq: number; call: string | null; files: FileVersion[]; truncated: boolean }
-  | { kind: "git"; seq: number; call: string | null; head: string | null; branch: string | null; commits: Commit[] };
+  | { kind: "git"; seq: number; call: string | null; head: string | null; branch: string | null; commits: Commit[] }
+  | { kind: "pr"; seq: number; call: string | null; number: number; url: string; title: string; state: string; draft: boolean; head: string | null; base: string | null; updatedAt: string | null };
 
 export interface ChatModel {
   items: ChatItem[];
@@ -172,6 +174,9 @@ function applyNote(m: ChatModel, entry: any) {
   if (entry?.kind === "app.note") push(m, { kind: "system", level: d.level ?? "info", text: d.text ?? "" });
   else if (entry?.kind === "app.fs") m.timeline.push({ kind: "fs", seq: m.seq++, call: d.call ?? null, files: Array.isArray(d.files) ? d.files : [], truncated: !!d.truncated });
   else if (entry?.kind === "app.git") m.timeline.push({ kind: "git", seq: m.seq++, call: d.call ?? null, head: d.head ?? null, branch: d.branch ?? null, commits: Array.isArray(d.commits) ? d.commits : [] });
+  else if (entry?.kind === "app.pr" && typeof d.number === "number") {
+    m.timeline.push({ kind: "pr", seq: m.seq++, call: d.call ?? null, number: d.number, url: d.url ?? "", title: d.title ?? "", state: d.state ?? "open", draft: !!d.draft, head: d.head ?? null, base: d.base ?? null, updatedAt: d.updatedAt ?? null });
+  }
 }
 
 export function applyEvent(m: ChatModel, ev: any): void {
