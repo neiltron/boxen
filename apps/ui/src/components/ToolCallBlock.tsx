@@ -5,7 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import { SessionContext } from "@/components/panel/session-context";
 import { cn } from "@/lib/utils";
-import type { Block } from "@pi-durable-sessions/client";
+import type { Block } from "@boxen/client";
 
 type ToolBlock = Extract<Block, { kind: "tool" }>;
 

@@ -5,7 +5,7 @@
 // through it. The login is the fleet's own, never copied from the host's pi.
 import { DurableObject } from "cloudflare:workers";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
+import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { directoryCredentials } from "./credentials.js";
 
 // Tokens sandbox commands may get (see secretEnv in sandbox-env.js), as the
@@ -197,7 +197,7 @@ export class Directory extends DurableObject {
     const res = await fetch(`https://api.github.com${path}`, {
       headers: {
         accept: "application/vnd.github+json",
-        "user-agent": "pi-durable-sessions",
+        "user-agent": "boxen",
         ...(GH_TOKEN ? { authorization: `Bearer ${GH_TOKEN}` } : {}),
       },
     });

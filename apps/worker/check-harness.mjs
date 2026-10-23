@@ -2,7 +2,7 @@
 // checks that run without celld. Needs node --experimental-vm-modules.
 import { readFile } from "node:fs/promises";
 import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
-import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
+import spec from "@boxen/client/openapi.json" with { type: "json" };
 
 const boundaries = {
   "cloudflare:workers": { DurableObject: class {} },
@@ -16,7 +16,7 @@ const boundaries = {
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: {} },
   "@earendil-works/pi-durable/tools": { CodingTools: {} },
-  "@pi-durable-sessions/client/openapi.json": { default: spec }, // the real one
+  "@boxen/client/openapi.json": { default: spec }, // the real one
   "./artifacts.js": { ARTIFACT_KINDS: [], Artifacts: class {} },
   "./sandbox.js": { Sandbox: class {} },
   "./cell-sqlite.js": { CellSqlite: class {} },

@@ -1,17 +1,17 @@
 {
-  "name": "@pi-durable-sessions/mcp",
+  "name": "@boxen/mcp",
   "private": true,
   "type": "module",
   "description": "An MCP server for driving Sessions from another agent: list, create, run a turn, read artifacts",
   "bin": {
-    "pds-mcp": "./server.ts"
+    "boxen-mcp": "./server.ts"
   },
   "scripts": {
     "check": "node mcp.check.ts && tsc"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.0",
-    "@pi-durable-sessions/client": "workspace:*",
+    "@boxen/client": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "pi-durable-sessions",
+    "title": "boxen",
     "version": "0.1.0",
     "description": "The worker's REST API (apps/worker/src/index.js). The worker routes from this file: a request reaches a handler only through an operation here, the handler named by its operationId, so the worker serves no API route the spec lacks. apps/worker/contract.check.mjs drives every operation and fails when a response disagrees with the spec. The three WebSocket paths are listed for their upgrade only; the messages on them are not described here. The Session WebSocket's are, in [docs/session-protocol.md](session-protocol.md) (the link is relative to the reference that `pnpm reference` builds into docs/)."
   },

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 const connection = (provider: string) =>
   provider === "openai" ? "ChatGPT sign-in" : provider === "openai-codex" ? "Codex (legacy)" : provider;
 
-// The composer's model control, adapted from boxen's. The session cell lists
+// The composer's model control, adapted from boxen-legacy's. The session cell lists
 // what its login can use; a choice is a durable configure that applies from
 // the next model request, so it works mid-run too. The cell's agent_changed
 // event is the confirmation, for every tab at once. Like the rest of the

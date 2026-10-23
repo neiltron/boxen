@@ -158,7 +158,7 @@ function cellStorage(db) {
 
 // Real application extension, built-in tools, and Session failure/reopen path.
 {
-  const cwd = await mkdtemp(join(tmpdir(), "pds-harness-"));
+  const cwd = await mkdtemp(join(tmpdir(), "boxen-harness-"));
   const sandbox = localSandbox(cwd);
   const env = sandboxEnv(sandbox, "test", cwd);
   const db = new DatabaseSync(":memory:");

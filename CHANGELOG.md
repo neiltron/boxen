@@ -50,7 +50,7 @@ First versioned application candidate; not yet a published or production-certifi
 - Add CI checks, isolated deployment smoke, tagged source packaging and draft release creation.
 - Detect installed runtime mismatches and persist required restarts across retries.
 - Check development runtime versions and fail deploys on errors instead of reporting false success.
-- Reject application/runtime source mismatches in the installer; expose local CLI version with `pds --version`.
+- Reject application/runtime source mismatches in the installer; expose local CLI version with `boxen --version`.
 
 ### Compatibility
 

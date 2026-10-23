@@ -1,3 +1,9 @@
+node_modules/
+dist/
+.rustfs-data/
+*.log
+.DS_Store
+*.tsbuildinfo
 .env
 .context/
 # Built by `pnpm reference`, on demand.

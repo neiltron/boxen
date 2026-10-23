@@ -96,8 +96,8 @@ export function apiClient(baseUrl: string, fetch?: (request: Request) => Promise
   };
 }
 
-// Where callers outside the web app (pds, the MCP server) find the system when
-// neither a flag nor $PDS_URL says otherwise.
+// Where callers outside the web app (boxen, the MCP server) find the system when
+// neither a flag nor $BOXEN_URL says otherwise.
 export const DEFAULT_URL = "http://127.0.0.1:8093";
 
 // The system at `baseUrl`, for those callers: its REST API and a session

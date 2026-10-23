@@ -1,10 +1,10 @@
-// Self-check for pds, through main(): node cli.check.ts
+// Self-check for boxen, through main(): node cli.check.ts
 // A fake fetch stands in for the REST API and a scripted socket for the
 // Session cell (as in packages/client/session.check.ts), so no backend runs.
 import assert from "node:assert/strict";
 import pkg from "./package.json" with { type: "json" };
-import { DEFAULT_URL, type Transport } from "@pi-durable-sessions/client";
-import { main, type Deps } from "./pds.ts";
+import { DEFAULT_URL, type Transport } from "@boxen/client";
+import { main, type Deps } from "./boxen.ts";
 
 const meta = { id: "s1", name: "untitled", cwd: "/workspace", createdAt: 1 };
 const requests: { method: string; url: string; body: unknown }[] = [];
@@ -46,7 +46,7 @@ const cell = (open = true): Transport => (url, on) => {
   };
 };
 
-async function pds(argv: string[], deps: Partial<Deps> = {}) {
+async function boxen(argv: string[], deps: Partial<Deps> = {}) {
   let out = "", err = "";
   const code = await main(argv, {
     env: {}, transport: cell(), fetch: fakeFetch,
@@ -55,39 +55,39 @@ async function pds(argv: string[], deps: Partial<Deps> = {}) {
   return { code, out, err };
 }
 
-// Version is local; it must not require a reachable server or valid PDS_URL.
+// Version is local; it must not require a reachable server or valid BOXEN_URL.
 {
   const before = requests.length;
-  assert.deepEqual(await pds(["--version"], { env: { PDS_URL: "invalid" } }), {
-    code: 0, out: `pi-durable-sessions ${pkg.version} (local CLI)\n`, err: "",
+  assert.deepEqual(await boxen(["--version"], { env: { BOXEN_URL: "invalid" } }), {
+    code: 0, out: `boxen ${pkg.version} (local CLI)\n`, err: "",
   });
   assert.equal(requests.length, before);
-  assert.equal((await pds(["--version", "unexpected"])).code, 2);
+  assert.equal((await boxen(["--version", "unexpected"])).code, 2);
 }
 
 // Help and usage: help on stdout, usage errors on stderr with exit 2.
 {
-  const help = await pds(["help"]);
+  const help = await boxen(["help"]);
   assert.equal(help.code, 0);
   for (const c of ["list", "create", "prompt", "Sessions:", "--json", "--url"]) assert.ok(help.out.includes(c), c);
-  assert.deepEqual(await pds(["list", "--help"]), { code: 0, out: help.out, err: "" });
-  assert.equal((await pds([])).code, 2);
-  assert.match((await pds(["frobnicate"])).err, /unknown command: frobnicate/);
-  assert.equal((await pds(["list", "--name", "x"])).code, 2, "options belong to their command");
-  assert.match((await pds(["prompt", "s1"])).err, /needs a session id and the text/);
+  assert.deepEqual(await boxen(["list", "--help"]), { code: 0, out: help.out, err: "" });
+  assert.equal((await boxen([])).code, 2);
+  assert.match((await boxen(["frobnicate"])).err, /unknown command: frobnicate/);
+  assert.equal((await boxen(["list", "--name", "x"])).code, 2, "options belong to their command");
+  assert.match((await boxen(["prompt", "s1"])).err, /needs a session id and the text/);
   // Commands that take no arguments refuse them, before any request.
   requests.length = 0;
-  assert.match((await pds(["create", "my-session"])).err, /Unexpected argument 'my-session'/);
-  assert.equal((await pds(["list", "extra"])).code, 2);
+  assert.match((await boxen(["create", "my-session"])).err, /Unexpected argument 'my-session'/);
+  assert.equal((await boxen(["list", "extra"])).code, 2);
   assert.equal(requests.length, 0);
 }
 
 // The system's URL must be http(s), from the flag or the environment.
 {
   const bad = [
-    await pds(["prompt", "s1", "hi", "--url", "ftp://example.test"]),
-    await pds(["list", "--url", "not a url"]),
-    await pds(["list"], { env: { PDS_URL: "ws://x" } }),
+    await boxen(["prompt", "s1", "hi", "--url", "ftp://example.test"]),
+    await boxen(["list", "--url", "not a url"]),
+    await boxen(["list"], { env: { BOXEN_URL: "ws://x" } }),
   ];
   for (const r of bad) {
     assert.equal(r.code, 2);
@@ -95,59 +95,59 @@ async function pds(argv: string[], deps: Partial<Deps> = {}) {
   }
 }
 
-// The target: --url, else $PDS_URL, else the default.
+// The target: --url, else $BOXEN_URL, else the default.
 {
   requests.length = 0;
-  await pds(["list"]);
-  await pds(["list"], { env: { PDS_URL: "http://env:1" } });
-  await pds(["list", "--url", "http://flag:2/prefix/"], { env: { PDS_URL: "http://env:1" } });
+  await boxen(["list"]);
+  await boxen(["list"], { env: { BOXEN_URL: "http://env:1" } });
+  await boxen(["list", "--url", "http://flag:2/prefix/"], { env: { BOXEN_URL: "http://env:1" } });
   assert.deepEqual(requests.map((r) => r.url), [`${DEFAULT_URL}/api/sessions`, "http://env:1/api/sessions", "http://flag:2/prefix/api/sessions"]);
 }
 
 // list and create, as text and as JSON.
 {
-  assert.deepEqual(await pds(["list"]), { code: 0, out: "s1\tidle\tuntitled\ns2\tarchived\told\n", err: "" });
-  const json = await pds(["list", "--json"]);
+  assert.deepEqual(await boxen(["list"]), { code: 0, out: "s1\tidle\tuntitled\ns2\tarchived\told\n", err: "" });
+  const json = await boxen(["list", "--json"]);
   assert.deepEqual(JSON.parse(json.out), [{ ...meta, status: "idle" }, { ...meta, id: "s2", name: "old", archivedAt: 5 }]);
 
   requests.length = 0;
-  assert.deepEqual(await pds(["create", "--name", "n", "--repo", "https://x/r.git"]), { code: 0, out: "s1\n", err: "" });
+  assert.deepEqual(await boxen(["create", "--name", "n", "--repo", "https://x/r.git"]), { code: 0, out: "s1\n", err: "" });
   assert.deepEqual(requests[0], { method: "POST", url: `${DEFAULT_URL}/api/sessions`, body: { name: "n", repo: "https://x/r.git" } });
-  assert.deepEqual(JSON.parse((await pds(["create", "--json"])).out), meta);
+  assert.deepEqual(JSON.parse((await boxen(["create", "--json"])).out), meta);
 }
 
 // API failures: the worker's error on stderr, exit 1.
 {
-  const broken = await pds(["list"], { fetch: async () => Response.json({ error: "Directory is down" }, { status: 500 }) });
-  assert.deepEqual(broken, { code: 1, out: "", err: `pds: ${DEFAULT_URL}: Directory is down\n` });
+  const broken = await boxen(["list"], { fetch: async () => Response.json({ error: "Directory is down" }, { status: 500 }) });
+  assert.deepEqual(broken, { code: 1, out: "", err: `boxen: ${DEFAULT_URL}: Directory is down\n` });
 }
 
 // prompt: streams to stdout, exits 0 only when done; JSON prints just the result.
 {
   sockets.length = 0;
-  assert.deepEqual(await pds(["prompt", "s1", "say", "hi"], { env: { PDS_URL: "https://box.ts.net" } }), { code: 0, out: "Hello\n", err: "" });
+  assert.deepEqual(await boxen(["prompt", "s1", "say", "hi"], { env: { BOXEN_URL: "https://box.ts.net" } }), { code: 0, out: "Hello\n", err: "" });
   assert.deepEqual(sockets, ["wss://box.ts.net/api/session/s1/ws"]);
-  assert.deepEqual(await pds(["prompt", "s1", "hi", "--json"]), { code: 0, out: '{"status":"done","text":"Hello"}\n', err: "" });
+  assert.deepEqual(await boxen(["prompt", "s1", "hi", "--json"]), { code: 0, out: '{"status":"done","text":"Hello"}\n', err: "" });
 
-  assert.deepEqual(await pds(["prompt", "s1", "refuse"]), { code: 1, out: "", err: "error: No model is configured\n" });
-  assert.deepEqual(JSON.parse((await pds(["prompt", "s1", "refuse", "--json"])).out), { status: "error", error: "No model is configured" });
-  assert.deepEqual(await pds(["prompt", "s1", "fail"]), { code: 1, out: "Hel\n", err: "error: 429 Too Many Requests\n" });
-  const dropped = await pds(["prompt", "s1", "drop", "--json"]);
+  assert.deepEqual(await boxen(["prompt", "s1", "refuse"]), { code: 1, out: "", err: "error: No model is configured\n" });
+  assert.deepEqual(JSON.parse((await boxen(["prompt", "s1", "refuse", "--json"])).out), { status: "error", error: "No model is configured" });
+  assert.deepEqual(await boxen(["prompt", "s1", "fail"]), { code: 1, out: "Hel\n", err: "error: 429 Too Many Requests\n" });
+  const dropped = await boxen(["prompt", "s1", "drop", "--json"]);
   assert.deepEqual([dropped.code, JSON.parse(dropped.out)], [1, { status: "disconnected" }]);
 
   // Ctrl-C before the prompt went out sends nothing.
-  assert.deepEqual(await pds(["prompt", "s1", "hi", "--json"], { signal: AbortSignal.abort() }), { code: 1, out: '{"status":"aborted"}\n', err: "" });
+  assert.deepEqual(await boxen(["prompt", "s1", "hi", "--json"], { signal: AbortSignal.abort() }), { code: 1, out: '{"status":"aborted"}\n', err: "" });
 
   // No join in time: an error naming the socket, not a hang.
-  const unreachable = await pds(["prompt", "s1", "hi"], { transport: cell(false), connectMs: 10 });
+  const unreachable = await boxen(["prompt", "s1", "hi"], { transport: cell(false), connectMs: 10 });
   assert.deepEqual(unreachable, { code: 1, out: "", err: `error: no connection to ws://127.0.0.1:8093/api/session/s1/ws in 0.01 s\n` });
 }
 
 // A transport that throws fails the command, and prompt leaves no timer
 // behind (its join deadline, the client's ping) to keep the process alive.
 {
-  const broken = await pds(["prompt", "s1", "hi"], { transport: () => { throw new Error("no socket for you"); }, connectMs: 60_000 });
-  assert.deepEqual(broken, { code: 1, out: "", err: `pds: ${DEFAULT_URL}: no socket for you\n` });
+  const broken = await boxen(["prompt", "s1", "hi"], { transport: () => { throw new Error("no socket for you"); }, connectMs: 60_000 });
+  assert.deepEqual(broken, { code: 1, out: "", err: `boxen: ${DEFAULT_URL}: no socket for you\n` });
   assert.deepEqual(process.getActiveResourcesInfo().filter((r) => r === "Timeout"), [], "no timers left running");
 }
 

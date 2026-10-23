@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * pids: private Linux installer/manager for pi-durable-sessions.
+ * boxenctl: private Linux installer/manager for boxen.
  *
  * Node standard library only. It runs directly on the checksum-pinned Node the
  * app already uses, through type stripping, so there is no build step. Keep to
  * erasable TypeScript: no enums, namespaces or constructor parameter properties.
  *
- * Calls made through the `pids` object can be replaced by tests, the way the
+ * Calls made through the `boxenctl` object can be replaced by tests, the way the
  * host-facing steps (run, which, tailscale) need to be. Direct calls cannot.
  */
 import { spawnSync } from 'node:child_process';
@@ -21,19 +21,29 @@ import { gunzipSync } from 'node:zlib';
 
 // Mutable so tests can point every host path at a temporary directory.
 export const paths = {
-  ROOT: '/opt/pi-durable-sessions',
-  CONFIG: '/etc/pi-durable-sessions',
-  DATA: '/var/lib/pi-durable-sessions',
+  ROOT: '/opt/boxen',
+  CONFIG: '/etc/boxen',
+  DATA: '/var/lib/boxen',
   UNITS: '/etc/systemd/system',
-  LAUNCHER: '/usr/local/bin/pids',
+  LAUNCHER: '/usr/local/bin/boxenctl',
   DOCKER_DAEMON_JSON: '/etc/docker/daemon.json',
   RESOLV_CONF: '/etc/resolv.conf',
   RESOLVED_UPLINK: '/run/systemd/resolve/resolv.conf',
 };
-export const USER = 'pids';
-export const STORAGE = 'pi-durable-sessions-storage';
-export const SERVICE = 'pi-durable-sessions';
+export const USER = 'boxen';
+export const STORAGE = 'boxen-storage';
+export const SERVICE = 'boxen';
+// Kept from before the rename: the bucket holds the Sessions.
 export const BUCKET = 'pid-cells';
+// The same installation under its names before the boxen rename. Mutable for tests.
+export const legacy = {
+  ROOT: '/opt/pi-durable-sessions',
+  CONFIG: '/etc/pi-durable-sessions',
+  DATA: '/var/lib/pi-durable-sessions',
+  LAUNCHER: '/usr/local/bin/pids',
+};
+const LEGACY_USER = 'pids';
+const LEGACY_SERVICES = ['pi-durable-sessions', 'pi-durable-sessions-storage'];
 // BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)
 export const APPLICATION_VERSION = '0.1.0-rc.3';
 export const CELLD_VERSION = '0.6.2';
@@ -120,14 +130,14 @@ function run(args: (string | number)[], { capture = false, check = true, env, cw
       throw new Failure(`Command not installed: ${argv[0]}`, 1, 'Run setup with --yes to install prerequisites.');
     }
     if (code === 'ETIMEDOUT') {
-      throw new Failure(`Timed out running ${argv[0]}`, 1, 'Inspect pids logs, then retry. Data has been preserved.');
+      throw new Failure(`Timed out running ${argv[0]}`, 1, 'Inspect boxenctl logs, then retry. Data has been preserved.');
     }
     throw result.error;
   }
   const returncode = result.status ?? 1;
   if (check && returncode) {
     // Do not echo arbitrary command output: external tools may print credentials.
-    const action = RECOVERY[argv.join('\0')] ?? 'Check diagnostics on stderr, or run pids logs. Fix the cause and retry.';
+    const action = RECOVERY[argv.join('\0')] ?? 'Check diagnostics on stderr, or run boxenctl logs. Fix the cause and retry.';
     throw new Failure(`${argv[0]} failed (exit ${returncode})`, 1, action);
   }
   return { returncode, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
@@ -208,8 +218,8 @@ function hostInfo(): Host {
   const release = osRelease();
   return {
     os: os.type(), architecture: os.machine(), distribution: release.ID ?? '', version: release.VERSION_ID ?? '',
-    systemd: isDirectory('/run/systemd/system'), docker: pids.which('docker') !== null,
-    tailscale: pids.which('tailscale') !== null,
+    systemd: isDirectory('/run/systemd/system'), docker: boxenctl.which('docker') !== null,
+    tailscale: boxenctl.which('tailscale') !== null,
   };
 }
 
@@ -239,7 +249,7 @@ const SETTING_KEYS = ['access', 'port', 'storage_port'] as const;
 
 async function settings(args: Args, previous: Obj): Promise<Config> {
   if (args.config && !fs.existsSync(args.config)) throw new Failure(`Config file does not exist: ${args.config}`, 2);
-  const incoming = args.config ? pids.readJson(args.config, {}) : {};
+  const incoming = args.config ? boxenctl.readJson(args.config, {}) : {};
   if (incoming === null || typeof incoming !== 'object' || Array.isArray(incoming) ||
       Object.keys(incoming).some((key) => !(SETTING_KEYS as readonly string[]).includes(key))) {
     throw new Failure('Config accepts only access, port, storage_port.', 2);
@@ -255,7 +265,7 @@ async function settings(args: Args, previous: Obj): Promise<Config> {
     if (args.noInput || !process.stdin.isTTY) {
       throw new Failure('Choose --access local or --access tailscale for the first installation.', 2);
     }
-    values.access = (await pids.prompt('Access [tailscale/local] (tailscale): ')).trim() || 'tailscale';
+    values.access = (await boxenctl.prompt('Access [tailscale/local] (tailscale): ')).trim() || 'tailscale';
   }
   if (!['local', 'tailscale'].includes(values.access)) {
     throw new Failure('access must be local or tailscale. Public access is not supported before auth.', 2);
@@ -319,7 +329,7 @@ function* sourceFiles(source: string): Generator<string> {
 
 function sourceRevision(source: string): string {
   const digest = createHash('sha256');
-  for (const file of pids.sourceFiles(source)) {
+  for (const file of boxenctl.sourceFiles(source)) {
     digest.update(path.relative(source, file) + '\0');
     digest.update(fs.readFileSync(file));
   }
@@ -335,7 +345,7 @@ function installPlan(config: Config, host: Host, revision: string): Obj {
       'Check that sandboxes will get a DNS resolver celld lets them reach',
       'Install/reuse distro Docker and required tools',
       `Install checksum-pinned celld ${CELLD_VERSION} and Node ${NODE_VERSION.slice(1)}`,
-      'Create dedicated pids service account and private random storage credentials',
+      'Create dedicated boxen service account and private random storage credentials',
       'Build UI and worker from lockfiles as the service account',
       'Start digest-pinned RustFS on loopback; create private bucket',
       'Deploy worker, sandbox image and static assets',
@@ -355,7 +365,7 @@ function requireRoot(): void {
 async function consent(args: Args): Promise<void> {
   if (args.yes) return;
   if (args.noInput || !process.stdin.isTTY) throw new Failure('Approval required: pass --yes to allow the displayed host changes.', 2);
-  if ((await pids.prompt('Apply these changes? [y/N] ')).trim().toLowerCase() !== 'y') {
+  if ((await boxenctl.prompt('Apply these changes? [y/N] ')).trim().toLowerCase() !== 'y') {
     throw new Failure('Cancelled; no changes made.', 2);
   }
 }
@@ -380,7 +390,7 @@ async function withInstallLock<T>(body: () => Promise<T> | T): Promise<T> {
   fs.chmodSync(paths.CONFIG, 0o755); // Public settings are readable; credential files remain 0600.
   const lock = path.join(paths.CONFIG, 'install.lock');
   const token = `${process.pid}\n`;
-  const busy = () => new Failure('Another pids operation is in progress. Retry when it finishes.', 3);
+  const busy = () => new Failure('Another boxenctl operation is in progress. Retry when it finishes.', 3);
   try {
     fs.writeFileSync(lock, token, { flag: 'wx', mode: 0o644 });
   } catch (error) {
@@ -409,13 +419,13 @@ function portAvailable(port: number): Promise<boolean> {
 }
 
 function isActive(service: string): boolean {
-  return pids.which('systemctl') !== null &&
-    pids.run(['systemctl', 'is-active', '--quiet', service], { capture: true, check: false, timeout: 15 }).returncode === 0;
+  return boxenctl.which('systemctl') !== null &&
+    boxenctl.run(['systemctl', 'is-active', '--quiet', service], { capture: true, check: false, timeout: 15 }).returncode === 0;
 }
 
 async function preflightPorts(config: Config): Promise<void> {
   for (const [key, service] of [['port', SERVICE], ['storage_port', STORAGE]] as const) {
-    if (!(await pids.portAvailable(config[key])) && !pids.isActive(service)) {
+    if (!(await boxenctl.portAvailable(config[key])) && !boxenctl.isActive(service)) {
       throw new Failure(`127.0.0.1:${config[key]} is already occupied by another service.`, 2,
         `Choose --${key.replace('_', '-')} on the first installation, or resolve the conflict.`);
     }
@@ -453,7 +463,7 @@ function isLoopback(address: string): boolean {
  * for a loopback-only stub (systemd-resolved) the uplink servers behind it.
  */
 function containerResolvers(): [string[], string] {
-  const configured = (pids.readJson(paths.DOCKER_DAEMON_JSON, {}) as Obj).dns;
+  const configured = (boxenctl.readJson(paths.DOCKER_DAEMON_JSON, {}) as Obj).dns;
   if (Array.isArray(configured) && configured.length) {
     return [configured.map(String), `"dns" in ${paths.DOCKER_DAEMON_JSON}`];
   }
@@ -478,9 +488,9 @@ function preflightSandboxDns(): void {
 
 /** Ground truth on the real sandbox network: null when celld has not created it yet. */
 function sandboxDnsProbe(): boolean | null {
-  const exists = pids.run(['docker', 'network', 'inspect', SANDBOX_NETWORK], { capture: true, check: false, timeout: 30 });
+  const exists = boxenctl.run(['docker', 'network', 'inspect', SANDBOX_NETWORK], { capture: true, check: false, timeout: 30 });
   if (exists.returncode) return null;
-  const probe = pids.run(['docker', 'run', '--rm', '--network', SANDBOX_NETWORK, '--label', 'io.pids.managed=probe',
+  const probe = boxenctl.run(['docker', 'run', '--rm', '--network', SANDBOX_NETWORK, '--label', 'io.boxen.managed=probe',
     PROBE_IMAGE, 'nslookup', '-timeout=5', 'github.com'], { capture: true, check: false, timeout: 180 });
   return probe.returncode === 0;
 }
@@ -489,18 +499,18 @@ function installPackages(host: Host): void {
   // Reuse an existing engine; do not replace Docker CE or change its daemon configuration.
   if (['arch', 'omarchy'].includes(host.distribution)) {
     const packages = ['curl', 'ca-certificates', 'git', 'tar', 'gzip'];
-    if (!pids.which('docker')) packages.push('docker', 'docker-buildx');
-    pids.run(['pacman', '-S', '--needed', '--noconfirm', ...packages], { timeout: 1800 });
+    if (!boxenctl.which('docker')) packages.push('docker', 'docker-buildx');
+    boxenctl.run(['pacman', '-S', '--needed', '--noconfirm', ...packages], { timeout: 1800 });
   } else {
-    pids.run(['apt-get', 'update'], { timeout: 600 });
+    boxenctl.run(['apt-get', 'update'], { timeout: 600 });
     const packages = ['curl', 'ca-certificates', 'git', 'tar', 'gzip'];
-    if (!pids.which('docker')) packages.push('docker.io');
-    pids.run(['apt-get', 'install', '-y', ...packages], { timeout: 1800, env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });
+    if (!boxenctl.which('docker')) packages.push('docker.io');
+    boxenctl.run(['apt-get', 'install', '-y', ...packages], { timeout: 1800, env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });
   }
-  pids.run(['systemctl', 'enable', '--now', 'docker'], { timeout: 120 });
-  pids.run(['docker', 'info'], { capture: true, timeout: 30 });
+  boxenctl.run(['systemctl', 'enable', '--now', 'docker'], { timeout: 120 });
+  boxenctl.run(['docker', 'info'], { capture: true, timeout: 30 });
   // celld requires the host's Unix-socket engine, not an arbitrary Docker context.
-  const context = pids.run(['docker', 'context', 'inspect'], { capture: true, timeout: 15 });
+  const context = boxenctl.run(['docker', 'context', 'inspect'], { capture: true, timeout: 15 });
   if (JSON.parse(context.stdout)[0]?.Endpoints?.docker?.Host !== 'unix:///var/run/docker.sock') {
     throw new Failure('Use the local system Docker engine at /var/run/docker.sock, not a remote/rootless context.', 2);
   }
@@ -511,7 +521,7 @@ function sha256File(file: string): string {
 }
 
 function download(url: string, destination: string, checksum: string): void {
-  pids.run(['curl', '--proto', '=https', '--tlsv1.2', '-fsSL', '--retry', '3', '--max-time', '300', url, '-o', destination],
+  boxenctl.run(['curl', '--proto', '=https', '--tlsv1.2', '-fsSL', '--retry', '3', '--max-time', '300', url, '-o', destination],
     { timeout: 330 });
   if (sha256File(destination) !== checksum) throw new Failure(`Checksum mismatch for ${url}; refusing to install.`, 1);
 }
@@ -539,7 +549,7 @@ function withTemporaryDirectory<T>(parent: string, body: (directory: string) => 
 function runtimeMatches(binary: string, version: string): boolean {
   if (!fs.existsSync(binary)) return false;
   try {
-    const result = pids.run([binary, '--version'], { capture: true, check: false, timeout: 15 });
+    const result = boxenctl.run([binary, '--version'], { capture: true, check: false, timeout: 15 });
     const found = result.stdout.trim().match(/^(?:celld\s+|v)(\d+\.\d+\.\d+)(?:\s|$)/)?.[1];
     return result.returncode === 0 && found === version;
   } catch {
@@ -551,36 +561,36 @@ function runtimeMatches(binary: string, version: string): boolean {
 function runtimeRestartRequired(): void {
   const config = path.join(paths.CONFIG, 'config.json');
   if (!fs.existsSync(config)) return; // Fresh install: service-unit creation schedules its start.
-  const saved = pids.readJson(config, {}) as Obj;
+  const saved = boxenctl.readJson(config, {}) as Obj;
   saved.pending_restarts = [...new Set([...(saved.pending_restarts ?? []), SERVICE])].sort();
   saveConfig(saved);
 }
 
 function toolchain(): void {
-  pids.runtimeDirectories();
+  boxenctl.runtimeDirectories();
   const celld = path.join(paths.ROOT, 'bin/celld');
-  if (!pids.runtimeMatches(celld, CELLD_VERSION)) {
+  if (!boxenctl.runtimeMatches(celld, CELLD_VERSION)) {
     withTemporaryDirectory(paths.ROOT, (temporary) => {
       const archive = path.join(temporary, 'celld.gz');
-      pids.download(CELLD_URL, archive, CELLD_SHA);
+      boxenctl.download(CELLD_URL, archive, CELLD_SHA);
       const binary = path.join(temporary, 'celld');
       fs.writeFileSync(binary, gunzipSync(fs.readFileSync(archive)), { mode: 0o755 });
       fs.chmodSync(binary, 0o755);
-      if (!pids.runtimeMatches(binary, CELLD_VERSION)) throw new Failure('Downloaded celld reports the wrong version.');
+      if (!boxenctl.runtimeMatches(binary, CELLD_VERSION)) throw new Failure('Downloaded celld reports the wrong version.');
       runtimeRestartRequired();
       fs.renameSync(binary, celld);
     });
   }
   const node = path.join(paths.ROOT, 'node');
-  if (!pids.runtimeMatches(path.join(node, 'bin/node'), NODE_VERSION.slice(1))) {
+  if (!boxenctl.runtimeMatches(path.join(node, 'bin/node'), NODE_VERSION.slice(1))) {
     withTemporaryDirectory(paths.ROOT, (temporary) => {
       const archive = path.join(temporary, 'node.tar.gz');
-      pids.download(NODE_URL, archive, NODE_SHA);
+      boxenctl.download(NODE_URL, archive, NODE_SHA);
       const stage = path.join(temporary, 'node');
       fs.mkdirSync(stage);
-      pids.run(['tar', '-xzf', archive, '--no-same-owner', '--strip-components=1', '-C', stage]);
+      boxenctl.run(['tar', '-xzf', archive, '--no-same-owner', '--strip-components=1', '-C', stage]);
       fs.chmodSync(stage, 0o755);
-      if (!pids.runtimeMatches(path.join(stage, 'bin/node'), NODE_VERSION.slice(1))) throw new Failure('Downloaded Node reports the wrong version.');
+      if (!boxenctl.runtimeMatches(path.join(stage, 'bin/node'), NODE_VERSION.slice(1))) throw new Failure('Downloaded Node reports the wrong version.');
       runtimeRestartRequired();
       // Keep the old tree until replacement succeeds. Bootstrap can fetch Node
       // independently if a power loss leaves only the previous tree in place.
@@ -599,7 +609,7 @@ function toolchain(): void {
 }
 
 function lookupUser(name: string): Account | null {
-  const result = pids.run(['getent', 'passwd', name], { capture: true, check: false, timeout: 15 });
+  const result = boxenctl.run(['getent', 'passwd', name], { capture: true, check: false, timeout: 15 });
   if (result.returncode === 2) return null; // getent: key not found.
   if (result.returncode) throw new Failure(`Cannot look up user ${name} (getent exit ${result.returncode}).`);
   const fields = result.stdout.trim().split(':');
@@ -609,14 +619,14 @@ function lookupUser(name: string): Account | null {
 function serviceAccount(): Account {
   let account = lookupUser(USER);
   if (account && (account.home !== paths.DATA || account.uid === 0)) {
-    throw new Failure('An unrelated pids user already exists; refusing to reuse it.', 2);
+    throw new Failure('An unrelated boxen user already exists; refusing to reuse it.', 2);
   }
   if (!account) {
-    pids.run(['useradd', '--system', '--user-group', '--home-dir', paths.DATA, '--shell', '/usr/sbin/nologin', USER]);
+    boxenctl.run(['useradd', '--system', '--user-group', '--home-dir', paths.DATA, '--shell', '/usr/sbin/nologin', USER]);
     account = lookupUser(USER);
-    if (!account) throw new Failure('Created the pids user but cannot look it up.');
+    if (!account) throw new Failure('Created the boxen user but cannot look it up.');
   }
-  pids.run(['usermod', '-aG', 'docker', USER]);
+  boxenctl.run(['usermod', '-aG', 'docker', USER]);
   for (const directory of ['', 'rustfs', 'rustfs-logs', 'cache', 'watch']) {
     const full = path.join(paths.DATA, directory);
     fs.mkdirSync(full, { recursive: true });
@@ -626,9 +636,50 @@ function serviceAccount(): Account {
   return account;
 }
 
+/** An installation from before the rename, not yet moved to the boxen names. */
+function legacyInstall(): boolean {
+  return fs.existsSync(path.join(legacy.CONFIG, 'config.json')) && !fs.existsSync(path.join(paths.CONFIG, 'config.json'));
+}
+
+/**
+ * Moves a pi-durable-sessions installation to the boxen names: services
+ * stopped and their units removed, directories renamed, the service account
+ * renamed in place (same uid, so data ownership holds). Setup then installs
+ * the boxen units and restarts. Sandbox workspaces do not survive, as with
+ * any celld restart.
+ */
+function migrateLegacy(): void {
+  for (const key of ['ROOT', 'CONFIG', 'DATA'] as const) {
+    if (fs.existsSync(paths[key])) throw new Failure(`Both ${legacy[key]} and ${paths[key]} exist; move one aside and retry.`, 2);
+  }
+  const group = boxenctl.run(['getent', 'group', USER], { capture: true, check: false, timeout: 15 }).returncode;
+  if (lookupUser(USER) || group !== 2) throw new Failure(`A ${USER} user or group already exists; refusing to rename ${LEGACY_USER}.`, 2);
+  const units = LEGACY_SERVICES.filter((service) => fs.existsSync(path.join(paths.UNITS, `${service}.service`)));
+  if (units.length) boxenctl.run(['systemctl', 'disable', '--now', ...units], { timeout: 180 });
+  for (const service of units) fs.rmSync(path.join(paths.UNITS, `${service}.service`));
+  boxenctl.run(['systemctl', 'daemon-reload']);
+  if (lookupUser(LEGACY_USER)) {
+    boxenctl.run(['usermod', '--login', USER, '--home', paths.DATA, LEGACY_USER]);
+    boxenctl.run(['groupmod', '--new-name', USER, LEGACY_USER]);
+  }
+  for (const key of ['ROOT', 'CONFIG', 'DATA'] as const) {
+    if (fs.existsSync(legacy[key])) fs.renameSync(legacy[key], paths[key]);
+  }
+  fs.rmSync(legacy.LAUNCHER, { force: true });
+  const file = path.join(paths.CONFIG, 'config.json');
+  const saved = boxenctl.readJson(file, {}) as Obj;
+  saveConfig({ ...saved, source: renamedSource(saved.source), pending_restarts: [] });
+}
+
+function renamedSource(source: string): string;
+function renamedSource(source: undefined): undefined;
+function renamedSource(source?: string): string | undefined {
+  return source?.startsWith(legacy.ROOT + '/') ? paths.ROOT + source.slice(legacy.ROOT.length) : source;
+}
+
 function credentials(): Keys {
   const file = path.join(paths.CONFIG, 'credentials.json');
-  let stored = pids.readJson(file, null) as Obj | null;
+  let stored = boxenctl.readJson(file, null) as Obj | null;
   if (stored === null) {
     if (fs.readdirSync(path.join(paths.DATA, 'rustfs')).length) {
       throw new Failure('Storage contains data but credentials.json is missing. Restore credentials; do not rotate blindly.');
@@ -656,7 +707,7 @@ function credentials(): Keys {
 function units(config: Config, account: Pick<Account, 'uid' | 'gid'>): Record<string, string> {
   const { ROOT, CONFIG, DATA } = paths;
   const storage = `[Unit]
-Description=pi-durable-sessions private object storage
+Description=boxen private object storage
 Requires=docker.service
 PartOf=docker.service
 After=docker.service network-online.target
@@ -664,7 +715,7 @@ Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --name ${STORAGE} --label io.pids.managed=storage --user ${account.uid}:${account.gid} --security-opt no-new-privileges --cap-drop ALL --publish 127.0.0.1:${config.storage_port}:9000 --env-file ${CONFIG}/storage.env --volume ${DATA}/rustfs:/data --volume ${DATA}/rustfs-logs:/logs ${RUSTFS_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name ${STORAGE} --label io.boxen.managed=storage --user ${account.uid}:${account.gid} --security-opt no-new-privileges --cap-drop ALL --publish 127.0.0.1:${config.storage_port}:9000 --env-file ${CONFIG}/storage.env --volume ${DATA}/rustfs:/data --volume ${DATA}/rustfs-logs:/logs ${RUSTFS_IMAGE}
 ExecStop=/usr/bin/docker stop --time 30 ${STORAGE}
 Restart=always
 RestartSec=5
@@ -675,7 +726,7 @@ TimeoutStopSec=60
 WantedBy=multi-user.target docker.service
 `;
   const node = `[Unit]
-Description=pi-durable-sessions application
+Description=boxen application
 Requires=docker.service
 PartOf=docker.service
 Wants=${STORAGE}.service network-online.target
@@ -707,7 +758,7 @@ function saveConfig(saved: Obj): void {
 }
 
 function installUnits(config: Config, account: Pick<Account, 'uid' | 'gid'>, saved: Obj): void {
-  for (const [name, content] of Object.entries(pids.units(config, account))) {
+  for (const [name, content] of Object.entries(boxenctl.units(config, account))) {
     const file = path.join(paths.UNITS, `${name}.service`);
     if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content) {
       saved.pending_restarts = [...new Set([...(saved.pending_restarts ?? []), name])].sort();
@@ -734,11 +785,11 @@ export function wranglerWithAssets(wrangler: string): string {
 }
 
 function prepareSource(source: string, revision: string, account: Account): string {
-  pids.runtimeDirectories();
+  boxenctl.runtimeDirectories();
   const release = path.join(paths.ROOT, 'releases', revision);
   if (!fs.existsSync(path.join(release, '.built'))) {
     fs.mkdirSync(release, { recursive: true });
-    for (const file of pids.sourceFiles(source)) {
+    for (const file of boxenctl.sourceFiles(source)) {
       const target = path.join(release, path.relative(source, file));
       fs.mkdirSync(path.dirname(target), { recursive: true });
       if (path.resolve(file) !== path.resolve(target)) fs.copyFileSync(file, target);
@@ -747,20 +798,20 @@ function prepareSource(source: string, revision: string, account: Account): stri
     atomicWrite(path.join(release, 'apps/worker/wrangler.install.jsonc'), wrangler, 0o644);
     // celld builds the sandbox image with the worker directory as its context.
     atomicWrite(path.join(release, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n.env*\n', 0o644);
-    pids.run(['chown', '-R', `${account.uid}:${account.gid}`, release]);
+    boxenctl.run(['chown', '-R', `${account.uid}:${account.gid}`, release]);
     // Persist the retained source BEFORE pnpm: curl's temporary checkout is
     // removed even when a build fails. A retry must not depend on it.
-    saveConfig({ ...(pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj), source: release });
+    saveConfig({ ...(boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj), source: release });
     const environment = { PATH: `${paths.ROOT}/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
       HOME: paths.DATA, LANG: 'C.UTF-8', npm_config_cache: `${paths.DATA}/npm-cache` };
     // The private Node has no usable corepack for pnpm 12, so npx fetches the pinned pnpm.
-    const manager = (pids.readJson(path.join(release, 'package.json'), {}) as Obj).packageManager;
+    const manager = (boxenctl.readJson(path.join(release, 'package.json'), {}) as Obj).packageManager;
     if (!/^pnpm@\d+\.\d+\.\d+$/.test(manager ?? '')) throw new Failure('package.json must pin packageManager to an exact pnpm version.', 2);
     const pnpm = ['npx', '--yes', manager];
     // Arguments after the script name reach its last command, `vite build`.
     const build = [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir'];
     for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build]) {
-      pids.run(['runuser', '-u', USER, '--', ...command], { env: environment, cwd: release, timeout: 1800 });
+      boxenctl.run(['runuser', '-u', USER, '--', ...command], { env: environment, cwd: release, timeout: 1800 });
     }
     atomicWrite(path.join(release, '.built'), 'ok\n', 0o644);
   }
@@ -792,7 +843,7 @@ function s3Request(config: Pick<Config, 'storage_port'>, keys: Keys, method: str
 }
 
 async function s3Status(config: Pick<Config, 'storage_port'>, keys: Keys, method: string, urlPath: string): Promise<number> {
-  const request = pids.s3Request(config, keys, method, urlPath);
+  const request = boxenctl.s3Request(config, keys, method, urlPath);
   const response = await fetch(request.url, { method: request.method, headers: request.headers, body: request.body,
     signal: AbortSignal.timeout(10_000) });
   await response.body?.cancel();
@@ -805,8 +856,8 @@ async function ensureBucket(config: Pick<Config, 'storage_port'>, keys: Keys, se
   // RustFS /health can return 200 before its S3 layer accepts requests.
   // Retry transient startup failures, but never disguise invalid credentials
   // as a missing bucket. Rechecking HEAD also resolves an ambiguous PUT.
-  const deadline = pids.now() + seconds;
-  while (pids.now() < deadline) {
+  const deadline = boxenctl.now() + seconds;
+  while (boxenctl.now() < deadline) {
     try {
       let status = await s3Status(config, keys, 'HEAD', `/${BUCKET}`);
       if (status < 400) return;
@@ -819,9 +870,9 @@ async function ensureBucket(config: Pick<Config, 'storage_port'>, keys: Keys, se
       if (error instanceof Failure) throw error;
       // Connection refused/reset or timeout while RustFS starts: retry.
     }
-    await pids.sleep(2);
+    await boxenctl.sleep(2);
   }
-  throw new Failure('S3 did not become ready in time.', 1, 'Run sudo pids logs, then retry setup; existing storage was not replaced.');
+  throw new Failure('S3 did not become ready in time.', 1, 'Run sudo boxenctl logs, then retry setup; existing storage was not replaced.');
 }
 
 async function httpOk(url: string, expected?: string): Promise<boolean> {
@@ -839,17 +890,17 @@ async function httpOk(url: string, expected?: string): Promise<boolean> {
 }
 
 async function waitHttp(url: string, expected?: string, seconds = 120): Promise<void> {
-  const deadline = pids.now() + seconds;
-  while (pids.now() < deadline) {
-    if (await pids.httpOk(url, expected)) return;
-    await pids.sleep(2);
+  const deadline = boxenctl.now() + seconds;
+  while (boxenctl.now() < deadline) {
+    if (await boxenctl.httpOk(url, expected)) return;
+    await boxenctl.sleep(2);
   }
-  throw new Failure(`Health check timed out: ${url}`, 1, 'Run sudo pids logs and sudo pids doctor --json, then retry setup.');
+  throw new Failure(`Health check timed out: ${url}`, 1, 'Run sudo boxenctl logs and sudo boxenctl doctor --json, then retry setup.');
 }
 
 function tailscaleStatus(): Obj {
-  if (!pids.which('tailscale')) return { BackendState: 'NotInstalled' };
-  const result = pids.run(['tailscale', 'status', '--json'], { capture: true, check: false, timeout: 15 });
+  if (!boxenctl.which('tailscale')) return { BackendState: 'NotInstalled' };
+  const result = boxenctl.run(['tailscale', 'status', '--json'], { capture: true, check: false, timeout: 15 });
   try {
     return JSON.parse(result.stdout);
   } catch {
@@ -858,7 +909,7 @@ function tailscaleStatus(): Obj {
 }
 
 function serveConfig(): Obj {
-  const result = pids.run(['tailscale', 'serve', 'status', '--json'], { capture: true, check: false, timeout: 15 });
+  const result = boxenctl.run(['tailscale', 'serve', 'status', '--json'], { capture: true, check: false, timeout: 15 });
   if (result.returncode) throw new Failure('Cannot inspect Tailscale Serve; refusing to change it.', 3, 'Run sudo tailscale serve status.');
   try {
     return JSON.parse(result.stdout || '{}');
@@ -884,7 +935,7 @@ function serveOwned(current: Obj, hostname: string, port: number): boolean {
 }
 
 function recordedServe(hostname: string, port: number): boolean {
-  const record = pids.readJson(path.join(paths.CONFIG, 'serve.json'), {}) as Obj;
+  const record = boxenctl.readJson(path.join(paths.CONFIG, 'serve.json'), {}) as Obj;
   return record.hostname === hostname && record.port === port && ['pending', 'active'].includes(record.state);
 }
 
@@ -893,13 +944,13 @@ function port443Occupied(current: Obj, hostname: string): boolean {
 }
 
 function preflightExposure(config: Config): void {
-  if (!pids.which('tailscale')) return;
-  const current = pids.serveConfig(); // Fail closed if an existing daemon cannot be inspected.
+  if (!boxenctl.which('tailscale')) return;
+  const current = boxenctl.serveConfig(); // Fail closed if an existing daemon cannot be inspected.
   if (funnelEnabled(current)) {
     throw new Failure('Existing Tailscale Funnel detected. No app services were started.', 3,
       'Inspect sudo tailscale serve status and disable public exposure before installing this unauthenticated app.');
   }
-  const hostname = selfHostname(pids.tailscaleStatus());
+  const hostname = selfHostname(boxenctl.tailscaleStatus());
   const owned = () => recordedServe(hostname, config.port) && serveOwned(current, hostname, config.port);
   const ours = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${config.port}(?:/|$)`);
   for (const [site, settings] of Object.entries(current.Web ?? {}) as [string, Obj][]) {
@@ -918,29 +969,29 @@ function preflightExposure(config: Config): void {
 }
 
 function ensureTailscale(): void {
-  if (!pids.which('tailscale')) {
+  if (!boxenctl.which('tailscale')) {
     // Official installer chooses the supported distro repository; only after setup approval.
     withTemporaryDirectory(os.tmpdir(), (temporary) => {
       const script = path.join(temporary, 'tailscale-install.sh');
-      pids.run(['curl', '--proto', '=https', '-fsSL', '--max-time', '60', 'https://tailscale.com/install.sh', '-o', script],
+      boxenctl.run(['curl', '--proto', '=https', '-fsSL', '--max-time', '60', 'https://tailscale.com/install.sh', '-o', script],
         { timeout: 90 });
-      pids.run(['sh', script], { timeout: 1800 });
+      boxenctl.run(['sh', script], { timeout: 1800 });
     });
   }
-  pids.run(['systemctl', 'enable', '--now', 'tailscaled'], { timeout: 120 });
+  boxenctl.run(['systemctl', 'enable', '--now', 'tailscaled'], { timeout: 120 });
 }
 
 function configureTailscale(config: Config): string {
-  const status = pids.tailscaleStatus();
+  const status = boxenctl.tailscaleStatus();
   if (status.BackendState !== 'Running') {
     throw new Failure('Application installed locally; Tailscale needs authorization.', 3,
-      'Run sudo tailscale up, approve this machine, then rerun sudo pids setup --yes --no-input --access tailscale.');
+      'Run sudo tailscale up, approve this machine, then rerun sudo boxenctl setup --yes --no-input --access tailscale.');
   }
   const hostname = selfHostname(status);
   if (!/^[a-zA-Z0-9.-]+\.ts\.net$/.test(hostname)) {
     throw new Failure('Tailscale has no usable MagicDNS hostname.', 3, 'Enable MagicDNS/HTTPS in your tailnet, then retry setup.');
   }
-  const current = pids.serveConfig();
+  const current = boxenctl.serveConfig();
   // Other ports can coexist. Never overwrite 443 or any enabled public Funnel.
   if (funnelEnabled(current) || (port443Occupied(current, hostname) &&
       !(recordedServe(hostname, config.port) && serveOwned(current, hostname, config.port)))) {
@@ -954,13 +1005,13 @@ function configureTailscale(config: Config): string {
   atomicWrite(serveFile, JSON.stringify(record));
   try {
     // Setup approval has already been granted; do not prompt on child stdin.
-    pids.run(['tailscale', 'serve', '--yes', '--bg', '--https=443', `http://127.0.0.1:${config.port}`], { timeout: 45 });
+    boxenctl.run(['tailscale', 'serve', '--yes', '--bg', '--https=443', `http://127.0.0.1:${config.port}`], { timeout: 45 });
   } catch (error) {
     if (!(error instanceof Failure)) throw error;
     throw new Failure('Local installation is ready, but private HTTPS setup did not complete.', 3,
-      'Check stderr for Tailscale approval URLs/errors. Enable HTTPS certificates in your tailnet, then rerun sudo pids setup --yes --no-input.');
+      'Check stderr for Tailscale approval URLs/errors. Enable HTTPS certificates in your tailnet, then rerun sudo boxenctl setup --yes --no-input.');
   }
-  if (!serveOwned(pids.serveConfig(), hostname, config.port)) {
+  if (!serveOwned(boxenctl.serveConfig(), hostname, config.port)) {
     throw new Failure('Tailscale Serve did not reach the expected private configuration.', 3);
   }
   atomicWrite(serveFile, JSON.stringify({ ...record, state: 'active' }));
@@ -980,17 +1031,17 @@ const MANAGER_FILE = import.meta.filename;
 /** Copy this manager and a launcher into place, so a partial install can be inspected/retried. */
 function installManager(): void {
   const manager = path.join(paths.ROOT, 'manager');
-  atomicWrite(path.join(manager, 'pids.ts'), fs.readFileSync(MANAGER_FILE, 'utf8'), 0o755);
+  atomicWrite(path.join(manager, 'boxenctl.ts'), fs.readFileSync(MANAGER_FILE, 'utf8'), 0o755);
   atomicWrite(path.join(manager, 'package.json'), '{ "type": "module" }\n', 0o644);
   fs.rmSync(path.join(manager, 'pids.py'), { force: true }); // Left by the earlier Python manager.
   atomicWrite(paths.LAUNCHER, `#!/bin/sh\nexec ${paths.ROOT}/node/bin/node --disable-warning=ExperimentalWarning ` +
-    `${manager}/pids.ts "$@"\n`, 0o755);
+    `${manager}/boxenctl.ts "$@"\n`, 0o755);
 }
 
 /** A retained manager must never install a different release's source with its own old pins. */
 function validateSourceRelease(source: string): void {
-  const pkg = pids.readJson(path.join(source, 'package.json'), {}) as Obj;
-  const runtime = pids.readJson(path.join(source, 'ops/runtime.json'), {}) as Obj;
+  const pkg = boxenctl.readJson(path.join(source, 'package.json'), {}) as Obj;
+  const runtime = boxenctl.readJson(path.join(source, 'ops/runtime.json'), {}) as Obj;
   const matches = pkg.version === APPLICATION_VERSION &&
     runtime.celld?.version === CELLD_VERSION && runtime.celld?.url === CELLD_URL && runtime.celld?.sha256 === CELLD_SHA &&
     runtime.node?.version === NODE_VERSION.slice(1) && runtime.node?.url === NODE_URL && runtime.node?.sha256 === NODE_SHA &&
@@ -1000,13 +1051,15 @@ function validateSourceRelease(source: string): void {
 }
 
 async function setup(args: Args): Promise<Obj> {
-  const host = pids.hostInfo();
-  const previousConfig = pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj;
-  const planned = await pids.settings(args, previousConfig);
-  const source = realpathOrResolve(args.source ?? previousConfig.source ?? path.join(path.dirname(MANAGER_FILE), '..'));
-  pids.validateSourceRelease(source);
-  const revision = pids.sourceRevision(source);
+  const host = boxenctl.hostInfo();
+  const migrating = legacyInstall();
+  const previousConfig = boxenctl.readJson(path.join(migrating ? legacy.CONFIG : paths.CONFIG, 'config.json'), {}) as Obj;
+  const planned = await boxenctl.settings(args, previousConfig);
+  let source = realpathOrResolve(args.source ?? previousConfig.source ?? path.join(path.dirname(MANAGER_FILE), '..'));
+  boxenctl.validateSourceRelease(source);
+  const revision = boxenctl.sourceRevision(source);
   const plan = installPlan(planned, host, revision);
+  if (migrating) plan.steps.unshift(`Move the pi-durable-sessions installation (${legacy.ROOT}, ${legacy.CONFIG}, ${legacy.DATA}) to the boxen names`);
   if (args.dryRun) {
     // Inspect/dry-run are useful on unsupported development hosts too; apply is strict.
     try {
@@ -1020,57 +1073,61 @@ async function setup(args: Args): Promise<Obj> {
     return plan;
   }
   validateHost(host);
-  pids.requireRoot();
+  boxenctl.requireRoot();
   process.stderr.write(JSON.stringify(plan, null, 2) + '\n');
-  await pids.consent(args);
+  await boxenctl.consent(args);
+  if (migrating) {
+    boxenctl.migrateLegacy();
+    source = renamedSource(source);
+  }
   return withInstallLock(async () => {
     // Re-read after acquiring lock; prevent parallel first-install credential/config replacement.
     // Reuse the answered access mode so an interactive run is not prompted twice.
-    const previous = pids.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj;
-    const config = await pids.settings({ ...args, access: args.access ?? planned.access }, previous);
+    const previous = boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj;
+    const config = await boxenctl.settings({ ...args, access: args.access ?? planned.access }, previous);
     const configFile = path.join(paths.CONFIG, 'config.json');
-    await pids.preflightPorts(config);
-    pids.preflightExposure(config);
-    pids.preflightSandboxDns();
+    await boxenctl.preflightPorts(config);
+    boxenctl.preflightExposure(config);
+    boxenctl.preflightSandboxDns();
     for (const service of [SERVICE, STORAGE]) {
       const unit = path.join(paths.UNITS, `${service}.service`);
       if (fs.existsSync(unit) && !fs.existsSync(configFile)) {
         throw new Failure(`Unmanaged unit ${unit} exists; refusing to replace it.`, 2);
       }
     }
-    if (pids.which('docker')) {
-      const container = pids.run(['docker', 'inspect', STORAGE], { capture: true, check: false, timeout: 15 });
+    if (boxenctl.which('docker')) {
+      const container = boxenctl.run(['docker', 'inspect', STORAGE], { capture: true, check: false, timeout: 15 });
       if (container.returncode === 0 && !fs.existsSync(configFile)) {
         throw new Failure(`Unmanaged Docker container ${STORAGE} exists; refusing to reuse it.`, 2);
       }
     }
-    pids.installPackages(host);
+    boxenctl.installPackages(host);
     if (config.access === 'tailscale') {
-      pids.ensureTailscale();
+      boxenctl.ensureTailscale();
       // Installing/starting Tailscale can load old persisted routes.
-      pids.preflightExposure(config);
+      boxenctl.preflightExposure(config);
     }
-    const account = pids.serviceAccount();
-    pids.toolchain();
-    const keys = pids.credentials();
-    pids.installManager();
-    const runtimeState = pids.readJson(configFile, {}) as Obj;
+    const account = boxenctl.serviceAccount();
+    boxenctl.toolchain();
+    const keys = boxenctl.credentials();
+    boxenctl.installManager();
+    const runtimeState = boxenctl.readJson(configFile, {}) as Obj;
     const saved: Obj = { ...config, source, revision,
-      application_version: (pids.readJson(path.join(source, 'package.json'), {}) as Obj).version ?? null,
+      application_version: (boxenctl.readJson(path.join(source, 'package.json'), {}) as Obj).version ?? null,
       desired_runtime: { celld: CELLD_VERSION, node: NODE_VERSION.slice(1) },
       state: 'installing', pending_restarts: runtimeState.pending_restarts ?? previous.pending_restarts ?? [] };
     saveConfig(saved);
-    const release = pids.prepareSource(source, revision, account);
+    const release = boxenctl.prepareSource(source, revision, account);
     // The bootstrap checkout is temporary. Recovery always uses the retained release copy.
     saved.source = release;
     saveConfig(saved);
-    pids.installUnits(config, account, saved);
-    pids.run(['docker', 'pull', RUSTFS_IMAGE], { timeout: 900 });
-    pids.run(['systemctl', 'daemon-reload']);
-    pids.run(['systemctl', 'enable', STORAGE, SERVICE]);
-    pids.run(['systemctl', saved.pending_restarts.includes(STORAGE) ? 'restart' : 'start', STORAGE]);
-    await pids.waitHttp(`http://127.0.0.1:${config.storage_port}/health`);
-    await pids.ensureBucket(config, keys);
+    boxenctl.installUnits(config, account, saved);
+    boxenctl.run(['docker', 'pull', RUSTFS_IMAGE], { timeout: 900 });
+    boxenctl.run(['systemctl', 'daemon-reload']);
+    boxenctl.run(['systemctl', 'enable', STORAGE, SERVICE]);
+    boxenctl.run(['systemctl', saved.pending_restarts.includes(STORAGE) ? 'restart' : 'start', STORAGE]);
+    await boxenctl.waitHttp(`http://127.0.0.1:${config.storage_port}/health`);
+    await boxenctl.ensureBucket(config, keys);
     restartCompleted(STORAGE, saved);
     const environment = {
       PATH: `${paths.ROOT}/bin:${paths.ROOT}/node/bin:${release}/apps/worker/node_modules/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
@@ -1078,22 +1135,22 @@ async function setup(args: Args): Promise<Obj> {
       AWS_REGION: 'us-east-1', DOCKER_HOST: 'unix:///var/run/docker.sock', CELLD_CONTAINER_PLATFORM: 'linux/amd64',
       DOCKER_BUILDKIT: '0',
     };
-    pids.run(['runuser', '-u', USER, '--', path.join(paths.ROOT, 'bin/celld'), 'deploy', path.join(release, 'apps/worker/wrangler.install.jsonc'),
+    boxenctl.run(['runuser', '-u', USER, '--', path.join(paths.ROOT, 'bin/celld'), 'deploy', path.join(release, 'apps/worker/wrangler.install.jsonc'),
       '--bucket', `s3://${BUCKET}`, '--endpoint', `http://127.0.0.1:${config.storage_port}`, '--json'],
     { cwd: release, env: environment, timeout: 3600 });
-    pids.run(['systemctl', saved.pending_restarts.includes(SERVICE) ? 'restart' : 'start', SERVICE]);
+    boxenctl.run(['systemctl', saved.pending_restarts.includes(SERVICE) ? 'restart' : 'start', SERVICE]);
     let url = `http://127.0.0.1:${config.port}`;
-    await pids.waitHttp(url + '/', '<html');
-    await pids.waitHttp(url + '/api/sessions', '[');
+    await boxenctl.waitHttp(url + '/', '<html');
+    await boxenctl.waitHttp(url + '/api/sessions', '[');
     restartCompleted(SERVICE, saved);
     Object.assign(saved, { state: 'ready-local', url });
     saveConfig(saved);
-    if (pids.sandboxDnsProbe() === false) {
+    if (boxenctl.sandboxDnsProbe() === false) {
       throw new Failure('Application installed locally, but a sandbox on the celld network cannot resolve github.com.', 3,
         'Sessions cannot clone repositories until Docker gives containers a public resolver. ' +
-        `Check "dns" in ${paths.DOCKER_DAEMON_JSON}, run sudo systemctl restart docker, then sudo pids doctor --json.`);
+        `Check "dns" in ${paths.DOCKER_DAEMON_JSON}, run sudo systemctl restart docker, then sudo boxenctl doctor --json.`);
     }
-    if (config.access === 'tailscale') url = pids.configureTailscale(config);
+    if (config.access === 'tailscale') url = boxenctl.configureTailscale(config);
     Object.assign(saved, { state: 'ready', url });
     saveConfig(saved);
     return { ok: true, url, revision, warnings: WARNINGS,
@@ -1104,15 +1161,15 @@ async function setup(args: Args): Promise<Obj> {
 const DOMAIN = /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/;
 
 function inspect(args: Args): Obj {
-  const status = pids.tailscaleStatus();
+  const status = boxenctl.tailscaleStatus();
   // Current clients may also include a top-level alias. Use the node's own
   // addresses, falling back for older status schemas.
   const ips: string[] = status.Self?.TailscaleIPs ?? status.TailscaleIPs ?? [];
   const result: Obj = {
-    host: pids.hostInfo(), installation: pids.readJson(path.join(paths.CONFIG, 'config.json'), {}),
+    host: boxenctl.hostInfo(), installation: boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), {}),
     runtime_matches_manager: {
-      celld: pids.runtimeMatches(path.join(paths.ROOT, 'bin/celld'), CELLD_VERSION),
-      node: pids.runtimeMatches(path.join(paths.ROOT, 'node/bin/node'), NODE_VERSION.slice(1)),
+      celld: boxenctl.runtimeMatches(path.join(paths.ROOT, 'bin/celld'), CELLD_VERSION),
+      node: boxenctl.runtimeMatches(path.join(paths.ROOT, 'node/bin/node'), NODE_VERSION.slice(1)),
     },
     tailscale: { state: status.BackendState ?? null, hostname: selfHostname(status), ips }, warnings: WARNINGS,
   };
@@ -1129,30 +1186,30 @@ function inspect(args: Args): Obj {
 }
 
 async function doctor(): Promise<Obj> {
-  const config = pids.readJson(path.join(paths.CONFIG, 'config.json'), null) as Obj | null;
-  if (isEmpty(config)) throw new Failure('Not installed.', 3, 'Run install.sh or pids setup from a checkout.');
+  const config = boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), null) as Obj | null;
+  if (isEmpty(config)) throw new Failure('Not installed.', 3, 'Run install.sh or boxenctl setup from a checkout.');
   const installed = config as Obj;
   const url = `http://127.0.0.1:${installed.port}`;
   const checks: Record<string, boolean> = {
-    [SERVICE]: pids.isActive(SERVICE), [STORAGE]: pids.isActive(STORAGE),
-    ui: await pids.httpOk(url + '/', '<html'), api: await pids.httpOk(url + '/api/sessions', '['),
-    storage: await pids.httpOk(`http://127.0.0.1:${installed.storage_port}/health`),
+    [SERVICE]: boxenctl.isActive(SERVICE), [STORAGE]: boxenctl.isActive(STORAGE),
+    ui: await boxenctl.httpOk(url + '/', '<html'), api: await boxenctl.httpOk(url + '/api/sessions', '['),
+    storage: await boxenctl.httpOk(`http://127.0.0.1:${installed.storage_port}/health`),
   };
   let probe: boolean | null;
   try {
-    probe = pids.sandboxDnsProbe();
+    probe = boxenctl.sandboxDnsProbe();
   } catch (error) {
     if (!(error instanceof Failure)) throw error;
     probe = false;
   }
   if (probe !== null) checks.sandbox_dns = probe;
   if (installed.access === 'tailscale') {
-    const status = pids.tailscaleStatus();
+    const status = boxenctl.tailscaleStatus();
     checks.tailscale = status.BackendState === 'Running';
     try {
       const hostname = selfHostname(status);
       checks.private_https_route = checks.tailscale && recordedServe(hostname, installed.port) &&
-        serveOwned(pids.serveConfig(), hostname, installed.port);
+        serveOwned(boxenctl.serveConfig(), hostname, installed.port);
     } catch (error) {
       if (!(error instanceof Failure)) throw error;
       checks.private_https_route = false;
@@ -1163,20 +1220,20 @@ async function doctor(): Promise<Obj> {
 }
 
 async function uninstall(args: Args): Promise<Obj> {
-  pids.requireRoot();
-  await pids.consent(args);
+  boxenctl.requireRoot();
+  await boxenctl.consent(args);
   const preserved = [paths.DATA, paths.CONFIG, paths.ROOT];
   return withInstallLock(() => {
-    const config = pids.readJson(path.join(paths.CONFIG, 'config.json'), null) as Obj | null;
+    const config = boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), null) as Obj | null;
     if (config === null || isEmpty(config)) throw new Failure('No managed installation found; nothing removed.', 2);
     if (config.state === 'uninstalled-data-preserved') {
       return { ok: true, preserved, note: 'Already uninstalled. Data and credentials remain preserved.' };
     }
-    if (config.access === 'tailscale' && pids.which('tailscale')) {
-      const hostname = selfHostname(pids.tailscaleStatus());
-      const current = pids.serveConfig();
+    if (config.access === 'tailscale' && boxenctl.which('tailscale')) {
+      const hostname = selfHostname(boxenctl.tailscaleStatus());
+      const current = boxenctl.serveConfig();
       if (recordedServe(hostname, config.port) && serveOwned(current, hostname, config.port)) {
-        pids.run(['tailscale', 'serve', '--yes', '--https=443', 'off'], { timeout: 30 });
+        boxenctl.run(['tailscale', 'serve', '--yes', '--https=443', 'off'], { timeout: 30 });
       } else if ('443' in (current.TCP ?? {})) {
         throw new Failure("Serve configuration has changed; refusing to remove someone else's route.", 3);
       }
@@ -1184,17 +1241,17 @@ async function uninstall(args: Args): Promise<Obj> {
     for (const service of [SERVICE, STORAGE]) {
       const unit = path.join(paths.UNITS, `${service}.service`);
       if (fs.existsSync(unit)) {
-        pids.run(['systemctl', 'disable', '--now', service]);
+        boxenctl.run(['systemctl', 'disable', '--now', service]);
         fs.rmSync(unit);
       } else {
-        const state = pids.run(['systemctl', 'show', '--property=LoadState', '--value', service], { capture: true, check: false });
+        const state = boxenctl.run(['systemctl', 'show', '--property=LoadState', '--value', service], { capture: true, check: false });
         if (state.stdout.trim() !== 'not-found') {
           throw new Failure(`Cannot establish that missing managed unit ${service} is absent; no further removal performed.`, 3);
         }
       }
     }
     fs.rmSync(path.join(paths.CONFIG, 'serve.json'), { force: true });
-    pids.run(['systemctl', 'daemon-reload']);
+    boxenctl.run(['systemctl', 'daemon-reload']);
     config.state = 'uninstalled-data-preserved';
     saveConfig(config);
     return { ok: true, preserved,
@@ -1203,17 +1260,17 @@ async function uninstall(args: Args): Promise<Obj> {
 }
 
 async function startStop(command: 'start' | 'stop'): Promise<Obj> {
-  pids.requireRoot();
+  boxenctl.requireRoot();
   return withInstallLock(() => {
-    if (isEmpty(pids.readJson(path.join(paths.CONFIG, 'config.json'), null))) throw new Failure('No managed installation found.', 2);
-    for (const service of command === 'start' ? [STORAGE, SERVICE] : [SERVICE, STORAGE]) pids.run(['systemctl', command, service]);
+    if (isEmpty(boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), null))) throw new Failure('No managed installation found.', 2);
+    for (const service of command === 'start' ? [STORAGE, SERVICE] : [SERVICE, STORAGE]) boxenctl.run(['systemctl', command, service]);
     return { ok: true, action: command, warnings: command === 'stop' ? WARNINGS : [] };
   });
 }
 
 function logs(lines: number): Obj {
   if (!Number.isInteger(lines) || lines < 1 || lines > 1000) throw new Failure('--lines must be between 1 and 1000.', 2);
-  const result = pids.run(['journalctl', '-u', SERVICE, '-u', STORAGE, '--no-pager', '-n', String(lines), '-o', 'cat'], { capture: true });
+  const result = boxenctl.run(['journalctl', '-u', SERVICE, '-u', STORAGE, '--no-pager', '-n', String(lines), '-o', 'cat'], { capture: true });
   return { lines: result.stdout.split('\n').filter((line, index, all) => line !== '' || index < all.length - 1) };
 }
 
@@ -1230,7 +1287,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   inspect: { help: 'Read host, installation and Tailscale facts without mutations', options: {
     domain: { type: 'string', metavar: 'HOST', help: 'Report DNS records for a custom domain; does not configure DNS/TLS' } } },
   setup: { help: 'Install, repair or deploy an explicit source checkout', options: {
-    source: { type: 'string', metavar: 'DIR', help: 'Path to pi-durable-sessions (defaults to this checkout or installed release)' },
+    source: { type: 'string', metavar: 'DIR', help: 'Path to boxen (defaults to this checkout or installed release)' },
     config: { type: 'string', metavar: 'FILE', help: 'JSON file: access, port, storage_port' },
     access: { type: 'string', choices: ['local', 'tailscale'], help: 'local (127.0.0.1 only) or tailscale (private tailnet HTTPS)' },
     port: { type: 'string', metavar: 'PORT', help: 'Application port on 127.0.0.1 (default 8093)' },
@@ -1248,20 +1305,20 @@ const COMMON: Record<string, OptionSpec> = {
   json: { type: 'boolean', help: 'Stable JSON stdout (default when stdout is not a TTY)' },
   help: { type: 'boolean', help: 'Show this help' },
 };
-const USAGE_ACTION = 'Run pids --help for arguments and examples.';
+const USAGE_ACTION = 'Run boxenctl --help for arguments and examples.';
 
 function helpText(command?: string): string {
   if (!command) {
     const names = Object.entries(COMMANDS).map(([name, spec]) => `  ${name.padEnd(10)} ${spec.help}`).join('\n');
-    return `usage: pids <command> [options]\n\nPrivate Linux installer/manager for pi-durable-sessions.\n\ncommands:\n${names}\n\n` +
-      'Run pids <command> --help for its options.\n' +
-      'Examples: pids inspect --json; pids setup --access tailscale --dry-run --json; sudo pids doctor --json\n';
+    return `usage: boxenctl <command> [options]\n\nPrivate Linux installer/manager for boxen.\n\ncommands:\n${names}\n\n` +
+      'Run boxenctl <command> --help for its options.\n' +
+      'Examples: boxenctl inspect --json; boxenctl setup --access tailscale --dry-run --json; sudo boxenctl doctor --json\n';
   }
   const options = Object.entries({ ...COMMANDS[command].options, ...COMMON }).map(([name, spec]) => {
     const flag = `--${name}${spec.type === 'string' ? ` ${spec.choices ? `{${spec.choices.join(',')}}` : spec.metavar ?? 'VALUE'}` : ''}`;
     return `  ${flag.padEnd(28)} ${spec.help}`;
   }).join('\n');
-  return `usage: pids ${command} [options]\n\n${COMMANDS[command].help}\n\noptions:\n${options}\n`;
+  return `usage: boxenctl ${command} [options]\n\n${COMMANDS[command].help}\n\noptions:\n${options}\n`;
 }
 
 function parseCli(argv: string[]): Args {
@@ -1314,17 +1371,17 @@ export async function main(argv: string[] = process.argv.slice(2),
   write: (text: string) => void = (text) => process.stdout.write(text)): Promise<number> {
   const asJson = argv.includes('--json') || !process.stdout.isTTY;
   try {
-    const args = pids.parseCli(argv);
+    const args = boxenctl.parseCli(argv);
     if (args.help) {
       write(helpText(args.command || undefined));
       return 0;
     }
     let result: Obj;
     switch (args.command) {
-      case 'setup': result = await pids.setup(args); break;
-      case 'inspect': result = pids.inspect(args); break;
-      case 'doctor': result = await pids.doctor(); break;
-      case 'uninstall': result = await pids.uninstall(args); break;
+      case 'setup': result = await boxenctl.setup(args); break;
+      case 'inspect': result = boxenctl.inspect(args); break;
+      case 'doctor': result = await boxenctl.doctor(); break;
+      case 'uninstall': result = await boxenctl.uninstall(args); break;
       case 'start': case 'stop': result = await startStop(args.command); break;
       default: result = logs(args.lines);
     }
@@ -1338,13 +1395,13 @@ export async function main(argv: string[] = process.argv.slice(2),
   }
 }
 
-export const pids = {
+export const boxenctl = {
   run, which, readJson, atomicWrite, hostInfo, validateHost, settings, prompt, sourceFiles, sourceRevision, installPlan,
   validateSourceRelease, requireRoot, consent, withInstallLock, portAvailable, isActive, preflightPorts, containerResolvers, sandboxBlocked,
   preflightSandboxDns, sandboxDnsProbe, installPackages, download, runtimeDirectories, runtimeMatches, toolchain, serviceAccount,
   credentials, units, installUnits, restartCompleted, prepareSource, s3Request, ensureBucket, httpOk, waitHttp,
   tailscaleStatus, serveConfig, serveOwned, recordedServe, preflightExposure, ensureTailscale, configureTailscale,
-  installManager, setup, inspect, doctor, uninstall, parseCli, helpText,
+  installManager, migrateLegacy, setup, inspect, doctor, uninstall, parseCli, helpText,
   now: (): number => performance.now() / 1000,
   sleep: (seconds: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, seconds * 1000)),
 };

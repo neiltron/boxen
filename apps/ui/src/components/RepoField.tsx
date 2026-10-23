@@ -6,7 +6,7 @@ import { ago, cn } from "@/lib/utils";
 // Anything that already reads as a clone URL is not a search.
 const URL_LIKE = /^(https?:|ssh:|git@)/;
 
-// Copied from boxen. The repositories the fleet's GitHub token can see,
+// Copied from boxen-legacy. The repositories the fleet's GitHub token can see,
 // newest push first, narrowed by what has been typed. Fetched once per
 // mount, i.e. each time the form opens. Anything pasted is used as typed.
 function useRepoSearch(value: string) {

@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { LATEST_PROTOCOL_VERSION, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { DEFAULT_URL, type Transport } from "@pi-durable-sessions/client";
+import { DEFAULT_URL, type Transport } from "@boxen/client";
 import { createServer, type Deps } from "./server.ts";
 
 const meta = { id: "s1", name: "untitled", cwd: "/workspace", createdAt: 1 };
@@ -254,7 +254,7 @@ const text = (r: CallToolResult, i = 0) => (r.content[i] as { text: string }).te
   for (const shutdown of ["stdin end", "SIGTERM", "SIGINT"] as const) {
     backend.length = 0;
     const child = spawn(process.execPath, [new URL("server.ts", import.meta.url).pathname], {
-      env: { ...process.env, PDS_URL: `http://127.0.0.1:${port}` }, stdio: ["pipe", "pipe", "ignore"],
+      env: { ...process.env, BOXEN_URL: `http://127.0.0.1:${port}` }, stdio: ["pipe", "pipe", "ignore"],
     });
     const exited = once(child, "exit");
     const rpc = (m: object) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);

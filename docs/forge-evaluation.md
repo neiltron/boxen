@@ -1,6 +1,6 @@
 # Generating the CLI with forge: an evaluation
 
-Issue #77 asked whether `pds` (`apps/cli/pds.ts`) should be generated from
+Issue #77 asked whether `boxen` (`apps/cli/boxen.ts`) should be generated from
 [`openapi.json`](../packages/client/openapi.json) with
 [cloudflare/forge](https://github.com/cloudflare/forge) instead of written by
 hand. Checked on 2026-10-04 by running forge against the spec and driving the
@@ -11,7 +11,7 @@ one that exists is the `cf` CLI's, and it emits commands bound to Cloudflare's
 runtime. It took three workarounds to run it on this spec, and the output then
 mishandled 5 of the 20 operations. Reconsider only if both of these happen:
 forge publishes a CLI generator that works on any spec without Cloudflare's
-runtime, and `pds` needs to expose most of the 17 REST operations, so that
+runtime, and `boxen` needs to expose most of the 17 REST operations, so that
 writing one table entry per command costs more than running a generator.
 
 ## What forge is, as of 2026-10-04
@@ -124,7 +124,7 @@ CLI, whose IPC socket path then exceeds the Unix limit.
 
 ```sh
 W=$PWD
-cp <this repo>/pi-durable-sessions/packages/client/openapi.json .
+cp <this repo>/packages/client/openapi.json .
 git clone https://github.com/cloudflare/cf.git
 git -C cf checkout 1f0303ea605b458c800f0a9b0040f674a8096c3d
 cd cf
@@ -169,7 +169,7 @@ gen sessions list; gen sessions create --name x; gen artifacts get a1; gen artif
 gen artifacts list --session s1        # the stand-in logs q=false
 gen sessions socket s1; gen oauth login --provider anthropic; gen sessions create --nmae typo
 BASE=http://127.0.0.1:18094 gen sessions list; BASE=http://127.0.0.1:18099 gen sessions list
-# pds, for the other column: node <this repo>/pi-durable-sessions/apps/cli/pds.ts list --url http://127.0.0.1:18093
+# boxen, for the other column: node <this repo>/apps/cli/boxen.ts list --url http://127.0.0.1:18093
 ```
 
 `overlay.jq`, which gives every operation a group and a method name, and the
@@ -237,9 +237,9 @@ http.createServer((req, res) => {
 }).listen(Number(process.env.PORT ?? 18093), "127.0.0.1");
 ```
 
-## Generated commands compared with `pds`
+## Generated commands compared with `boxen`
 
-| | Generated (forge + `cf`'s generator) | `pds` (hand-written) |
+| | Generated (forge + `cf`'s generator) | `boxen` (hand-written) |
 |---|---|---|
 | Coverage | One command per operation, 20/20. `sessions list`, `sessions create`, `artifacts get` and the 500 error worked against the stand-ins. | 3 commands: `list`, `create` (2 of the 17 REST operations) and `prompt` |
 | WebSocket upgrades (3) | Generated as plain GETs. `sessions socket s1` got an HTTP 404 from the stand-in, which does not serve the socket paths; per the protocol doc, the worker answers a plain GET with 426. They are unusable as commands. | `prompt` runs a turn over the Session socket. The other two sockets are not exposed. |
@@ -247,14 +247,14 @@ http.createServer((req, res) => {
 | Spec/flag collisions | `artifacts list` sends `q=false` on every call, so every listing becomes a search: the spec's `q` parameter collides with `cf`'s global `-q/--quiet`. `--q Plan` fails with `Unknown command: Plan`. | None; the flags are chosen by hand |
 | Text output | None; always pretty-printed JSON, piped or not | One line per Session (`id⇥status⇥name`) or the new id |
 | JSON output | The default (pretty-printed) | `--json`: one compact JSON value |
-| API error | Boxed `APIError / InternalServerError / Status code: 500 / Body: {"error": …}` on stderr | `pds: <url>: Directory unavailable` |
-| Unreachable server | `fetch failed / Envelope Error`, with no host or cause | `pds: <url>: fetch failed (connect ECONNREFUSED …)` |
+| API error | Boxed `APIError / InternalServerError / Status code: 500 / Body: {"error": …}` on stderr | `boxen: <url>: Directory unavailable` |
+| Unreachable server | `fetch failed / Envelope Error`, with no host or cause | `boxen: <url>: fetch failed (connect ECONNREFUSED …)` |
 | Exit codes | 0 OK. 1 for API errors *and* for usage errors (an unknown flag prints the help, then exits 1). 0 for the failed login above. | 0 OK, 1 failure, 2 usage |
 | Help | Per-command text taken from the spec's summaries and descriptions (good). But every `--help` opens with `cf`'s "AGENT COMMAND DISCOVERY" banner, lists `cf`'s global flags (`--zone`, `--profile`, `--local`, `--persist-to`), and the root help includes `cf`'s own commands (`auth`, `build`, `deploy`, `dev`, `init`, `migrate`, …). | One screen listing the groups and three options |
 | `--dry-run` | Prints `https://api.cloudflare.com/client/v4/api/sessions`, which is hard-coded and wrong for this API | None |
 | Auth | Refuses to run without `CLOUDFLARE_API_TOKEN` or `cf auth login`, then sends that token as a bearer to our system | None yet; `system()` in the client is where auth will attach |
-| What it needs | Docker and a 1.32 GB image. The `cf` workspace: 408 packages, with build scripts allowed for `esbuild` and `workerd`, on pnpm 12.6. The generated code imports `cf`'s `src/lib` (auth, telemetry, output, progress: about 9,600 lines) and yargs. | `node:util` and `@pi-durable-sessions/client` |
-| Keeping it current | Re-run the pipeline (about a minute once the image is cached). Every new operation needs overlay names. The three workarounds above have to be carried against `cf` `main`, which changes daily and is not a published package. | `pnpm check` fails when `openapi.ts` lags the spec (`openapi-typescript --check`), and `tsc` then flags any `pds` call the change breaks. Exposing a new operation is one entry in the `groups` table (`list` and `create` are about 10 lines each). |
+| What it needs | Docker and a 1.32 GB image. The `cf` workspace: 408 packages, with build scripts allowed for `esbuild` and `workerd`, on pnpm 12.6. The generated code imports `cf`'s `src/lib` (auth, telemetry, output, progress: about 9,600 lines) and yargs. | `node:util` and `@boxen/client` |
+| Keeping it current | Re-run the pipeline (about a minute once the image is cached). Every new operation needs overlay names. The three workarounds above have to be carried against `cf` `main`, which changes daily and is not a published package. | `pnpm check` fails when `openapi.ts` lags the spec (`openapi-typescript --check`), and `tsc` then flags any `boxen` call the change breaks. Exposing a new operation is one entry in the `groups` table (`list` and `create` are about 10 lines each). |
 
 ## Where `prompt` and the #68 commands would go
 
@@ -269,19 +269,19 @@ hand-written commands in one binary, in one of two ways:
   registers the `_generated/` tree next to a hand-written registry
   (`hand-written.ts`), whose entries can add roots or subgroups or override a
   generated leaf. `prompt` and a `system` group would be hand-written yargs
-  modules there. The cost is that `pds` becomes a fork of `cf`'s CLI, with its
+  modules there. The cost is that `boxen` becomes a fork of `cf`'s CLI, with its
   auth, telemetry, global flags and help banner.
 - **Write our own transformer on forge's core.** It would read
-  `forge.commands` and emit a generated file of entries that `pds.ts` merges
+  `forge.commands` and emit a generated file of entries that `boxen.ts` merges
   into its `groups` table as an extra group (say "API"), next to the
   hand-written `Sessions` and the future `System`. That works with today's
   structure. But the core then contributes only the command tree, which is 20
-  operations that `pds` can read from `openapi.json` directly. The emitter,
+  operations that `boxen` can read from `openapi.json` directly. The emitter,
   output, errors and exit codes would all be ours to write.
 
 Either way, generated names must not take the hand-written ones. The run hit
 this twice: our `auth` group collided with `cf`'s `auth` command, and the `q`
-parameter with `cf`'s `-q` flag. With the second option, `pds` would need a
+parameter with `cf`'s `-q` flag. With the second option, `boxen` would need a
 check that fails on a duplicate command name or flag.
 
 ## Kept, and not verified

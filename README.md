@@ -1,8 +1,8 @@
-# pi-durable-sessions — pi-sessions with the agent inside the cell
+# boxen — pi-sessions with the agent inside the cell
 
 [Release process and pinned stack](docs/releases.md) · [Changelog](CHANGELOG.md)
 
-Same app as `../pi-sessions`: shared pi agent sessions, many browsers per
+Same app as pi-sessions (in neiltron/celld-test): shared pi agent sessions, many browsers per
 session, live streaming text, thinking, and tool calls. The difference is
 where the agent runs. pi-sessions spawned `pi --mode rpc` on the host behind
 `pi-host`; here a [pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable)
@@ -81,11 +81,11 @@ Programs live in `apps/`, libraries they share in `packages/`.
 
 | Path | Package | What |
 |---|---|---|
-| `apps/worker/` | `@pi-durable-sessions/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
-| `apps/ui/` | `@pi-durable-sessions/ui` | the web app |
-| `apps/cli/` | `@pi-durable-sessions/cli` | `pds`, the command line: list, create and prompt Sessions |
-| `apps/mcp/` | `@pi-durable-sessions/mcp` | an MCP server, so another agent can list, create and prompt Sessions and read artifacts |
-| `packages/client/` | `@pi-durable-sessions/client` | the API contract (`openapi.json`), the Session WebSocket protocol, and typed clients for both, for the browser and Node |
+| `apps/worker/` | `@boxen/worker` | the cells, `wrangler.jsonc`, the sandbox `Dockerfile`, and their checks |
+| `apps/ui/` | `@boxen/ui` | the web app |
+| `apps/cli/` | `@boxen/cli` | `boxen`, the command line: list, create and prompt Sessions |
+| `apps/mcp/` | `@boxen/mcp` | an MCP server, so another agent can list, create and prompt Sessions and read artifacts |
+| `packages/client/` | `@boxen/client` | the API contract (`openapi.json`), the Session WebSocket protocol, and typed clients for both, for the browser and Node |
 | `ops/`, `install.sh` | (not a package) | the Linux installer; standalone, imports nothing from the workspace |
 
 ## Install on a Linux PC or server
@@ -121,32 +121,32 @@ in about 15 seconds without a restart, so sandboxes keep their disks.
 
 ## Drive it from the command line
 
-`pds` (`apps/cli/`) is the system's one command line. From the workspace, run
-`pnpm pds <command>` or `node apps/cli/pds.ts <command>`:
+`boxen` (`apps/cli/`) is the system's one command line. From the workspace, run
+`pnpm boxen <command>` or `node apps/cli/boxen.ts <command>`:
 
 ```sh
-pnpm pds list                                   # id, status, name per line
-id=$(pnpm pds create --repo https://github.com/you/repo.git)   # prints the new id
-pnpm pds prompt "$id" "List the files in /workspace"           # streams the reply
-pnpm pds prompt "$id" "And now?" --json         # {"status":"done","text":"…"}
-pnpm pds help
+pnpm boxen list                                   # id, status, name per line
+id=$(pnpm boxen create --repo https://github.com/you/repo.git)   # prints the new id
+pnpm boxen prompt "$id" "List the files in /workspace"           # streams the reply
+pnpm boxen prompt "$id" "And now?" --json         # {"status":"done","text":"…"}
+pnpm boxen help
 ```
 
-It talks to `--url`, else `$PDS_URL`, else `http://127.0.0.1:8093` (a tailnet
+It talks to `--url`, else `$BOXEN_URL`, else `http://127.0.0.1:8093` (a tailnet
 URL works the same). `--json` makes any command print one JSON value on
 stdout: the API's Session list or new Session, or the turn's result below
 (nothing while the reply streams). Diagnostics go to stderr. Exit codes: 0 on
 success (for `prompt`, only a `done` turn), 1 on failure (an API error, or a
 turn that ended any other way), 2 for bad usage. Ctrl-C aborts the turn; with no connection in 15 s it gives up. A
 prompt spends model credits, and the Session stays behind. There is no auth
-yet; `system()` in `packages/client/src/index.ts`, which `pds` and the MCP
+yet; `system()` in `packages/client/src/index.ts`, which `boxen` and the MCP
 server share, is where a credential will attach.
 
 The operations commands of #68 (start, stop, deploy, status, logs) will join
 the same binary as a second group in its command table; see the comment above
-`groups` in `apps/cli/pds.ts`.
+`groups` in `apps/cli/boxen.ts`.
 
-`pds` is written by hand on purpose: [docs/forge-evaluation.md](docs/forge-evaluation.md)
+`boxen` is written by hand on purpose: [docs/forge-evaluation.md](docs/forge-evaluation.md)
 ran Cloudflare's forge generator against `openapi.json` (2026-10-04) and
 recommends against generating it for now, with the condition that would
 change that.
@@ -154,7 +154,7 @@ change that.
 ## Drive it from another agent (MCP)
 
 `apps/mcp/server.ts` is an MCP server on stdio, so an agent such as Claude
-Code can use Sessions as tools. Like `pds`, it talks to `$PDS_URL`, else
+Code can use Sessions as tools. Like `boxen`, it talks to `$BOXEN_URL`, else
 `http://127.0.0.1:8093`, through the shared client, with no auth yet.
 
 | Tool | Arguments | Returns |
@@ -180,19 +180,19 @@ Register it with Claude Code (use the absolute path of your checkout; leave
 out `-e` for the default address):
 
 ```sh
-claude mcp add pds -e PDS_URL=http://127.0.0.1:8093 -- node /path/to/pi-durable-sessions/apps/mcp/server.ts
+claude mcp add boxen -e BOXEN_URL=http://127.0.0.1:8093 -- node /path/to/boxen/apps/mcp/server.ts
 ```
 
 or, for everyone working in a project, in its `.mcp.json` (Claude Code fills
-in `${PDS_URL:-…}` from the environment it starts in):
+in `${BOXEN_URL:-…}` from the environment it starts in):
 
 ```json
 {
   "mcpServers": {
-    "pds": {
+    "boxen": {
       "command": "node",
-      "args": ["/path/to/pi-durable-sessions/apps/mcp/server.ts"],
-      "env": { "PDS_URL": "${PDS_URL:-http://127.0.0.1:8093}" },
+      "args": ["/path/to/boxen/apps/mcp/server.ts"],
+      "env": { "BOXEN_URL": "${BOXEN_URL:-http://127.0.0.1:8093}" },
       "timeout": 1800000
     }
   }
@@ -208,7 +208,7 @@ drives every tool through the MCP protocol with no backend.
 
 ## Run a turn from Node
 
-The shared client drives a Session with no browser; `apps/cli/pds.ts`
+The shared client drives a Session with no browser; `apps/cli/boxen.ts`
 (`prompt`) is a complete caller, including the streaming printer.
 
 In code: `sessionClient(sessionSocketUrl(base, id), { transport: webSocketTransport })`, `connect()`,
@@ -228,7 +228,7 @@ Progress is the client's state: `subscribe()` and read the reply growing in
 out yet; otherwise it sends `abort`, and `run()` resolves when the cell
 settles the turn, normally `aborted`. A drop before the prompt goes out only
 delays it (the socket keeps retrying; abort the signal if `ready` hasn't come
-after a while, as `pds prompt` does, to bound the wait without bounding the
+after a while, as `boxen prompt` does, to bound the wait without bounding the
 turn). A drop after resolves `disconnected` at once instead of following
 the turn through the reconnect: the cell runs it on durably, but a rejoin's
 snapshot carries no submission records, so `run()` couldn't tell how a turn
@@ -285,7 +285,7 @@ built-app smoke).
 pnpm install
 pnpm --dir apps/ui exec playwright install --with-deps chromium  # once per machine
 pnpm check
-pnpm --filter @pi-durable-sessions/worker run check  # or one package
+pnpm --filter @boxen/worker run check  # or one package
 ```
 
 `packages/client/openapi.json` is the REST contract: every endpoint the worker
@@ -293,7 +293,7 @@ serves, and the constants the web app shares with it (sandbox token names,
 artifact kinds, the Preview port rule). The worker routes from it, so an
 endpoint must be in the spec to be served, and the web app calls the API only
 through the client. After editing it, run `pnpm --filter
-@pi-durable-sessions/client run generate` to regenerate the client's types.
+@boxen/client run generate` to regenerate the client's types.
 `apps/worker/contract.check.mjs` drives every operation through the client,
 checks each response against the spec, and fails when the worker and the spec
 disagree on a route or a method.

@@ -24,7 +24,7 @@ try {
   fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | (noFollow ? fs.constants.O_NOFOLLOW : 0));
   const stat = fs.fstatSync(fd);
   if (!stat.isFile()) throw Object.assign(new Error('Not a regular file'), { code: stat.isDirectory() ? 'EISDIR' : 'EINVAL' });
-  dir = fs.mkdtempSync('/tmp/pds-reader-');
+  dir = fs.mkdtempSync('/tmp/boxen-reader-');
   const socket = dir + '/socket';
   server = net.createServer((client) => {
     let text = '';

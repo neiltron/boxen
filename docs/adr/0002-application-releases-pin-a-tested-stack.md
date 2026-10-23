@@ -4,7 +4,7 @@ Status: accepted.
 
 ## Decision
 
-Version pi-durable-sessions independently of its runtime dependencies. Worker, UI, CLI, MCP server and internal client share one application version, with namespaced Git tags `pi-durable-sessions/v<VERSION>`. Other prototypes remain outside this release train.
+Version boxen independently of its runtime dependencies. Worker, UI, CLI, MCP server and internal client share one application version, with namespaced Git tags `v<VERSION>`. Other prototypes remain outside this release train.
 
 An application release identifies a Git commit, frozen dependency graph, exact critical library versions, checksum-pinned native runtimes, digest-pinned container bases and explicit compatibility notes. Generate release metadata from package manifests, the lockfile and `ops/runtime.json`; do not maintain a second handwritten npm dependency inventory.
 
@@ -18,4 +18,4 @@ The first distribution is a source archive plus metadata and checksums. CI creat
 - Source releases do not yet guarantee identical container builds: Dockerfile distro packages are resolved at build time. Fully prebuilt artifact distribution and signed provenance remain follow-ups.
 - Actual running-worker identity and state migration/rollback need dedicated operational support; installed binary versions alone do not prove deployment adoption.
 
-See `pi-durable-sessions/docs/releases.md` for release operations and validation requirements.
+See `docs/releases.md` for release operations and validation requirements.

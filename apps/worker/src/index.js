@@ -1,4 +1,4 @@
-// pi-durable-sessions — shared pi agent sessions on celld, with the agent
+// boxen — shared pi agent sessions on celld, with the agent
 // inside the cell. pi-sessions ran `pi --mode rpc` on the host behind a
 // pi-host bridge; here a pi-durable Harness runs in each Session cell, and
 // tools run in a per-session Sandbox container that celld supervises.
@@ -9,7 +9,7 @@
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { validateMetadataPatch } from "./session-metadata.js";
 import { previewTarget, validPreviewPort, sessionWorkspace, PREVIEW_PORT } from "./workspace.js";
-import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
+import spec from "@boxen/client/openapi.json" with { type: "json" };
 
 // pi-ai loads OAuth flows through a dynamic import the bundle can't follow;
 // this registers them statically, the way pi's Bun binary does.

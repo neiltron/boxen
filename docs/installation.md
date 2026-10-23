@@ -7,7 +7,7 @@ Experimental single-machine installer for **x86-64 Omarchy/Arch, Ubuntu 22.04+, 
 On the target machine, obtain a checkout containing this installer, then:
 
 ```sh
-cd celld-test/pi-durable-sessions
+cd boxen
 ./install.sh --access tailscale
 ```
 
@@ -16,7 +16,7 @@ The installer requests sudo/approval, installs prerequisites, installs the pnpm 
 ```sh
 sudo tailscale up
 # Approve the device in your tailnet, then finish:
-sudo pids setup --access tailscale --yes --no-input
+sudo boxenctl setup --access tailscale --yes --no-input
 ```
 
 Open the printed HTTPS URL. Add your model API key or provider sign-in in Providers; GitHub/Linear tokens also belong there. Provider OAuth uses **paste the redirect URL**: the dev server's loopback callback listeners are not installed.
@@ -28,19 +28,19 @@ For use entirely on the PC, choose `--access local` instead and open `http://loc
 The installer must first be committed and published. The unpushed development branch is **not** a working remote installation URL. After publishing a tested commit, substitute its SHA in both places:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neiltron/celld-test/<COMMIT>/pi-durable-sessions/install.sh \
-  -o /tmp/pids-install.sh
-PIDS_REF=<COMMIT> bash /tmp/pids-install.sh --access tailscale
+curl -fsSL https://raw.githubusercontent.com/neiltron/boxen/<COMMIT>/install.sh \
+  -o /tmp/boxen-install.sh
+BOXEN_REF=<COMMIT> bash /tmp/boxen-install.sh --access tailscale
 ```
 
-A pipe-to-bash invocation works too; downloading first lets you inspect the script. `PIDS_REF` selects the application source, not just the installer. It defaults to the installer’s own application version tag (currently `pi-durable-sessions/v0.1.0-rc.3`), not a moving branch. Until that tag is published, use a checkout or explicitly select a reviewed commit. See [application releases](releases.md) for checksum-verified source artifacts and upgrade procedures. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. Setup replaces installed runtime versions that do not match the selected installer and persists any required restart across retries; use the new release’s installer for an upgrade. The installer itself runs on that same pinned Node, which `install.sh` downloads and verifies first, so the host needs no Python or other runtime. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
+A pipe-to-bash invocation works too; downloading first lets you inspect the script. `BOXEN_REF` selects the application source, not just the installer. It defaults to the installer’s own application version tag (currently `v0.1.0-rc.3`), not a moving branch. Until that tag is published, use a checkout or explicitly select a reviewed commit. See [application releases](releases.md) for checksum-verified source artifacts and upgrade procedures. Downloading the application trusts that GitHub ref; native celld/Node downloads also have pinned SHA-256 checksums. Setup replaces installed runtime versions that do not match the selected installer and persists any required restart across retries; use the new release’s installer for an upgrade. The installer itself runs on that same pinned Node, which `install.sh` downloads and verifies first, so the host needs no Python or other runtime. RustFS is pinned by image digest. Distro packages and the official Tailscale repository installer follow their upstream updates.
 
 ## Agent/noninteractive installation
 
 ```sh
 # Read-only, with any Node 24+. Works on a development Mac too; reports supported_host: false rather than installing.
-node ops/pids.ts inspect --json
-node ops/pids.ts setup --access tailscale --dry-run --no-input --json
+node ops/boxenctl.ts inspect --json
+node ops/boxenctl.ts setup --access tailscale --dry-run --no-input --json
 
 # Approved mutations. With passwordless/preauthorized sudo; never prompts for missing inputs.
 ./install.sh --access tailscale --yes --no-input --json
@@ -59,38 +59,40 @@ Missing Tailscale authorization leaves a usable **local** installation, with exi
 ## Manage it
 
 ```sh
-sudo pids doctor --json
-sudo pids logs --lines 100 --json
-sudo pids stop       # WARNING: sandbox workspaces may be lost
-sudo pids start
-sudo pids setup --yes --no-input  # repair/redeploy the retained source
+sudo boxenctl doctor --json
+sudo boxenctl logs --lines 100 --json
+sudo boxenctl stop       # WARNING: sandbox workspaces may be lost
+sudo boxenctl start
+sudo boxenctl setup --yes --no-input  # repair/redeploy the retained source
 
 # Explicit source update, after obtaining a newer checkout:
-sudo pids setup --source "$PWD" --yes --no-input
+sudo boxenctl setup --source "$PWD" --yes --no-input
 
-sudo pids uninstall --yes --no-input
+sudo boxenctl uninstall --yes --no-input
 ```
 
-**Crossing the pnpm workspace change** (`pnpm-lock.yaml` replaced `package-lock.json`): an installed `pids` accepts only the layout it was built for, and rejects the other before changing anything. To update an older installation, run the new checkout's `./install.sh` once instead of `pids setup --source`; to roll back past the change, run the older checkout's `./install.sh`.
+**Crossing the pnpm workspace change** (`pnpm-lock.yaml` replaced `package-lock.json`): an installed `boxenctl` accepts only the layout it was built for, and rejects the other before changing anything. To update an older installation, run the new checkout's `./install.sh` once instead of `boxenctl setup --source`; to roll back past the change, run the older checkout's `./install.sh`.
+
+**Coming from pi-durable-sessions** (boxen's name before it left `neiltron/celld-test`): run this checkout's `./install.sh` once. Setup finds `/etc/pi-durable-sessions/config.json`, stops and removes the `pi-durable-sessions` units, renames `/opt`, `/etc` and `/var/lib/pi-durable-sessions` to `boxen`, renames the `pids` account to `boxen` (same uid, so data stays owned), removes `/usr/local/bin/pids`, then installs `boxen.service` and `boxen-storage.service`. The bucket and stored Sessions are untouched. As with any celld restart, sandbox workspaces are lost: push their work first. It refuses before stopping anything if a `boxen` directory, user or group already exists.
 
 Uninstall disables/removes the two app services and removes its exact Tailscale root proxy if still owned. It **preserves all data, credentials, source releases, dependencies and the management command** for reinstall. It never removes another service's Serve route and never deletes Docker/Tailscale globally. This test has no purge command and no release garbage collector.
 
-Rollback: rerun setup with an earlier source checkout. This redeploys application code; it does **not** roll back database schemas or recover sandbox files. Old retained source releases live under `/opt/pi-durable-sessions/releases/`.
+Rollback: rerun setup with an earlier source checkout. This redeploys application code; it does **not** roll back database schemas or recover sandbox files. Old retained source releases live under `/opt/boxen/releases/`.
 
 ## What gets installed
 
 | Component | Location / behavior |
 |---|---|
-| Manager | `/usr/local/bin/pids`, `/opt/pi-durable-sessions/manager/pids.ts`, run by the private Node below |
-| Native runtimes | Private celld 0.6.2 and Node 24.5.0 under `/opt/pi-durable-sessions/`; no global Node replacement |
-| Application sources | `/opt/pi-durable-sessions/releases/<content-revision>/` |
-| Settings | `/etc/pi-durable-sessions/config.json` |
-| Credentials / route ownership | `/etc/pi-durable-sessions/credentials.json`, `celld.env`, `storage.env`, `serve.json`; root-only |
-| Durable state | `/var/lib/pi-durable-sessions/rustfs/` plus host-local caches |
-| Service account | `pids`, non-login, member of `docker` |
+| Manager | `/usr/local/bin/boxenctl`, `/opt/boxen/manager/boxenctl.ts`, run by the private Node below |
+| Native runtimes | Private celld 0.6.2 and Node 24.5.0 under `/opt/boxen/`; no global Node replacement |
+| Application sources | `/opt/boxen/releases/<content-revision>/` |
+| Settings | `/etc/boxen/config.json` |
+| Credentials / route ownership | `/etc/boxen/credentials.json`, `celld.env`, `storage.env`, `serve.json`; root-only |
+| Durable state | `/var/lib/boxen/rustfs/` plus host-local caches |
+| Service account | `boxen`, non-login, member of `docker` |
 | Object store | Digest-pinned RustFS Docker container, loopback `127.0.0.1:19000`; console disabled |
-| Application | `pi-durable-sessions.service`, loopback `127.0.0.1:8093` |
-| Storage service | `pi-durable-sessions-storage.service` |
+| Application | `boxen.service`, loopback `127.0.0.1:8093` |
+| Storage service | `boxen-storage.service` |
 | HTTPS | Tailscale Serve on the machine's `*.ts.net` name |
 
 The dedicated service account's Docker access is **host-root-equivalent**. Only install trusted app releases/dependencies. Session sandboxes do not receive the Docker socket or host configuration. The installer reuses the local system Docker engine at `/var/run/docker.sock`; remote Docker contexts and rootless engines are not supported by this first test.
@@ -108,7 +110,7 @@ The application is still single-owner/shared-authority: **anyone permitted to re
 Agents can discover the actual Tailscale addresses and DNS requirements:
 
 ```sh
-pids inspect --domain sessions.example.com --json
+boxenctl inspect --domain sessions.example.com --json
 ```
 
 This reports proposed A/AAAA records with `proxied: false`, never guesses a LAN/public IP, and **does not change DNS**. An agent may use its existing DNS-provider tools after approval. But custom-domain TLS and preview routing are not implemented in this test; creating DNS alone won't make that hostname work. Use the generated `ts.net` URL for now. Do not give an ordinary session sandbox host-admin/DNS-admin credentials.
@@ -136,9 +138,9 @@ Workspace snapshots and session deletion cleanup are **not implemented here**. T
 Offline, from the workspace root after `pnpm install`:
 
 ```sh
-pnpm run check:ops   # node --test ops/pids.test.ts, tsc -p ops, shellcheck install.sh (fails if shellcheck is missing)
-pnpm --filter @pi-durable-sessions/worker run check   # includes assets.check.mjs, workspace.check.js and protocol.check.mjs
-pnpm --filter @pi-durable-sessions/client run check   # includes session.check.ts
+pnpm run check:ops   # node --test ops/boxenctl.test.ts, tsc -p ops, shellcheck install.sh (fails if shellcheck is missing)
+pnpm --filter @boxen/worker run check   # includes assets.check.mjs, workspace.check.js and protocol.check.mjs
+pnpm --filter @boxen/client run check   # includes session.check.ts
 pnpm check           # all of the above plus every other workspace check
 ```
 

@@ -1,5 +1,5 @@
 {
-  "name": "@pi-durable-sessions/client",
+  "name": "@boxen/client",
   "private": true,
   "type": "module",
   "description": "The API contract (openapi.json), the Session WebSocket protocol, and typed clients for both, for the browser and Node",

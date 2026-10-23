@@ -34,11 +34,11 @@ test('release rejects ranges, stale resolutions and missing integrity', () => {
 });
 
 test('pack requires a clean version-tagged commit and produces verifiable source artifacts', () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'pds-release-'));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-release-'));
   try {
-    const app = path.join(temporary, 'pi-durable-sessions');
+    const app = temporary;
     const files = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'install.sh', 'start.sh', 'stop.sh',
-      'ops/release.mjs', 'ops/runtime.json', 'ops/compatibility.json', 'ops/pids.ts', 'apps/worker/Dockerfile'];
+      'ops/release.mjs', 'ops/runtime.json', 'ops/compatibility.json', 'ops/boxenctl.ts', 'apps/worker/Dockerfile'];
     for (const directory of ['apps', 'packages']) {
       for (const name of fs.readdirSync(path.join(root, directory))) {
         if (fs.existsSync(path.join(root, directory, name, 'package.json'))) files.push(`${directory}/${name}/package.json`);
@@ -57,7 +57,7 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     const run = (command) => spawnSync(process.execPath, ['ops/release.mjs', command], { cwd: app, encoding: 'utf8' });
     assert.notEqual(run('pack').status, 0, 'no tag');
     const version = JSON.parse(read('package.json')).version;
-    git('tag', `pi-durable-sessions/v${version}`);
+    git('tag', `v${version}`);
     const packed = run('pack');
     assert.equal(packed.status, 0, packed.stderr);
     const out = path.join(app, 'dist/release');
@@ -73,11 +73,11 @@ test('pack requires a clean version-tagged commit and produces verifiable source
       const actual = createHash('sha256').update(fs.readFileSync(path.join(out, file))).digest('hex');
       assert.equal(actual, expected);
     }
-    const archive = path.join(out, `pi-durable-sessions-${version}.tar.gz`);
+    const archive = path.join(out, `boxen-${version}.tar.gz`);
     const entries = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
-    assert.ok(entries.includes('pi-durable-sessions/ops/runtime.json'));
+    assert.ok(entries.includes('boxen/ops/runtime.json'));
     assert.ok(!entries.includes('node_modules'));
-    fs.appendFileSync(path.join(app, 'ops/pids.ts'), '\n// dirty\n');
+    fs.appendFileSync(path.join(app, 'ops/boxenctl.ts'), '\n// dirty\n');
     assert.match(run('pack').stderr, /clean checkout/);
     git('add', '.');
     git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '-m', 'new commit');
@@ -88,7 +88,7 @@ test('pack requires a clean version-tagged commit and produces verifiable source
 });
 
 test('deploy propagates failures instead of printing a success message', () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'pds-deploy-'));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-deploy-'));
   try {
     const bin = path.join(temporary, '.local/bin');
     fs.mkdirSync(bin, { recursive: true });
@@ -104,12 +104,12 @@ test('deploy propagates failures instead of printing a success message', () => {
 });
 
 test('development celld wrapper enforces the pin and propagates the runtime exit code', () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'pds-celld-'));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-celld-'));
   try {
     const binary = path.join(temporary, 'celld');
     const version = JSON.parse(read('ops/runtime.json')).celld.version;
     const run = () => spawnSync(process.execPath, [path.join(root, 'ops/celld.mjs'), 'deploy'], {
-      env: { ...process.env, PIDS_CELLD: binary }, encoding: 'utf8',
+      env: { ...process.env, BOXEN_CELLD: binary }, encoding: 'utf8',
     });
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nexit 17\n`, { mode: 0o755 });
     assert.equal(run().status, 17);

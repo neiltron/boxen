@@ -1,10 +1,10 @@
 // node --experimental-vm-modules protocol.check.mjs
 // The Session cell's WebSocket commands against the protocol the session
-// client speaks (@pi-durable-sessions/client's protocol.ts): the cell's
+// client speaks (@boxen/client's protocol.ts): the cell's
 // handler table and SESSION_COMMANDS must name the same commands, so neither
 // side gains or loses one silently.
 import assert from "node:assert/strict";
-import { SESSION_COMMANDS } from "@pi-durable-sessions/client";
+import { SESSION_COMMANDS } from "@boxen/client";
 import { load } from "./check-harness.mjs";
 
 const { Session } = await load({ "@cloudflare/sandbox": { getSandbox() {} } });

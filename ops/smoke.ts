@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { BUCKET, CELLD_VERSION, RUSTFS_IMAGE, pids, wranglerWithAssets } from './pids.ts';
+import { BUCKET, CELLD_VERSION, RUSTFS_IMAGE, boxenctl, wranglerWithAssets } from './boxenctl.ts';
 
 const hex = () => randomUUID().replaceAll('-', '');
 
@@ -44,11 +44,11 @@ async function smoke(binary: string): Promise<void> {
   if (!fs.existsSync(path.join(source, 'apps/ui/dist/index.html')) || !fs.existsSync(path.join(source, 'apps/worker/node_modules'))) {
     throw new Error('First run pnpm install && pnpm build.');
   }
-  const name = `pids-smoke-${hex().slice(0, 12)}`;
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'pids-smoke-'));
+  const name = `boxen-smoke-${hex().slice(0, 12)}`;
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-smoke-'));
   let node: ChildProcess | null = null;
   try {
-    for (const file of pids.sourceFiles(source)) {
+    for (const file of boxenctl.sourceFiles(source)) {
       const target = path.join(project, path.relative(source, file));
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(file, target);
@@ -64,22 +64,22 @@ async function smoke(binary: string): Promise<void> {
     fs.writeFileSync(path.join(project, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n');
     const keys = { access_key: hex(), secret_key: hex() + hex() };
     const envFile = path.join(project, 'storage.env');
-    pids.atomicWrite(envFile, `RUSTFS_ACCESS_KEY=${keys.access_key}\nRUSTFS_SECRET_KEY=${keys.secret_key}\nRUSTFS_CONSOLE_ENABLE=false\n`);
-    pids.run(['docker', 'run', '-d', '--name', name, '--publish', '127.0.0.1::9000', '--env-file', envFile, RUSTFS_IMAGE],
+    boxenctl.atomicWrite(envFile, `RUSTFS_ACCESS_KEY=${keys.access_key}\nRUSTFS_SECRET_KEY=${keys.secret_key}\nRUSTFS_CONSOLE_ENABLE=false\n`);
+    boxenctl.run(['docker', 'run', '-d', '--name', name, '--publish', '127.0.0.1::9000', '--env-file', envFile, RUSTFS_IMAGE],
       { timeout: 300 });
-    const address = pids.run(['docker', 'port', name, '9000'], { capture: true }).stdout.trim().split('\n')[0];
+    const address = boxenctl.run(['docker', 'port', name, '9000'], { capture: true }).stdout.trim().split('\n')[0];
     const settings = { storage_port: Number(address.slice(address.lastIndexOf(':') + 1)) };
     const endpoint = `http://127.0.0.1:${settings.storage_port}`;
-    await pids.waitHttp(endpoint + '/health');
-    await pids.ensureBucket(settings, keys);
-    await pids.ensureBucket(settings, keys);
+    await boxenctl.waitHttp(endpoint + '/health');
+    await boxenctl.ensureBucket(settings, keys);
+    await boxenctl.ensureBucket(settings, keys);
     const env: NodeJS.ProcessEnv = {
       ...process.env, AWS_ACCESS_KEY_ID: keys.access_key, AWS_SECRET_ACCESS_KEY: keys.secret_key, AWS_REGION: 'us-east-1',
       CELLD_WATCH: path.join(project, 'watch'), CELLD_ASSET_CACHE_DIR: path.join(project, 'cache'), CELLD_TTL_MS: '30000',
       CELLD_FETCH_TIMEOUT_S: '3600', PATH: `${path.join(source, 'apps/worker/node_modules/.bin')}:${process.env.PATH}`,
     };
     delete env.AWS_SESSION_TOKEN;
-    pids.run([binary, 'deploy', path.join(project, 'apps/worker'), '--bucket', `s3://${BUCKET}`, '--endpoint', endpoint], { env, timeout: 1800 });
+    boxenctl.run([binary, 'deploy', path.join(project, 'apps/worker'), '--bucket', `s3://${BUCKET}`, '--endpoint', endpoint], { env, timeout: 1800 });
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
     const logFile = path.join(project, 'node.log');
@@ -87,8 +87,8 @@ async function smoke(binary: string): Promise<void> {
     node = spawn(binary, ['--bucket', `s3://${BUCKET}`, '--endpoint', endpoint, '--listen', `127.0.0.1:${port}`],
       { env, stdio: ['ignore', log, log] });
     try {
-      await pids.waitHttp(base + '/', '<html');
-      await pids.waitHttp(base + '/api/sessions', '[');
+      await boxenctl.waitHttp(base + '/', '<html');
+      await boxenctl.waitHttp(base + '/api/sessions', '[');
       const html = await (await fetch(base, { signal: AbortSignal.timeout(10_000) })).text();
       const asset = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
       if (!asset) throw new Error('UI HTML does not reference a hashed JavaScript asset');
@@ -116,16 +116,16 @@ async function smoke(binary: string): Promise<void> {
         await exited(node, 10);
       }
     }
-    pids.run(['docker', 'rm', '-f', '-v', name], { check: false, capture: true, timeout: 60 });
+    boxenctl.run(['docker', 'rm', '-f', '-v', name], { check: false, capture: true, timeout: 60 });
     fs.rmSync(project, { recursive: true, force: true });
   }
 }
 
 const { values } = parseArgs({ options: { celld: { type: 'string' } } });
-const binary = values.celld ?? pids.which(`celld-${CELLD_VERSION}`) ?? pids.which('celld');
+const binary = values.celld ?? boxenctl.which(`celld-${CELLD_VERSION}`) ?? boxenctl.which('celld');
 if (!binary) {
   console.error(`Supply --celld /path/to/celld-${CELLD_VERSION}`);
   process.exit(2);
 }
-if (!pids.runtimeMatches(binary, CELLD_VERSION)) throw new Error(`Smoke requires celld ${CELLD_VERSION}`);
+if (!boxenctl.runtimeMatches(binary, CELLD_VERSION)) throw new Error(`Smoke requires celld ${CELLD_VERSION}`);
 await smoke(binary);

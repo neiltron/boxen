@@ -1,5 +1,5 @@
 // node --experimental-vm-modules contract.check.mjs
-// The router against the API contract (@pi-durable-sessions/client's
+// The router against the API contract (@boxen/client's
 // openapi.json), with the real Directory, Artifacts and Session cells on
 // in-memory SQLite. The worker routes from the spec, so it serves no API
 // route the spec lacks; this drives every operation the other way, holds each
@@ -8,8 +8,8 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import Ajv from "ajv/dist/2020.js";
-import { apiClient, validPreviewPort } from "@pi-durable-sessions/client";
-import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
+import { apiClient, validPreviewPort } from "@boxen/client";
+import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { load } from "./check-harness.mjs";
 
 // Every method an OpenAPI path item can declare, except OPTIONS: the router

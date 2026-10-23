@@ -15,7 +15,7 @@
 // object, with two adapters: the SDK's (sessionWorkspace) and an in-memory
 // fake (workspace.check.js).
 import { getSandbox } from "@cloudflare/sandbox";
-import spec from "@pi-durable-sessions/client/openapi.json" with { type: "json" };
+import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { sandboxEnv, shellQuote } from "./sandbox-env.js";
 
 const ROOT = "/workspace"; // clones run here, so a repo's cwd needn't exist yet

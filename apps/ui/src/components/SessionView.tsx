@@ -73,7 +73,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     <SessionContext.Provider value={{ sessionId, session, artifact, setArtifact, open }}>
       <Workspace
         key={storageKey} ref={attach} storageKey={storageKey} version={WORKSPACE_LAYOUT_VERSION} label="Session"
-        navigation={false} floating={false} className="pids-workspace h-full"
+        navigation={false} floating={false} className="boxen-workspace h-full"
       >
         <ViewType id="chat" tabbar="never" closable={false} singleton scaling={false}>
           <Chat onTogglePanel={togglePanel} />

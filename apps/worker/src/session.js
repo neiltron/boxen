@@ -288,7 +288,7 @@ export class Session extends DurableObject {
   async webSocketError(ws) { this.unsubscribe(ws); }
 
   // One handler per command of the Session WebSocket protocol, named by its
-  // type: exactly SESSION_COMMANDS in @pi-durable-sessions/client's
+  // type: exactly SESSION_COMMANDS in @boxen/client's
   // protocol.ts, which protocol.check.mjs holds this table to. Handle no
   // command outside it: the check can't see one there.
   static commands = {

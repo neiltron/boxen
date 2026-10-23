@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The MCP server: lets an external agent (Claude Code, pi, …) list and create
 // Sessions, run a turn, and read artifacts. It knows no API of its own: REST
-// and turns go through @pi-durable-sessions/client's system(), as in pds.
+// and turns go through @boxen/client's system(), as in boxen.
 //
-//   PDS_URL=http://127.0.0.1:8093 node apps/mcp/server.ts    (stdio)
+//   BOXEN_URL=http://127.0.0.1:8093 node apps/mcp/server.ts    (stdio)
 //
 // Progress: when the caller sends a progress token, run_turn reports one
 // notification per step of the turn, not per token: the join, each tool call
@@ -12,7 +12,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CancelledNotificationSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { DEFAULT_URL, sessionSocketUrl, system, webSocketTransport, type Transport, type TurnResult } from "@pi-durable-sessions/client";
+import { DEFAULT_URL, sessionSocketUrl, system, webSocketTransport, type Transport, type TurnResult } from "@boxen/client";
 import { z } from "zod";
 
 const CONNECT_MS = 15_000;
@@ -43,7 +43,7 @@ const clip = (s: string, n = 120) => { s = s.replace(/\s+/g, " ").trim(); return
 
 export function createServer(url: string, deps: Deps) {
   const { api, session } = system(url, deps);
-  const server = new McpServer({ name: "pi-durable-sessions", version: "0.1.0" });
+  const server = new McpServer({ name: "boxen", version: "0.1.0" });
   // Workaround: @modelcontextprotocol/sdk 1.32.0 (Protocol._oncancel) drops a
   // cancel whose requestId is falsy, so request 0, a valid JSON-RPC id, could
   // not be cancelled and its turn ran on. This handler does what the SDK's
@@ -106,7 +106,7 @@ export function createServer(url: string, deps: Deps) {
       }
     });
 
-    // Bound the wait for the join, not the turn (as pds prompt does). Once
+    // Bound the wait for the join, not the turn (as boxen prompt does). Once
     // cancelled, bound the wait for the cell to settle the abort too: then
     // stop the client, which closes the socket and settles run().
     const cancel = new AbortController();
@@ -166,14 +166,14 @@ export function createServer(url: string, deps: Deps) {
 }
 
 if (import.meta.main) {
-  const url = process.env.PDS_URL ?? DEFAULT_URL;
+  const url = process.env.BOXEN_URL ?? DEFAULT_URL;
   if (!/^https?:$/.test(URL.parse(url)?.protocol ?? "")) {
-    process.stderr.write(`pds-mcp: PDS_URL must be http(s): ${url}\n`);
+    process.stderr.write(`boxen-mcp: BOXEN_URL must be http(s): ${url}\n`);
     process.exit(2);
   }
   const server = createServer(url, { transport: webSocketTransport });
   await server.connect(new StdioServerTransport());
-  process.stderr.write(`pds-mcp: serving ${url} on stdio\n`);
+  process.stderr.write(`boxen-mcp: serving ${url} on stdio\n`);
   // Shut down when the client does: SDK 1.32.0's stdio transport ignores the
   // end of stdin. Closing the server aborts requests in flight, so a running
   // turn is aborted in its Session, and the process exits once they settle.

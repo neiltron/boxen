@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { webSocketTransport, reconnecting } from "@pi-durable-sessions/client";
+import { webSocketTransport, reconnecting } from "@boxen/client";
 import { WS_BASE, type AuthStatus, type SessionMeta } from "@/lib/api";
 
 type Frame = { type: "sessions"; sessions: SessionMeta[]; auth?: AuthStatus };

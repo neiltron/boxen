@@ -1,6 +1,6 @@
-import { apiClient, type SandboxToken, type Session } from "@pi-durable-sessions/client";
-export type { Artifact, ArtifactSummary, AuthStatus, ModelInfo, ProviderInfo, Repo, SandboxToken } from "@pi-durable-sessions/client";
-export { PREVIEW_PORTS, SANDBOX_TOKENS, validPreviewPort } from "@pi-durable-sessions/client";
+import { apiClient, type SandboxToken, type Session } from "@boxen/client";
+export type { Artifact, ArtifactSummary, AuthStatus, ModelInfo, ProviderInfo, Repo, SandboxToken } from "@boxen/client";
+export { PREVIEW_PORTS, SANDBOX_TOKENS, validPreviewPort } from "@boxen/client";
 
 // Default: same-origin, proxied by the vite dev server to the celld node.
 // Set VITE_API_BASE to talk to a node directly (e.g. a built/static deploy).

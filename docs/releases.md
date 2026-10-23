@@ -1,8 +1,8 @@
 # Application releases
 
-A release versions **pi-durable-sessions as a tested stack**, independently of celld's version. Worker, UI, CLI, MCP server and internal client share one version. Nothing is published to npm yet.
+A release versions **boxen as a tested stack**, independently of celld's version. Worker, UI, CLI, MCP server and internal client share one version. Nothing is published to npm yet.
 
-The current candidate is **0.1.0-rc.3**, upgrading pi-durable/pi-ai/chord to **1.3.0** while retaining celld **0.6.2** from rc.2. The initial **0.1.0-rc.1** baseline used celld 0.6.1. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/celld-test/releases) for published releases.
+The current candidate is **0.1.0-rc.3**, upgrading pi-durable/pi-ai/chord to **1.3.0** while retaining celld **0.6.2** from rc.2. The initial **0.1.0-rc.1** baseline used celld 0.6.1. A version in package.json is not evidence of publication or completed validation. Check [GitHub Releases](https://github.com/neiltron/boxen/releases) for published releases.
 
 ## Sources of truth
 
@@ -20,7 +20,7 @@ The current candidate is **0.1.0-rc.3**, upgrading pi-durable/pi-ai/chord to **1
 Use Node from `ops/runtime.json` and the package manager in package.json:
 
 ```sh
-cd pi-durable-sessions
+cd boxen
 pnpm install --frozen-lockfile
 pnpm run check:release
 node ops/release.mjs manifest
@@ -30,7 +30,7 @@ The manifest includes exact dependency versions/integrities, runtime pins, Git c
 
 ## Version policy
 
-Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.3`.
+Tags are `v<VERSION>`, e.g. `v0.1.0-rc.3`.
 
 - `0.x.y` patch: compatible fixes, including compatible dependency updates.
 - `0.x.0` minor: features or breaking changes; explicitly document any breaking behavior.
@@ -50,8 +50,8 @@ Tags are `pi-durable-sessions/v<VERSION>`, e.g. `pi-durable-sessions/v0.1.0-rc.3
    ```
 6. Review/merge the candidate. From its clean commit, create and push the version tag **when ready to create a release draft**:
    ```sh
-   git tag -a pi-durable-sessions/v0.1.0-rc.3 -m 'pi-durable-sessions 0.1.0-rc.3'
-   git push origin pi-durable-sessions/v0.1.0-rc.3
+   git tag -a v0.1.0-rc.3 -m 'boxen 0.1.0-rc.3'
+   git push origin v0.1.0-rc.3
    ```
 
 CI installs frozen dependencies, runs the checks, and runs isolated RustFS/celld deployment smoke. Tag builds package the source and create a **draft** GitHub release. RC tags also receive the prerelease flag. No automatic production deployment occurs. A rerun does not overwrite an existing draft; inspect it explicitly rather than silently replacing assets.
@@ -83,7 +83,7 @@ The automated smoke tests deployment, UI HTML/JS, API, storage, and the real San
 
 `node ops/release.mjs pack` produces `dist/release/` containing:
 
-- `pi-durable-sessions-<version>.tar.gz`: source from the tagged commit, not the working directory;
+- `boxen-<version>.tar.gz`: source from the tagged commit, not the working directory;
 - `install.sh`: bootstrap from that same commit;
 - `release.json`: stack metadata and archive/installer checksums;
 - `SHA256SUMS`: archive, installer and manifest hashes.
@@ -93,16 +93,16 @@ For a published release, download all artifacts from its GitHub release page, th
 ```sh
 sha256sum --check SHA256SUMS
 # Substitute the downloaded version. Inspect the installer before executing it.
-tar -xzf pi-durable-sessions-0.1.0-rc.3.tar.gz
-cd pi-durable-sessions
+tar -xzf boxen-0.1.0-rc.3.tar.gz
+cd boxen
 ./install.sh --access tailscale
 ```
 
 Checksums detect corruption; they are not independent signatures. Trust in publication still depends on the repository/release account. Signed attestations and fully prebuilt distribution are follow-ups.
 
-A standalone remote installer defaults to **its own version tag**, not a moving branch. Until that tag exists, use a checkout or an explicit `PIDS_REF` pointing to a reviewed commit. `PIDS_REF` remains a development escape hatch; branches are not immutable releases. Prefer the checked source artifact above for release installs. For upgrades, run the **new release's installer**, not an older installed manager against newer source. The manager rejects a source/application/runtime pin mismatch before making changes.
+A standalone remote installer defaults to **its own version tag**, not a moving branch. Until that tag exists, use a checkout or an explicit `BOXEN_REF` pointing to a reviewed commit. `BOXEN_REF` remains a development escape hatch; branches are not immutable releases. Prefer the checked source artifact above for release installs. For upgrades, run the **new release's installer**, not an older installed manager against newer source. The manager rejects a source/application/runtime pin mismatch before making changes.
 
-The installer compares installed celld/Node versions and replaces mismatches using verified downloads. It records restart intent before replacement, so retrying cannot leave an old process unnoticed merely because its on-disk binary now matches. `pds --version` reports the local CLI application version, without contacting a server. `pids inspect --json` reports the application version, desired runtime and whether installed executables match the manager's pins; it does **not** prove which worker version a running node has adopted.
+The installer compares installed celld/Node versions and replaces mismatches using verified downloads. It records restart intent before replacement, so retrying cannot leave an old process unnoticed merely because its on-disk binary now matches. `boxen --version` reports the local CLI application version, without contacting a server. `boxenctl inspect --json` reports the application version, desired runtime and whether installed executables match the manager's pins; it does **not** prove which worker version a running node has adopted.
 
 Application-only changes normally hot-adopt. Runtime upgrades can restart celld and destroy live sandbox disks. Stop new turns, verify checkpoints and back up persistent storage off-machine before upgrading. Review upstream rolling/full-stop requirements; this installer does not orchestrate multi-node fleet migrations or automatically undo state changes.
 

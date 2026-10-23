@@ -1,16 +1,16 @@
 {
-  "name": "@pi-durable-sessions/cli",
+  "name": "@boxen/cli",
   "private": true,
   "type": "module",
-  "description": "pds, the one command line for the system: Sessions now, its operations (#68) later",
+  "description": "boxen, the one command line for the system: Sessions now, its operations (#68) later",
   "bin": {
-    "pds": "./pds.ts"
+    "boxen": "./boxen.ts"
   },
   "scripts": {
     "check": "node cli.check.ts && tsc"
   },
   "dependencies": {
-    "@pi-durable-sessions/client": "workspace:*"
+    "@boxen/client": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~6.0.2"

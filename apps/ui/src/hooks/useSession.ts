@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { webSocketTransport, sessionClient } from "@pi-durable-sessions/client";
+import { webSocketTransport, sessionClient } from "@boxen/client";
 import { WS_BASE } from "@/lib/api";
 
 // React's binding to the shared client's session client: its state plus its

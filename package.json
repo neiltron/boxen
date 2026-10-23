@@ -1,17 +1,17 @@
 {
-  "name": "pi-durable-sessions",
+  "name": "boxen",
   "private": true,
   "type": "module",
   "description": "pi-sessions rebuilt on pi-durable: the agent runs inside the Session cell, no host process",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
-    "pds": "node apps/cli/pds.ts",
-    "ui": "pnpm --filter @pi-durable-sessions/ui run dev",
-    "build": "pnpm --filter @pi-durable-sessions/ui run build",
-    "deploy": "pnpm --filter @pi-durable-sessions/worker run deploy",
+    "boxen": "node apps/cli/boxen.ts",
+    "ui": "pnpm --filter @boxen/ui run dev",
+    "build": "pnpm --filter @boxen/ui run build",
+    "deploy": "pnpm --filter @boxen/worker run deploy",
     "reference": "REDOCLY_TELEMETRY=off REDOCLY_SUPPRESS_UPDATE_NOTICE=true redocly build-docs packages/client/openapi.json -o docs/api-reference.html --disableGoogleFont",
     "check": "pnpm run check:release && pnpm run check:ops && pnpm -r run check",
-    "check:ops": "node --test ops/pids.test.ts && tsc -p ops && if ! command -v shellcheck >/dev/null; then echo 'shellcheck not found: install it (pacman -S shellcheck, apt install shellcheck, brew install shellcheck)' >&2; exit 1; fi && shellcheck install.sh",
+    "check:ops": "node --test ops/boxenctl.test.ts && tsc -p ops && if ! command -v shellcheck >/dev/null; then echo 'shellcheck not found: install it (pacman -S shellcheck, apt install shellcheck, brew install shellcheck)' >&2; exit 1; fi && shellcheck install.sh",
     "check:release": "node ops/release.mjs check && node --test ops/release.test.mjs",
     "release:manifest": "node ops/release.mjs manifest"
   },

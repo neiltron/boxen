@@ -53,7 +53,7 @@ snapshot carries on. The session client retries 2 s after any drop and sends
 
 Fields and their types are in `SessionCommand`. "The session client" is
 [`session-client.ts`](../packages/client/src/session-client.ts), which the web
-app, `pds` and the MCP server all use; it sends commands only once `ready`.
+app, `boxen` and the MCP server all use; it sends commands only once `ready`.
 
 | `type` | fields | sent by | answered by |
 |---|---|---|---|

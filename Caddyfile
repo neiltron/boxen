@@ -1,7 +1,7 @@
 # https://a.oxen.sh → the UI dev server (which proxies /api to celld).
 # DNS points at this Mac's tailnet IP; Tailscale forwards tailnet TCP 443 to
-# 127.0.0.1:8443 (the same forward boxen's b.oxen.sh uses). Run: ./caddy.sh
-# ponytail: owns :8443 alone, so it can't run beside boxen's Caddy; merge the
+# 127.0.0.1:8443 (the same forward boxen-legacy's b.oxen.sh uses). Run: ./caddy.sh
+# ponytail: owns :8443 alone, so it can't run beside boxen-legacy's Caddy; merge the
 # site blocks into one Caddy if both need to be up on this Mac.
 {
 	auto_https disable_redirects

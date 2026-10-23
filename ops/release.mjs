@@ -66,13 +66,13 @@ function generatedFiles() {
   files.set('package.json', JSON.stringify({ ...pkg, engines: {
     ...pkg.engines, node: `>=${runtime.node.version} <${Number(runtime.node.version.split('.')[0]) + 1}`,
   } }, null, 2) + '\n');
-  files.set('ops/pids.ts', replaceBlock(read('ops/pids.ts'), /\/\/ BEGIN GENERATED RUNTIME PINS[^]*?\/\/ END GENERATED RUNTIME PINS/,
+  files.set('ops/boxenctl.ts', replaceBlock(read('ops/boxenctl.ts'), /\/\/ BEGIN GENERATED RUNTIME PINS[^]*?\/\/ END GENERATED RUNTIME PINS/,
     '// BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)\n' +
     Object.entries(constants).map(([key, value]) => `export const ${key} = '${value}';`).join('\n') +
     '\n// END GENERATED RUNTIME PINS'));
   let installer = replaceBlock(read('install.sh'), /# BEGIN GENERATED BOOTSTRAP PINS[^]*?# END GENERATED BOOTSTRAP PINS/,
     `# BEGIN GENERATED BOOTSTRAP PINS\nNODE_URL='${runtime.node.url}'\nNODE_SHA='${runtime.node.sha256}'\nNODE_VERSION='v${runtime.node.version}'\n# END GENERATED BOOTSTRAP PINS`);
-  installer = replaceBlock(installer, /ref="\$\{PIDS_REF:-[^}]+\}"/, `ref="\${PIDS_REF:-pi-durable-sessions/v${pkg.version}}"`);
+  installer = replaceBlock(installer, /ref="\$\{BOXEN_REF:-[^}]+\}"/, `ref="\${BOXEN_REF:-v${pkg.version}}"`);
   files.set('install.sh', installer);
   files.set('apps/worker/Dockerfile', replaceBlock(read('apps/worker/Dockerfile'), /^FROM .+$/m, `FROM ${runtime.sandboxImage}`));
   for (const name of ['start.sh', 'stop.sh']) {
@@ -108,7 +108,7 @@ export function manifest() {
   const pkg = json('package.json');
   return {
     schemaVersion: 1, application: pkg.name, version: pkg.version,
-    tag: `pi-durable-sessions/v${pkg.version}`, gitCommit: git('rev-parse', 'HEAD'),
+    tag: `v${pkg.version}`, gitCommit: git('rev-parse', 'HEAD'),
     dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
     lockfileSha256: sha256(read('pnpm-lock.yaml')), packageManager: pkg.packageManager,
     runtime: json('ops/runtime.json'), dependencies,
@@ -127,10 +127,10 @@ export function pack() {
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(out, { recursive: true });
   const archive = `${metadata.application}-${metadata.version}.tar.gz`;
-  // Archive a commit (not a subtree object), retaining commit timestamps and
-  // the pi-durable-sessions/ directory. No working-tree files enter the archive.
-  execFileSync('git', ['archive', '--format=tar.gz', `--output=${path.join(out, archive)}`,
-    metadata.gitCommit, 'pi-durable-sessions'], { cwd: git('rev-parse', '--show-toplevel') });
+  // Archive a commit, retaining commit timestamps, under one boxen/ directory.
+  // No working-tree files enter the archive.
+  execFileSync('git', ['archive', '--format=tar.gz', '--prefix=boxen/', `--output=${path.join(out, archive)}`,
+    metadata.gitCommit], { cwd: git('rev-parse', '--show-toplevel') });
   const artifacts = { [archive]: sha256(fs.readFileSync(path.join(out, archive))), 'install.sh': sha256(read('install.sh')) };
   fs.copyFileSync(path.join(root, 'install.sh'), path.join(out, 'install.sh'));
   fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify({ ...metadata, artifacts }, null, 2) + '\n');

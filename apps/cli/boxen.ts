@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// pds: the one command line for a pi-durable-sessions system. It knows no API
-// of its own: Sessions go through @pi-durable-sessions/client, REST through
+// boxen: the one command line for a boxen system. It knows no API
+// of its own: Sessions go through @boxen/client, REST through
 // apiClient and turns through the session client's run(). `--json` makes
 // every command print one JSON value on stdout; diagnostics go to stderr.
 //
-//   pds <command> [options]     pds help for the list
+//   boxen <command> [options]     boxen help for the list
 //
 // Exit codes: 0 success, 1 failure (an API error, or a turn that did not end
 // `done`), 2 bad usage.
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
-import { DEFAULT_URL, sessionSocketUrl, system as connect, webSocketTransport, type CreateSession, type Transport, type TurnResult } from "@pi-durable-sessions/client";
+import { DEFAULT_URL, sessionSocketUrl, system as connect, webSocketTransport, type CreateSession, type Transport, type TurnResult } from "@boxen/client";
 
 import pkg from "./package.json" with { type: "json" };
 
@@ -46,7 +46,7 @@ interface Command {
   run(ctx: Ctx, values: Record<string, unknown>, positionals: string[]): Promise<number>;
 }
 
-// The commands, grouped as `pds help` lists them. The operations commands of
+// The commands, grouped as `boxen help` lists them. The operations commands of
 // #68 (start, stop, deploy, status, logs) go in this table as a second group,
 // "System", so the one binary runs both the product and the system. They
 // will read the runtime settings rather than the API, so they skip system();
@@ -146,17 +146,17 @@ const common = {
 } satisfies ParseArgsOptionsConfig;
 
 function help() {
-  const lines = ["usage: pds <command> [options]", ""];
+  const lines = ["usage: boxen <command> [options]", ""];
   for (const [group, cmds] of Object.entries(groups)) {
     lines.push(`${group}:`);
-    for (const [name, c] of Object.entries(cmds)) lines.push(`  pds ${name} ${c.args}`.trimEnd(), `      ${c.summary}`);
+    for (const [name, c] of Object.entries(cmds)) lines.push(`  boxen ${name} ${c.args}`.trimEnd(), `      ${c.summary}`);
     lines.push("");
   }
   lines.push(
-    "  pds --version   local CLI application version (not the running server)",
+    "  boxen --version   local CLI application version (not the running server)",
     "",
     "Options for every command:",
-    `  --url <url>   the system (default: $PDS_URL, else ${DEFAULT_URL})`,
+    `  --url <url>   the system (default: $BOXEN_URL, else ${DEFAULT_URL})`,
     "  --json        print one JSON value on stdout",
     "  -h, --help    this help",
     "",
@@ -165,14 +165,14 @@ function help() {
 }
 
 function usage(deps: Deps, message: string) {
-  deps.err(`pds: ${message}\n\n${help()}`);
+  deps.err(`boxen: ${message}\n\n${help()}`);
   return 2;
 }
 
 export async function main(argv: string[], deps: Deps): Promise<number> {
   const [name, ...rest] = argv;
   if (!name) return usage(deps, "no command");
-  if (name === "--version" && rest.length === 0) { deps.out(`pi-durable-sessions ${pkg.version} (local CLI)\n`); return 0; }
+  if (name === "--version" && rest.length === 0) { deps.out(`boxen ${pkg.version} (local CLI)\n`); return 0; }
   if (name === "help" || name === "--help" || name === "-h") { deps.out(help()); return 0; }
   const command = commands[name];
   if (!command) return usage(deps, `unknown command: ${name}`);
@@ -184,14 +184,14 @@ export async function main(argv: string[], deps: Deps): Promise<number> {
   }
   const { values, positionals } = parsed;
   if (values.help) { deps.out(help()); return 0; }
-  const url = (values.url as string | undefined) ?? deps.env.PDS_URL ?? DEFAULT_URL;
+  const url = (values.url as string | undefined) ?? deps.env.BOXEN_URL ?? DEFAULT_URL;
   if (!/^https?:$/.test(URL.parse(url)?.protocol ?? "")) return usage(deps, `the system's URL must be http(s): ${url}`);
   try {
     return await command.run({ url, json: !!values.json, deps }, values, positionals);
   } catch (e) {
     // apiClient's Error carries the worker's message; a failed fetch its cause.
     const { message, cause } = e as Error;
-    deps.err(`pds: ${url}: ${message}${cause instanceof Error ? ` (${cause.message})` : ""}\n`);
+    deps.err(`boxen: ${url}: ${message}${cause instanceof Error ? ` (${cause.message})` : ""}\n`);
     return 1;
   }
 }

@@ -30,7 +30,7 @@ import { sandboxEvents } from "./src/sandbox-events.js";
   assert.equal((await noCompletion.exec("true", { onOutput() {} }, ctx)).error.code, "unknown", "EOF is not a successful exit");
 }
 
-const cwd = await mkdtemp(join(tmpdir(), "pds-env-"));
+const cwd = await mkdtemp(join(tmpdir(), "boxen-env-"));
 const sandbox = localSandbox(cwd);
 const env = sandboxEnv(sandbox, "test", cwd);
 const aborted = { ...ctx, abortSignal: AbortSignal.abort() };

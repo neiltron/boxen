@@ -1,10 +1,10 @@
 # Linux installation test
 
-Status: implemented on `feat/pids-linux-installer`; real-machine acceptance pending.
+Status: implemented on `feat/boxen-linux-installer`; real-machine acceptance pending.
 
 ## Scope
 
-Install a private, single-owner pi-durable-sessions instance on an x86-64 Omarchy/Arch or Ubuntu 22.04+/Debian 12+ systemd host, including an EC2 VM. No preinstalled Node.js, celld, RustFS, or Caddy required. Reuse Docker/Tailscale when present. Agent and interactive paths share one implementation.
+Install a private, single-owner boxen instance on an x86-64 Omarchy/Arch or Ubuntu 22.04+/Debian 12+ systemd host, including an EC2 VM. No preinstalled Node.js, celld, RustFS, or Caddy required. Reuse Docker/Tailscale when present. Agent and interactive paths share one implementation.
 
 Keep the existing development scripts working. Do not change existing machine services while developing this installer.
 
