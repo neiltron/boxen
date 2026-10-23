@@ -8,7 +8,7 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { createRegistry, defineExtension, defineTool, Harness, SessionFailed, section, watchEvents } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, hook, SessionFailed, section, ToolTask, watchEvents } from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { ARTIFACT_KINDS } from "./artifacts.js";
@@ -67,6 +67,27 @@ function artifactExtension(artifacts, session) {
   return defineExtension({ name: "artifacts", tools: [tool] });
 }
 
+// What each call that can change files did to the workspace, for the
+// timeline. After a bash, edit or write call the Session probes the
+// workspace through git and writes what differs from the last probe into the
+// transcript: `app.fs` (the paths and blob ids, named by the call) and
+// `app.git` (where HEAD went, with the commits and their tree blobs). A
+// display-only write lands at once, so the entry precedes the call's result.
+// The model never sees either. A probe that fails costs the timeline that
+// call, not the call its result.
+const MUTATING = new Set(["bash", "edit", "write"]);
+function timelineExtension(session) {
+  return defineExtension({
+    name: "timeline",
+    hooks: [hook(ToolTask, {
+      async afterTool(call) {
+        if (!MUTATING.has(call.name)) return;
+        await session.recordChanges(call.id).catch((e) => console.error(`session ${session.state.id}: timeline probe failed`, describe(e)));
+      },
+    })],
+  });
+}
+
 export class Session extends DurableObject {
   constructor(state, env) {
     super(state, env);
@@ -107,6 +128,7 @@ export class Session extends DurableObject {
     registry.install(CodingTools);
     registry.install(Prompt);
     registry.install(artifactExtension(this.env.ARTIFACTS.getByName("main"), meta.id));
+    registry.install(timelineExtension(this));
     const harness = await Harness.open(
       await SqliteStorage.open(new CellSqlite(this.state.storage)),
       {
@@ -249,10 +271,35 @@ export class Session extends DurableObject {
   }
 
   // A durable line in the transcript that the model never sees.
-  async note(text, level = "info") {
-    if (this.closing) return; // the closing Harness waits on whoever is noting
+  note(text, level = "info") {
+    return this.write("app.note", { text, level });
+  }
+
+  async write(kind, data) {
+    if (this.closing) return; // the closing Harness waits on whoever is writing
     const { root } = await this.open();
-    return root.submit({ type: "write", entry: { kind: "app.note", data: { text, level } } }, ctx);
+    return root.submit({ type: "write", entry: { kind, data } }, ctx);
+  }
+
+  // The timeline's probe after a call (timelineExtension). The last probe is
+  // kept in the cell: dirty paths by blob id, and HEAD. What the call changed
+  // is what differs; a path that left the dirty set is reported only while
+  // HEAD stayed, since a commit takes its paths with it and app.git has them.
+  // The first probe of a session made before this code attributes whatever
+  // was already dirty to that call, once.
+  async recordChanges(callId) {
+    const last = this.lastProbe ?? (await this.state.storage.get("probe")) ?? { files: {}, head: null };
+    const probe = await (await this.workspace()).probe(last.head);
+    if (!probe.repo) return;
+    const files = Object.fromEntries(probe.files.map((f) => [f.path, f.blob ?? f.status]));
+    const moved = probe.head !== last.head;
+    const changes = probe.files.filter((f) => files[f.path] !== last.files[f.path]);
+    if (!moved) for (const path of Object.keys(last.files)) if (!(path in files)) changes.push({ status: "", blob: null, path });
+    this.lastProbe = { files, head: probe.head };
+    await this.state.storage.put("probe", this.lastProbe);
+    // ponytail: 200 paths per entry; a build tree left untracked is noise, not a timeline.
+    if (changes.length) await this.write("app.fs", { call: callId, files: changes.slice(0, 200), truncated: changes.length > 200 });
+    if (moved) await this.write("app.git", { call: callId, head: probe.head, branch: probe.branch, commits: probe.commits });
   }
 
   // Browser WebSocket upgrades, already checked by the worker. Nothing is sent

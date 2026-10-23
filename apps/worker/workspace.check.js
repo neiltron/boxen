@@ -179,6 +179,45 @@ function open(meta = repo, options = {}) {
   await assert.rejects(ws.diff(), { message: "container unavailable" });
 }
 
+// The timeline probe: the dirty paths with blob ids, HEAD, and the commits
+// since the previous HEAD, from the script's tagged lines. Exits 3 and 4 are
+// "not a repo", and stderr is never parsed.
+{
+  const a = "a".repeat(40), b = "b".repeat(40);
+  const lines = [
+    "F\t M\t1111111111111111111111111111111111111111\tsrc/a.js",
+    "F\t??\t2222222222222222222222222222222222222222\tnew file.txt",
+    "F\t D\t-\tgone.txt",
+    `HEAD\t${b}\tfix/x`,
+    `COMMIT\t${b}\t${a}\t1700000000\tpi\tfix: the thing\twith a tab`,
+    "TREE\t:100644 100644 0000000000000000000000000000000000000000 3333333333333333333333333333333333333333 M\tsrc/b.js",
+    "TREE\t:000000 100644 0000000000000000000000000000000000000000 4444444444444444444444444444444444444444 A\tdocs/c.md",
+  ].join("\n") + "\n";
+  let script;
+  const probe = (r) => open(repo, { run: (s) => { if (s.includes("git status --porcelain")) { script = s; return r; } } }).ws;
+  assert.deepEqual(await probe({ exitCode: 0, stdout: lines, stderr: "F\tnoise\t-\tstderr.txt\n" }).probe(a), {
+    repo: true,
+    files: [
+      { status: "M", blob: "1111111111111111111111111111111111111111", path: "src/a.js" },
+      { status: "??", blob: "2222222222222222222222222222222222222222", path: "new file.txt" },
+      { status: "D", blob: null, path: "gone.txt" },
+    ],
+    head: b, branch: "fix/x",
+    commits: [{ sha: b, parents: [a], time: 1700000000000, author: "pi", subject: "fix: the thing\twith a tab", files: [
+      { status: "M", blob: "3333333333333333333333333333333333333333", path: "src/b.js" },
+      { status: "A", blob: "4444444444444444444444444444444444444444", path: "docs/c.md" },
+    ] }],
+  });
+  assert.match(script, /^cd '\/workspace\/app' \|\| exit 3\n/);
+  assert.match(script, new RegExp(`\nprev='${a}'\n`), "the previous HEAD bounds the commit list");
+  await probe({ exitCode: 0, stdout: "HEAD\t\t\n" }).probe(null);
+  assert.match(script, /\nprev=''\n/, "no previous HEAD: no commits listed");
+  assert.deepEqual(await probe({ exitCode: 0, stdout: "HEAD\t\t\n" }).probe(null), { repo: true, files: [], head: null, branch: null, commits: [] }, "an unborn branch");
+  assert.deepEqual(await probe({ exitCode: 4 }).probe(null), { repo: false });
+  assert.deepEqual(await open({ id: "gone", cwd: "/workspace/gone" }).ws.probe(null), { repo: false }, "exit 3");
+  await assert.rejects(probe({ exitCode: 128, stderr: "fatal: x\n" }).probe(null), { message: "git probe exited 128" });
+}
+
 // The terminal reuses its shell, and hands back the exact upgrade for the
 // browser's own request.
 for (const duplicate of [{ code: "SESSION_ALREADY_EXISTS" }, { name: "SessionAlreadyExistsError" }]) {
