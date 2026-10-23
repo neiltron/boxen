@@ -12,7 +12,7 @@ const boundaries = {
   "@earendil-works/pi-ai/models": { getSupportedThinkingLevels: () => ["off"] },
   "@earendil-works/pi-ai/providers/all": { builtinModels() {} },
   "@earendil-works/pi-durable": {
-    SessionFailed: class extends Error {}, createRegistry() {}, defineExtension: (x) => x, defineTool() {}, Harness: {}, section() {}, watchEvents() {},
+    SessionFailed: class extends Error {}, createRegistry() {}, defineExtension: (x) => x, defineTool() {}, Harness: {}, hook() {}, section() {}, ToolTask: {}, watchEvents() {},
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: {} },
   "@earendil-works/pi-durable/tools": { CodingTools: {} },
