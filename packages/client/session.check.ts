@@ -356,6 +356,24 @@ const artifactResult = (callId: string, artifactId: string) =>
   const other = setup();
   join(other.net.last(), snapshot([{ kind: "app.note", data: { text: "cloning x…" } }]));
   assert.deepEqual(kinds(other.client), ["system"]);
+
+  // The workspace probe's records keep their place in the transcript's order
+  // (seq) beside the items, live and from a snapshot; a git entry may carry
+  // no commits (HEAD recorded, or moved without one).
+  const fs = { kind: "app.fs", data: { call: "c1", files: [{ status: "??", blob: "b".repeat(40), path: "a.txt" }] } };
+  const commit = { sha: "c".repeat(40), parents: [], time: 1, author: "pi", subject: "add", files: [{ status: "A", blob: "b".repeat(40), path: "a.txt" }] };
+  const git = { kind: "app.git", data: { call: "c2", head: commit.sha, branch: "main", commits: [commit] } };
+  const before = m().seq;
+  live({ type: "entry_appended", entry: fs }, { type: "entry_appended", entry: { kind: "app.git", data: { call: "c1", head: "a".repeat(40) } } });
+  assert.deepEqual(m().timeline, [
+    { kind: "fs", seq: before, call: "c1", files: fs.data.files, truncated: false },
+    { kind: "git", seq: before + 1, call: "c1", head: "a".repeat(40), branch: null, commits: [] },
+  ]);
+  assert.equal(m().seq, before + 2, "the records take items' seq numbers");
+  const recorded = setup();
+  join(recorded.net.last(), snapshot([{ model: [{ role: "user", content: "go" }] }, fs, git]));
+  assert.deepEqual(recorded.client.state().model.timeline.map((e) => [e.kind, e.seq, e.call]), [["fs", 1, "c1"], ["git", 2, "c2"]]);
+  assert.deepEqual((recorded.client.state().model.timeline[1] as any).commits, [commit]); // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 // run(): one turn for a headless caller, settled by the cell's submission

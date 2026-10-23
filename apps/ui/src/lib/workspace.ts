@@ -1,7 +1,8 @@
 import type { LayoutNode, WorkspaceHandle } from "@danfessler/trellis";
 
-// Clear layouts fragmented into floating panels by the old per-view hide loop.
-export const WORKSPACE_LAYOUT_VERSION = 2;
+// 2 cleared layouts fragmented into floating panels by the old per-view hide
+// loop; 3 added the Timeline view to the panel.
+export const WORKSPACE_LAYOUT_VERSION = 3;
 
 export function restorePanels(workspace: WorkspaceHandle, viewIds: ReadonlySet<string>) {
   const hidden = workspace.getSnapshot().hidden.filter((h) => h.views.some((v) => viewIds.has(v.id)));

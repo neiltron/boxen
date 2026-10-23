@@ -43,7 +43,7 @@ import type { components } from "./openapi.ts";
 import type { AgentState, ModelInfo, SessionCommand, SessionFrame } from "./protocol.ts";
 import { reconnecting, type SocketDeps } from "./socket.ts";
 
-export type { Block, ChatItem, ChatModel, LoggedEvent } from "./events.ts";
+export type { Block, ChatItem, ChatModel, Commit, FileVersion, LoggedEvent, TimelineEntry } from "./events.ts";
 
 type SessionMeta = components["schemas"]["Session"];
 

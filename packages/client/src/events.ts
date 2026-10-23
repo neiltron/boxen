@@ -34,6 +34,19 @@ export interface LoggedEvent {
   ev: { type: string } & Record<string, unknown>;
 }
 
+// A path's version as the cell's probe saw it: git's status and blob id.
+export interface FileVersion { status: string; blob: string | null; path: string }
+export interface Commit {
+  sha: string; parents: string[]; time: number; author: string; subject: string;
+  files: { status: string; blob: string; path: string }[]; // the tree's changes
+}
+// What the cell recorded of the workspace after a file-changing call (the
+// Session's app.fs and app.git entries): `call` is the tool call's id. A
+// `git` entry without commits says where HEAD was or went.
+export type TimelineEntry =
+  | { kind: "fs"; seq: number; call: string | null; files: FileVersion[]; truncated: boolean }
+  | { kind: "git"; seq: number; call: string | null; head: string | null; branch: string | null; commits: Commit[] };
+
 export interface ChatModel {
   items: ChatItem[];
   running: boolean;
@@ -45,12 +58,13 @@ export interface ChatModel {
   // Facts the panel follows, counted as tool calls finish (see settle).
   artifacts: string[]; // artifact ids saved in this transcript, oldest first
   mutations: number; // finished calls that may have touched files
+  timeline: TimelineEntry[]; // in transcript order; seq shares the items' counter
 }
 
 const LOG_LIMIT = 1000;
 
 export function emptyModel(): ChatModel {
-  return { items: [], assistantSeq: null, running: false, seq: 0, agent: {}, log: [], logged: 0, artifacts: [], mutations: 0 };
+  return { items: [], assistantSeq: null, running: false, seq: 0, agent: {}, log: [], logged: 0, artifacts: [], mutations: 0, timeline: [] };
 }
 
 function currentAssistant(m: ChatModel): Extract<ChatItem, { kind: "assistant" }> | null {
@@ -151,9 +165,13 @@ function endAssistant(m: ChatModel, msg: any) {
   }
 }
 
-// Session setup lines (cloning, failures) the cell writes into the transcript.
+// What the cell writes into the transcript itself: setup lines (cloning,
+// failures) as system items, and the workspace probe's records.
 function applyNote(m: ChatModel, entry: any) {
-  if (entry?.kind === "app.note") push(m, { kind: "system", level: entry.data?.level ?? "info", text: entry.data?.text ?? "" });
+  const d = entry?.data ?? {};
+  if (entry?.kind === "app.note") push(m, { kind: "system", level: d.level ?? "info", text: d.text ?? "" });
+  else if (entry?.kind === "app.fs") m.timeline.push({ kind: "fs", seq: m.seq++, call: d.call ?? null, files: Array.isArray(d.files) ? d.files : [], truncated: !!d.truncated });
+  else if (entry?.kind === "app.git") m.timeline.push({ kind: "git", seq: m.seq++, call: d.call ?? null, head: d.head ?? null, branch: d.branch ?? null, commits: Array.isArray(d.commits) ? d.commits : [] });
 }
 
 export function applyEvent(m: ChatModel, ev: any): void {
@@ -161,7 +179,7 @@ export function applyEvent(m: ChatModel, ev: any): void {
   if (m.log.length > LOG_LIMIT) m.log.splice(0, m.log.length - LOG_LIMIT);
   switch (ev.type) {
     case "snapshot": {
-      Object.assign(m, { items: [], assistantSeq: null, running: false, seq: 0, artifacts: [], mutations: 0 });
+      Object.assign(m, { items: [], assistantSeq: null, running: false, seq: 0, artifacts: [], mutations: 0, timeline: [] });
       m.agent = ev.agent ?? {};
       for (const entry of ev.entries) {
         applyNote(m, entry);

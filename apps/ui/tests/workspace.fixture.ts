@@ -2,7 +2,7 @@ import { createWorkspace, layout, type WorkspaceHandle } from "@danfessler/trell
 import "@danfessler/trellis/style.css";
 import { bindPanelShortcuts, restorePanels, togglePanels } from "../src/lib/workspace";
 
-const ids = ["artifacts", "changes", "preview", "terminal", "events"];
+const ids = ["artifacts", "changes", "timeline", "preview", "terminal", "events"]; // PANEL_VIEWS' order
 const sidebar = new Set(ids);
 let workspace: WorkspaceHandle;
 let unbind: (() => void) | undefined;
@@ -23,7 +23,7 @@ function setup(axis: "x" | "y" = "x") {
     motion: "reduced",
     defaultLayout: layout.split(axis, [
       layout.stage(layout.view("chat", { id: "chat" })),
-      layout.panel({ id: "sidebar", selected: 2 }, ...ids.map((id) => layout.view(id, { id }))),
+      layout.panel({ id: "sidebar", selected: ids.indexOf("preview") }, ...ids.map((id) => layout.view(id, { id }))),
     ], { weights: [3, 2] }),
   });
   const chat = workspace.surfaces().find((s) => s.view.id === "chat")!;

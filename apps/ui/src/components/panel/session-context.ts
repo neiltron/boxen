@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { SessionHandle } from "@/hooks/useSession";
 
-export type PanelView = "artifacts" | "changes" | "preview" | "terminal" | "events";
+export type PanelView = "artifacts" | "changes" | "timeline" | "preview" | "terminal" | "events";
 
 // What every docked view needs, wherever the user drags it.
 export interface SessionContextValue {
