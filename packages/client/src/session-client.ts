@@ -56,7 +56,7 @@ export interface SessionState {
 }
 
 export interface SessionCommands {
-  prompt(text: string): boolean; // steers when the agent is running
+  prompt(text: string, requestId?: string): boolean; // steers when the agent is running; a resend with the same requestId is the same prompt
   abort(): boolean;
   configure(agent: AgentState): boolean; // applies from the next model request
   listModels(): boolean; // the answer lands in `models`
@@ -177,7 +177,7 @@ export function sessionClient(url: string, deps: SocketDeps): SessionClient {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
-    prompt: (text) => command({ type: "prompt", message: text, requestId: crypto.randomUUID() }),
+    prompt: (text, requestId = crypto.randomUUID()) => command({ type: "prompt", message: text, requestId }),
     abort: () => command({ type: "abort" }),
     configure: (agent) => command({ type: "configure", model: agent.model, thinkingLevel: agent.thinkingLevel }),
     listModels: () => command({ type: "models" }),
