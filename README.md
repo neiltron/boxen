@@ -44,7 +44,7 @@ browser tabs ⇄ WS ⇄ Session cell ─ Harness over the cell's SQLite ─ mode
   (markdown, html, svg, mermaid, code), versioned and full-text searchable,
   readable while sandboxes sleep.
 - **apps/ui/**: chat beside a resizable, dockable panel (Trellis) with Artifacts,
-  Changes, Preview, Terminal, and Events views. It reaches a Session cell
+  Changes, Timeline, Preview, Terminal, and Events views. It reaches a Session cell
   through the shared client's session client (`useSession` is its React
   binding).
 - **packages/client/**: the REST contract and its typed client, and the

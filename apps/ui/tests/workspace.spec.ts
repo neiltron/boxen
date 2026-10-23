@@ -69,7 +69,7 @@ for (const axis of ["x", "y"] as const) {
       for (let i = 0; i < 3; i++) {
         h.toggle();
         const hidden = h.workspace.getSnapshot().hidden;
-        if (hidden.length !== 1 || hidden[0].views.length !== 5) throw new Error("tabs were detached");
+        if (hidden.length !== 1 || hidden[0].views.length !== 6) throw new Error("tabs were detached");
         if (h.workspace.views().find((v) => v.id === "chat")?.placement !== "stage") throw new Error("chat hidden");
         h.toggle();
       }
