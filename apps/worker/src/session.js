@@ -135,6 +135,12 @@ export class Session extends DurableObject {
           return (await this.workspace()).env(cwd);
         },
         onReport: (e) => this.report(e),
+        // Every queued prompt joins at the next boundary, not one per
+        // boundary. A run that ends by abort or failure reaches none and
+        // leaves what was queued behind it in the inbox, where the next
+        // submission places it; that submission takes all of it along
+        // instead of placing one and queueing behind it (#10).
+        settings: { steeringMode: "all" },
       },
       ctx,
     );
@@ -147,6 +153,7 @@ export class Session extends DurableObject {
       const root = await harness.root(ctx, { agent: { ...defaults, cwd: meta.cwd } });
       // A session made before any provider was connected starts without a model.
       if (!(await root.agent(ctx)).model && defaults.model) await root.configure(defaults, ctx);
+      await this.withdrawLeftovers(harness); // left before this cell last stopped
       const status = await watchEvents(harness, root.id, ctx);
       status.start(async (events) => this.track(meta.id, events));
       harness.resume();
@@ -202,6 +209,7 @@ export class Session extends DurableObject {
     try {
       const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true), sleep(10 * 60_000).then(() => false)]);
       if (!idle) return void await this.state.storage.setAlarm(Date.now());
+      await this.withdrawLeftovers(harness);
     } catch (e) {
       if (failed(e)) return void await this.reopen();
       throw e;
@@ -235,7 +243,21 @@ export class Session extends DurableObject {
   // longer than the bound goes on as before, exposed to the abort race until
   // the alarm resumes it after a reopen.
   async holdRun(harness) {
-    await Promise.race([harness.waitForIdle(ctx).catch(() => {}), sleep(HOLD_MS)]);
+    const idle = await Promise.race([harness.waitForIdle(ctx).then(() => true, () => false), sleep(HOLD_MS).then(() => false)]);
+    if (idle) await this.withdrawLeftovers(harness);
+  }
+
+  // A run that ends by abort or failure leaves the prompts queued behind it
+  // in the inbox (pi-durable's documented behaviour), and their senders wait
+  // until something is next submitted. Wherever the cell sees the agent idle
+  // (a prompt's hold, the alarm, open) it withdraws them as Submission.abort()
+  // does: unanswered, aborted. A prompt that reaches them first places them
+  // all with it (steeringMode "all"), and this finds them placed. A placed
+  // input belongs to a run, whose boundaries place the rest.
+  async withdrawLeftovers(harness) {
+    const { submissions } = await harness.inspect(ctx);
+    if (submissions.some((s) => s.status === "placed")) return;
+    for (const { id, type } of submissions) if (type === "input") await harness.abortSubmission(id, ctx);
   }
 
   // For the turn's env builder in openHarness: join any prepare in flight

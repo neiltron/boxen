@@ -61,17 +61,27 @@ app, `boxen` and the MCP server all use; it sends commands only once `ready`.
 | `ping` | | the session client, every 25 s | nothing: traffic on an idle socket for the proxies on the way |
 | `prompt` | `message`, `requestId` | the session client (`prompt()`, `run()`) | `events` as the turn runs, ending in its submission record; an `error` frame with the same `requestId` if the cell refuses it (see [a turn's outcome](#a-turns-outcome)) |
 | `steer` | as `prompt` | old clients only | as `prompt`: the cell handles it as one |
-| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts, with those already queued behind it when the abort lands, settle `unanswered` with reason `aborted`. A prompt admitted after that, while the run winds down, stays queued with no run to place it |
+| `abort` | | the session client (`abort()`, `run()`'s signal) | `events`: the run stops, and its prompts, with those already queued behind it when the abort lands, settle `unanswered` with reason `aborted`. A prompt admitted after that, while the run winds down, is withdrawn the same way once the run has ended (see a prompt left queued, below) |
 | `configure` | `model?`, `thinkingLevel?` | the session client (`configure()`) | `events` (`agent_changed`); applies from the next model request: the request in flight keeps its model, but a turn makes a new request after each tool round, so a turn can change model partway |
 | `models` | | the session client (`listModels()`) | a `models` frame, to this socket only |
 | `rename` | `name` | other clients only | a `meta` frame to every joined socket, as after `PATCH /api/session/{id}` with `{ "name" }` |
 
 - **`prompt`** while the agent is idle starts a run; while it works, the
   message is queued as a steer and joins the run at its next boundary (after
-  the current tool round, or before the run would end). `requestId` is the client's own unique
+  the current tool round, or before the run would end), together with every
+  other prompt queued by then. `requestId` is the client's own unique
   id for this prompt (the session client uses a UUID): a resend with the same
   `requestId` finds the first submission instead of making a second, and the
   turn's records and refusal carry it.
+- **A prompt left queued**: a run that ends without reaching a boundary (a
+  model error, no model, a fault, an abort) places nothing, and pi-durable
+  keeps what was queued behind it until the next submission places it. The
+  cell withdraws it (`unanswered`, reason `aborted`) once it sees the agent
+  idle, or when the Session next opens. A prompt that reaches the idle
+  Session first takes all of it along instead, and one run answers them
+  together: each prompt's record names that run's answer. Either way no
+  prompt waits behind one that will not run. A withdrawn prompt is not
+  answered; send it again if it still applies.
 - **`steer`** is `prompt`'s old name. The cell still accepts it and does
   exactly what `prompt` does; the session client never sends it.
 - **`rename`** is handled by the cell, which renames the Session as the REST
@@ -114,8 +124,9 @@ is the prompt's:
   the answer (it arrived earlier, in a `message_end` event's `entry` or a
   snapshot's `entries`). Read the answer there, not from the transcript's last
   line, which another client's prompt can follow.
-- `unanswered`: `record.reason` `aborted` means someone sent `abort`; any
-  other reason (`no_model`, `model_error`, `faulted`, `reset`, with
+- `unanswered`: `record.reason` `aborted` means someone sent `abort`, or the
+  prompt was withdrawn because the run it was queued behind ended without
+  taking it in (see a prompt left queued, above); any other reason (`no_model`, `model_error`, `faulted`, `reset`, with
   `record.detail` when there is one) means the turn failed.
 
 An `error` frame carrying the prompt's `requestId` means the cell refused it,

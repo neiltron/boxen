@@ -65,7 +65,7 @@ export interface SessionCommands {
 export type TurnResult =
   | { status: "done"; text: string } // the text of the answer the cell recorded for this prompt
   | { status: "error"; error: string } // the cell refused the prompt, or the turn failed (no model, model error, …)
-  | { status: "aborted" } // anyone's abort, or this run's signal
+  | { status: "aborted" } // anyone's abort, this run's signal, or the run it was queued behind ending first
   | { status: "disconnected" }; // the outcome is unknown: the socket dropped mid-turn, or the cell dropped events; the turn may go on
 
 export interface SessionClient extends SessionCommands {
