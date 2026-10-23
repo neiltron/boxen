@@ -1,20 +1,21 @@
-# https://d.oxen.sh and the tailnet name → the installed boxen
+# https://b.oxen.sh (and the older d.oxen.sh) and the tailnet name → the installed boxen
 # (celld on 127.0.0.1:8093), on desktron. DNS points at desktron's tailnet IP;
 # Tailscale forwards tailnet TCP 443 here, raw, so this Caddy holds the certs:
 #   tailscale serve --bg --tcp 443 tcp://127.0.0.1:8444
 # 8444, not 8443: boxen-legacy's Caddy claims 8443 on this host. The Cloudflare token
 # is boxen-legacy's; the ts.net cert comes from tailscaled (the user is its operator).
 # The installation is on local access (sudo boxenctl setup --access local), so
-# setup leaves 443 alone. Run by the user unit ops/boxen-caddy.service:
+# setup leaves 443 alone. Run by the user unit ops/boxen-https.service:
 #   cp Caddyfile.desktron ~/.config/boxen/Caddyfile
-#   cp ops/boxen-caddy.service ~/.config/systemd/user/ && systemctl --user enable --now boxen-caddy
+#   cp ops/boxen-https.service ~/.config/systemd/user/ && systemctl --user enable --now boxen-https
+# boxen-https, not boxen-caddy: boxen-legacy's units on this host already use that name.
 {
 	auto_https disable_redirects
 	https_port 8444
 	admin off
 }
 
-d.oxen.sh {
+b.oxen.sh, d.oxen.sh {
 	bind 127.0.0.1
 	tls {
 		dns cloudflare {file.{$HOME}/.config/boxen/cloudflare-api-token}
