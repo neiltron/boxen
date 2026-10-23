@@ -80,10 +80,11 @@ export function workspace(sandbox, meta, { secrets = async () => ({}), onProgres
     },
 
     // Keep the interactive shell separate from the agent's exec shell. Reuse
-    // it on reconnect, but recreate it (with cwd) after the container restarts.
+    // it on reconnect; an explicit reset replaces even a dead shell session.
     async terminal(request) {
       await self.prepare();
       const id = `terminal-${meta.id}`;
+      if (new URL(request.url).searchParams.get("reset") === "1") await sandbox.deleteSession(id);
       try {
         await sandbox.createSession({ id, cwd: meta.cwd });
       } catch (e) {

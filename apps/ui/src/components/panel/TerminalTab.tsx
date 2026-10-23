@@ -37,6 +37,7 @@ function terminalTheme(host: HTMLElement): ITheme {
 export function TerminalTab() {
   const { sessionId } = useSessionContext();
   const hostRef = useRef<HTMLDivElement>(null);
+  const restartSessionRef = useRef<string | null>(null);
   const [status, setStatus] = useState("Connecting…");
   const [nonce, setNonce] = useState(0);
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
@@ -70,7 +71,10 @@ export function TerminalTab() {
       if (disposed) return;
       ready = false;
       // Raw PTY bytes with its own backoff and give-up, so not the shared client's reconnecting socket.
-      const ws = new WebSocket(`${WS_BASE}/api/session/${sessionId}/terminal`);
+      // Consume the explicit restart once, not on retries or theme reattachments.
+      const reset = restartSessionRef.current === sessionId;
+      restartSessionRef.current = null;
+      const ws = new WebSocket(`${WS_BASE}/api/session/${sessionId}/terminal${reset ? "?reset=1" : ""}`);
       ws.binaryType = "arraybuffer";
       socket = ws;
       let ended = false;
@@ -102,7 +106,7 @@ export function TerminalTab() {
         ready = false;
         if (ended) return;
         if (attempts >= 10) {
-          setStatus("Disconnected — reconnect to try again");
+          setStatus("Disconnected — restart shell to try again");
           return;
         }
         const delay = Math.min(1000 * 2 ** attempts++, 30000);
@@ -168,9 +172,11 @@ export function TerminalTab() {
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
         <span role="status" className="min-w-0 flex-1 truncate" title={status}>{status}</span>
-        <button type="button" aria-label="Reconnect terminal" title="Reconnect terminal"
-          onClick={() => setNonce((n) => n + 1)} className="rounded-md p-1 hover:bg-muted hover:text-foreground">
+        <button type="button" aria-label="Restart shell" title="Restart the shared shell (ends running shell commands)"
+          onClick={() => { restartSessionRef.current = sessionId; setNonce((n) => n + 1); }}
+          className="flex items-center gap-1 rounded-md p-1 hover:bg-muted hover:text-foreground">
           <ArrowClockwiseIcon className="size-3.5" />
+          Restart shell
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden p-2">

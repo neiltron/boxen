@@ -25,7 +25,7 @@ const procNet = (ports) => ports.map((p, i) => `${i}: 00000000:${p.toString(16).
 function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", duplicate = { code: "SESSION_ALREADY_EXISTS" }, serve } = {}) {
   const upgrade = { status: 101, webSocket: {} }; // Node's Response can't be 101
   const sb = {
-    disk: new Set(["/workspace"]), prepared: false, backup, shells: new Map(), execs: [], attached: [], upgrade,
+    disk: new Set(["/workspace"]), prepared: false, backup, shells: new Map(), deleted: [], execs: [], attached: [], upgrade,
     loseDisk() { sb.disk = new Set(["/workspace"]); sb.prepared = false; sb.shells.clear(); },
     clones: () => sb.execs.filter((e) => e.script.startsWith("git clone")).length,
 
@@ -63,6 +63,10 @@ function fakeSandbox({ run, backup = null, listening = [], proc, patch = "", dup
     async createSession({ id, cwd }) {
       if (sb.shells.has(id)) throw duplicate;
       sb.shells.set(id, { cwd });
+    },
+    async deleteSession(id) {
+      sb.deleted.push(id);
+      sb.shells.delete(id);
     },
     async getSession(id) {
       return { terminal(request, options) { sb.attached.push({ id, request, options }); return upgrade; } };
@@ -185,12 +189,54 @@ for (const duplicate of [{ code: "SESSION_ALREADY_EXISTS" }, { name: "SessionAlr
   const { sandbox, ws } = open(repo, { duplicate });
   const request = new Request("https://example.test/api/session/abc-123/terminal", { headers: { Upgrade: "websocket" } });
   assert.equal(await ws.terminal(request), sandbox.upgrade);
+  const shell = sandbox.shells.get("terminal-abc-123");
   assert.equal(await ws.terminal(request), sandbox.upgrade, "an existing shell is reused");
+  assert.equal(sandbox.shells.get("terminal-abc-123"), shell, "reconnect preserves the shell instance");
+  assert.deepEqual(sandbox.deleted, [], "reconnect must not delete the shell");
   assert.deepEqual([...sandbox.shells], [["terminal-abc-123", { cwd: "/workspace/app" }]]);
   for (const attached of sandbox.attached) {
     assert.equal(attached.request, request);
     assert.deepEqual(attached.options, { cols: 80, rows: 24, shell: "/bin/bash" });
   }
+}
+// Explicit restart replaces even an exited shell, without touching the agent's
+// exec shell. Subsequent ordinary reconnects reuse the replacement.
+{
+  const { sandbox, ws } = open(repo);
+  const request = new Request("https://example.test/api/session/abc-123/terminal");
+  await ws.terminal(request);
+  const id = "terminal-abc-123";
+  const exited = sandbox.shells.get(id);
+  exited.exited = true;
+  const agent = { cwd: repo.cwd };
+  sandbox.shells.set("sandbox:abc-123", agent);
+
+  await ws.terminal(new Request(`${request.url}?reset=0`));
+  assert.equal(sandbox.shells.get(id), exited, "only reset=1 replaces the shell");
+  assert.deepEqual(sandbox.deleted, []);
+
+  const reset = new Request(`${request.url}?reset=1`);
+  assert.equal(await ws.terminal(reset), sandbox.upgrade, "reset returns the original upgrade");
+  const replacement = sandbox.shells.get(id);
+  assert.notEqual(replacement, exited, "reset replaces the dead shell instance");
+  assert.deepEqual(replacement, { cwd: repo.cwd }, "replacement starts in the workspace cwd");
+  assert.deepEqual(sandbox.deleted, [id], "only the terminal session is deleted");
+  assert.equal(sandbox.shells.get("sandbox:abc-123"), agent, "agent exec shell is untouched");
+  assert.equal(sandbox.attached.at(-1).request, reset, "reset forwards this request's upgrade");
+
+  await ws.terminal(request);
+  assert.equal(sandbox.shells.get(id), replacement, "ordinary reconnect keeps the replacement");
+  assert.deepEqual(sandbox.deleted, [id], "reset does not persist across requests");
+}
+{
+  const { sandbox, ws } = open(repo);
+  const request = new Request("https://example.test/api/session/abc-123/terminal");
+  await ws.terminal(request);
+  const shell = sandbox.shells.get("terminal-abc-123");
+  sandbox.deleteSession = async () => { throw new Error("container unavailable"); };
+  await assert.rejects(ws.terminal(new Request(`${request.url}?reset=1`)), /container unavailable/);
+  assert.equal(sandbox.shells.get("terminal-abc-123"), shell);
+  assert.equal(sandbox.attached.length, 1, "a failed reset must not attach to the old shell");
 }
 {
   const { ws } = open(repo, { duplicate: new Error("container unavailable") });
