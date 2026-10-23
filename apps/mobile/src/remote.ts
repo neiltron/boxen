@@ -11,7 +11,7 @@ const SESSION = "A Session is a coding agent with its own Linux sandbox on the u
 const JOIN_MS = 10_000;
 const SETTLE_MS = 3_000; // how long a sent prompt has to fail before it counts as sent
 
-const text = (value: string) => ({ content: [{ type: "text" as const, text: value }] });
+const text = (value: string) => ({ output: [{ type: "text" as const, text: value }] });
 const clip = (s: string, n: number) => { s = s.replace(/\s+/g, " ").trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const when = (ms?: number | null) => (ms ? new Date(ms).toISOString() : "never");
 

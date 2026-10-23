@@ -47,7 +47,7 @@ export function githubExtension(token: () => Promise<string | undefined>, fetchI
         const text = out.length > MAX_CHARS
           ? `${out.slice(0, MAX_CHARS)}\n… truncated at ${MAX_CHARS} of ${out.length} characters; ask for a smaller page or a narrower path.`
           : out;
-        return { content: [{ type: "text", text }] };
+        return { output: [{ type: "text", text }] };
       },
     })],
   });

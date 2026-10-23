@@ -64,7 +64,7 @@ const call = async (name: string, args: object, taskId = "t1") => {
     },
   };
   const result = await (tool.execute as Function)(args, api, ctx);
-  return result.content.map((c: { text: string }) => c.text).join("");
+  return result.output.map((c: { text: string }) => c.text).join("");
 };
 const idle = async (id: string) => (await cellFor(id)).agent.harness.waitForIdle(ctx);
 // User messages in the transcript, from a fresh join as a browser would see it.
@@ -117,7 +117,7 @@ const gh = githubExtension(async () => "ghp_test", async (input, init) => {
 });
 const ghCall = async (args: object) => {
   const result = await (gh.tools![0].execute as Function)(args, {}, ctx);
-  return result.content[0].text as string;
+  return result.output[0].text as string;
 };
 assert.equal(await ghCall({ path: "/repos/o/r/commits?per_page=1" }),
   '[{"sha":"abc","html_url":"https://github.com/o/r/commit/abc","author":{"login":"neil"}}]');
