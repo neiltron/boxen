@@ -96,6 +96,7 @@ export class Session extends DurableObject {
     this.streams = new Map(); // ws → AgentEventStream
     this.status = "idle";
     this.lastTouch = 0;
+    this.ran = false; // a run started or ended since the last checkpoint (watchRun)
   }
 
   async init(meta) {
@@ -229,7 +230,13 @@ export class Session extends DurableObject {
       throw e;
     }
     await this.setStatus(meta.id, "idle");
-    await (await this.workspace()).checkpoint();
+    // Only after a run: the alarm also fires for a pull request poll, and a
+    // checkpoint each time would snapshot an unchanged workspace.
+    if (this.ran) {
+      this.ran = false;
+      await (await this.workspace()).checkpoint();
+    }
+    await this.pollPullRequest().catch((e) => console.error(`session ${meta.id}: pull request poll failed`, describe(e)));
   }
 
   // Everything this Session does to its Sandbox goes through one workspace
@@ -295,11 +302,46 @@ export class Session extends DurableObject {
     const moved = probe.head !== last.head;
     const changes = probe.files.filter((f) => files[f.path] !== last.files[f.path]);
     if (!moved) for (const path of Object.keys(last.files)) if (!(path in files)) changes.push({ status: "", blob: null, path });
-    this.lastProbe = { files, head: probe.head };
+    this.lastProbe = { files, head: probe.head, upstream: probe.upstream };
     await this.state.storage.put("probe", this.lastProbe);
     // ponytail: 200 paths per entry; a build tree left untracked is noise, not a timeline.
     if (changes.length) await this.write("app.fs", { call: callId, files: changes.slice(0, 200), truncated: changes.length > 200 });
     if (moved) await this.write("app.git", { call: callId, head: probe.head, branch: probe.branch, commits: probe.commits });
+    if (probe.upstream && probe.upstream !== last.upstream) await this.findPullRequest(callId, probe.branch);
+  }
+
+  // The pull request for the session's branch: looked up when the branch
+  // reaches its upstream (a push moved @{upstream}), then polled from the
+  // alarm while it is open, at an interval that doubles up to POLL.max
+  // while nothing changes. Each change is an app.pr entry: opened, draft
+  // or ready, a new head, merged, closed. GitHub is the source; nothing is
+  // read from the agent's output.
+  async findPullRequest(callId, branch) {
+    const repo = githubRepo((await this.meta())?.repo);
+    if (!repo || !branch) return;
+    const head = encodeURIComponent(`${repo.split("/")[0]}:${branch}`);
+    const [pull] = await this.env.DIRECTORY.getByName("main").github(`/repos/${repo}/pulls?head=${head}&state=all&per_page=1`);
+    if (pull) await this.recordPullRequest(callId, pull);
+  }
+
+  async pollPullRequest() {
+    const pr = await this.state.storage.get("pr");
+    const repo = githubRepo((await this.meta())?.repo);
+    if (!pr || pr.state !== "open" || !repo) return;
+    await this.recordPullRequest(null, await this.env.DIRECTORY.getByName("main").github(`/repos/${repo}/pulls/${pr.number}`));
+  }
+
+  async recordPullRequest(callId, pull) {
+    const last = await this.state.storage.get("pr");
+    const seen = {
+      number: pull.number, url: pull.html_url, title: pull.title, state: pull.merged_at ? "merged" : pull.state,
+      draft: !!pull.draft, head: pull.head?.sha ?? null, base: pull.base?.ref ?? null, updatedAt: pull.updated_at ?? null,
+    };
+    const changed = !last || ["number", "title", "state", "draft", "head", "base"].some((k) => last[k] !== seen[k]);
+    const pollMs = changed ? POLL.first : Math.min(last.pollMs * 2, POLL.max);
+    await this.state.storage.put("pr", { ...seen, pollMs });
+    if (changed) await this.write("app.pr", { call: callId, ...seen });
+    if (seen.state === "open") await this.state.storage.setAlarm(Date.now() + pollMs);
   }
 
   // Browser WebSocket upgrades, already checked by the worker. Nothing is sent
@@ -444,6 +486,7 @@ export class Session extends DurableObject {
       if (ev.type === "run_start") status = "running";
       else if (ev.type === "run_end") status = "idle";
     }
+    if (status) this.ran = true;
     if (status === "running") await this.state.storage.setAlarm(Date.now());
     await this.setStatus(id, status);
   }
@@ -463,6 +506,10 @@ export class Session extends DurableObject {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const HOLD_MS = 240_000; // under celld's 300s WebSocket handler budget (holdRun)
+const POLL = { first: 60_000, max: 15 * 60_000 }; // pull request polling (recordPullRequest)
+
+// owner/name of a GitHub clone URL, https or ssh, else null.
+const githubRepo = (url) => url?.match(/github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1] ?? null;
 
 const causes = (e) => (e ? [e, ...causes(e.cause)] : []);
 

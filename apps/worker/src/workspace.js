@@ -36,9 +36,10 @@ const DIFF = (cwd) => [
 // path (tracked or untracked, ignored ones excluded) with git's own blob id
 // of its content, so a version seen here equals the one a later commit
 // tree holds. Then HEAD and its branch, and when HEAD has moved since
-// `previous`, each new commit with its tree changes (at most 20). The first
+// `previous`, each new commit with its tree changes (at most 20), and the
+// branch's upstream commit when it has one (a push moves it). The first
 // probe (no previous) only records HEAD: the clone's history is not the
-// session's. Lines are tagged F, HEAD, COMMIT, TREE; exit 3 or 4 as DIFF.
+// session's. Lines are tagged F, HEAD, UP, COMMIT, TREE; exit 3 or 4 as DIFF.
 // ponytail: one hash-object per dirty path; --stdin-paths if a session keeps hundreds dirty.
 const PROBE = (cwd, previous) => [
   `cd ${shellQuote(cwd)} || exit 3`,
@@ -49,6 +50,7 @@ const PROBE = (cwd, previous) => [
   `done`,
   `head=$(git rev-parse -q --verify HEAD 2>/dev/null)`,
   `printf 'HEAD\\t%s\\t%s\\n' "$head" "$(git symbolic-ref -q --short HEAD 2>/dev/null)"`,
+  `printf 'UP\\t%s\\n' "$(git rev-parse -q --verify '@{upstream}' 2>/dev/null)"`,
   `prev=${shellQuote(previous ?? "")}`,
   `if [ -n "$head" ] && [ -n "$prev" ] && [ "$head" != "$prev" ]; then`,
   `  for c in $(git rev-list --max-count=20 "$head" "^$prev" 2>/dev/null || git rev-list --max-count=1 "$head"); do`,
@@ -115,11 +117,12 @@ export function workspace(sandbox, meta, { secrets = async () => ({}), onProgres
       if (!r.ok) throw r.error;
       if (r.value.exitCode === 4 || r.value.exitCode === 3) return { repo: false };
       if (r.value.exitCode !== 0) throw new Error(`git probe exited ${r.value.exitCode}`);
-      const probe = { repo: true, files: [], head: null, branch: null, commits: [] };
+      const probe = { repo: true, files: [], head: null, branch: null, upstream: null, commits: [] };
       for (const line of out.split("\n")) {
         const [tag, ...rest] = line.split("\t");
         if (tag === "F") probe.files.push({ status: rest[0].trim(), blob: rest[1] === "-" ? null : rest[1], path: rest.slice(2).join("\t") });
         else if (tag === "HEAD") { probe.head = rest[0] || null; probe.branch = rest[1] || null; }
+        else if (tag === "UP") probe.upstream = rest[0] || null;
         else if (tag === "COMMIT") probe.commits.push({ sha: rest[0], parents: rest[1] ? rest[1].split(" ") : [], time: Number(rest[2]) * 1000, author: rest[3], subject: rest.slice(4).join("\t"), files: [] });
         else if (tag === "TREE") {
           const m = rest.join("\t").match(/^:\d+ \d+ [0-9a-f]+ ([0-9a-f]+) (\w)\t(.*)$/);

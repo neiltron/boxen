@@ -374,6 +374,8 @@ const artifactResult = (callId: string, artifactId: string) =>
   join(recorded.net.last(), snapshot([{ model: [{ role: "user", content: "go" }] }, fs, git]));
   assert.deepEqual(recorded.client.state().model.timeline.map((e) => [e.kind, e.seq, e.call]), [["fs", 1, "c1"], ["git", 2, "c2"]]);
   assert.deepEqual((recorded.client.state().model.timeline[1] as any).commits, [commit]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  live({ type: "entry_appended", entry: { kind: "app.pr", data: { call: null, number: 7, url: "https://github.com/o/app/pull/7", title: "Add", state: "merged", draft: false, head: commit.sha, base: "main", updatedAt: "2026-10-22T00:00:00Z" } } });
+  assert.deepEqual(m().timeline.at(-1), { kind: "pr", seq: before + 2, call: null, number: 7, url: "https://github.com/o/app/pull/7", title: "Add", state: "merged", draft: false, head: commit.sha, base: "main", updatedAt: "2026-10-22T00:00:00Z" });
 }
 
 // run(): one turn for a headless caller, settled by the cell's submission
