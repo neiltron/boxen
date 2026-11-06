@@ -142,6 +142,58 @@ describe('host and settings', () => {
     await rejects(boxenctl.settings(args('--port', '18094'), config), /already/);
   });
 
+  test('access changes in place only from tailscale to local', async () => {
+    const tailscale = { ...config, access: 'tailscale' };
+    assert.deepEqual(await boxenctl.settings(args('--access', 'local'), tailscale), config);
+    await rejects(boxenctl.settings(args('--access', 'tailscale'), config), /access is already "local"/);
+    await rejects(boxenctl.settings(args('--access', 'local', '--port', '18094'), tailscale), /port is already/);
+    stub('hostInfo', () => host);
+    const root = source();
+    const plan = await boxenctl.setup(args('--source', root, '--access', 'local', '--dry-run'));
+    assert.ok(!plan.steps.some((step: string) => step.startsWith('Switch to local access')), 'a first install switches nothing');
+    boxenctl.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify(tailscale));
+    const switching = await boxenctl.setup(args('--source', root, '--access', 'local', '--dry-run'));
+    assert.ok(switching.steps.some((step: string) => step.startsWith('Switch to local access')));
+  });
+
+  describe('switching to local access releases only setup\'s own Serve route', () => {
+    const running = { BackendState: 'Running', Self: { DNSName: 'host.tail.ts.net.' } };
+    const record = () => boxenctl.atomicWrite(path.join(paths.CONFIG, 'serve.json'),
+      JSON.stringify({ hostname: 'host.tail.ts.net', port: 18093, state: 'active' }));
+    const owned = { TCP: { 443: { HTTPS: true } }, Web: { 'host.tail.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:18093' } } } } };
+
+    test('its own route is turned off', () => {
+      record();
+      stub('which', () => '/usr/bin/tailscale');
+      stub('tailscaleStatus', () => running);
+      stub('serveConfig', () => owned);
+      const { calls } = fakeRun();
+      boxenctl.releaseServe(config);
+      assert.deepEqual(calls, [['tailscale', 'serve', '--yes', '--https=443', 'off']]);
+      assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'serve.json')));
+    });
+
+    test('a proxy that took 443 over is left alone', () => {
+      record();
+      stub('which', () => '/usr/bin/tailscale');
+      stub('tailscaleStatus', () => running);
+      stub('serveConfig', () => ({ TCP: { 443: { TCPForward: '127.0.0.1:8444' } } }));
+      const { calls } = fakeRun();
+      boxenctl.releaseServe(config);
+      assert.deepEqual(calls, []);
+      assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'serve.json')));
+    });
+
+    test('without tailscale only the record goes', () => {
+      record();
+      stub('which', () => null);
+      const { calls } = fakeRun();
+      boxenctl.releaseServe(config);
+      assert.deepEqual(calls, []);
+      assert.ok(!fs.existsSync(path.join(paths.CONFIG, 'serve.json')));
+    });
+  });
+
   test('dry run has no side effects on an unsupported host', async () => {
     stub('hostInfo', () => ({ ...host, os: 'Darwin' }));
     const plan = await boxenctl.setup(args('--source', source(), '--access', 'tailscale', '--dry-run'));
@@ -334,6 +386,7 @@ describe('sources and files', () => {
     assert.deepEqual(builds, [
       [...pnpm, 'install', '--frozen-lockfile', `cwd=${release}`],
       [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir', `cwd=${release}`],
+      [...pnpm, '--dir', 'apps/mobile', 'run', 'build', '--outDir', '../worker/ui-dist/m', '--emptyOutDir', `cwd=${release}`],
     ]);
     assert.ok(fs.existsSync(path.join(release, 'apps/worker/wrangler.install.jsonc')));
     assert.equal(boxenctl.sourceRevision(release), revision);

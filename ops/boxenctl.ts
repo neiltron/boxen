@@ -277,6 +277,10 @@ async function settings(args: Args, previous: Obj): Promise<Config> {
   }
   if (values.port === values.storage_port) throw new Failure('Application and storage ports must differ.', 2);
   for (const key of SETTING_KEYS) {
+    // tailscale → local is the one change made in place: setup releases the
+    // Serve route, and fronting the app is the host's business from then on
+    // (a reverse proxy on its own domain, say).
+    if (key === 'access' && leavingTailscale(previous, values)) continue;
     if (key in previous && values[key] !== previous[key]) {
       throw new Failure(`${key} is already ${JSON.stringify(previous[key])}; this test installer does not change it in place.`, 2);
     }
@@ -336,7 +340,11 @@ function sourceRevision(source: string): string {
   return digest.digest('hex').slice(0, 20);
 }
 
-function installPlan(config: Config, host: Host, revision: string): Obj {
+function leavingTailscale(previous: Obj, config: Obj): boolean {
+  return previous.access === 'tailscale' && config.access === 'local';
+}
+
+function installPlan(config: Config, host: Host, revision: string, previous: Obj = {}): Obj {
   return {
     host, config, source_revision: revision, application_version: APPLICATION_VERSION,
     desired_runtime: { celld: CELLD_VERSION, node: NODE_VERSION.slice(1) },
@@ -351,6 +359,7 @@ function installPlan(config: Config, host: Host, revision: string): Obj {
       'Deploy worker, sandbox image and static assets',
       'Enable systemd services; wait for UI and API health',
       ...(config.access === 'tailscale' ? ['Install/reuse Tailscale; require authorization; configure private Serve HTTPS'] : []),
+      ...(leavingTailscale(previous, config) ? ['Switch to local access: remove the Serve HTTPS route if it is still the one setup configured'] : []),
     ],
     warnings: WARNINGS, public_ingress_required: false,
   };
@@ -778,9 +787,11 @@ function restartCompleted(service: string, saved: Obj): void {
 // The dev wrangler config plus an ASSETS binding, so celld serves the built UI
 // and the API on one origin. Written beside apps/worker/wrangler.jsonc; celld only
 // takes an asset directory inside the project, so the UI is built into it.
+// html_handling none: celld would redirect /m/index.html to /m/, where it
+// finds no index; the worker names the phone app's page instead.
 export function wranglerWithAssets(wrangler: string): string {
   const assets = { assets: { directory: './ui-dist', binding: 'ASSETS', run_worker_first: true,
-    not_found_handling: 'single-page-application' } };
+    not_found_handling: 'single-page-application', html_handling: 'none' } };
   return wrangler.replace('{', () => '{' + JSON.stringify(assets).slice(1, -1) + ',');
 }
 
@@ -809,8 +820,10 @@ function prepareSource(source: string, revision: string, account: Account): stri
     if (!/^pnpm@\d+\.\d+\.\d+$/.test(manager ?? '')) throw new Failure('package.json must pin packageManager to an exact pnpm version.', 2);
     const pnpm = ['npx', '--yes', manager];
     // Arguments after the script name reach its last command, `vite build`.
+    // The phone app goes under /m/ of the same assets (its own base).
     const build = [...pnpm, '--dir', 'apps/ui', 'run', 'build', '--outDir', '../worker/ui-dist', '--emptyOutDir'];
-    for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build]) {
+    const mobile = [...pnpm, '--dir', 'apps/mobile', 'run', 'build', '--outDir', '../worker/ui-dist/m', '--emptyOutDir'];
+    for (const command of [[...pnpm, 'install', '--frozen-lockfile'], build, mobile]) {
       boxenctl.run(['runuser', '-u', USER, '--', ...command], { env: environment, cwd: release, timeout: 1800 });
     }
     atomicWrite(path.join(release, '.built'), 'ok\n', 0o644);
@@ -943,6 +956,19 @@ function port443Occupied(current: Obj, hostname: string): boolean {
   return '443' in (current.TCP ?? {}) || `${hostname}:443` in (current.Web ?? {});
 }
 
+// Leaving tailscale access: turn off the Serve route only while it is still
+// exactly the one setup recorded (anything else on 443 now is someone
+// else's, such as a proxy's TCP forward), then forget the record.
+function releaseServe(config: Config): void {
+  if (boxenctl.which('tailscale')) {
+    const hostname = selfHostname(boxenctl.tailscaleStatus());
+    if (recordedServe(hostname, config.port) && serveOwned(boxenctl.serveConfig(), hostname, config.port)) {
+      boxenctl.run(['tailscale', 'serve', '--yes', '--https=443', 'off'], { timeout: 30 });
+    }
+  }
+  fs.rmSync(path.join(paths.CONFIG, 'serve.json'), { force: true });
+}
+
 function preflightExposure(config: Config): void {
   if (!boxenctl.which('tailscale')) return;
   const current = boxenctl.serveConfig(); // Fail closed if an existing daemon cannot be inspected.
@@ -1058,7 +1084,7 @@ async function setup(args: Args): Promise<Obj> {
   let source = realpathOrResolve(args.source ?? previousConfig.source ?? path.join(path.dirname(MANAGER_FILE), '..'));
   boxenctl.validateSourceRelease(source);
   const revision = boxenctl.sourceRevision(source);
-  const plan = installPlan(planned, host, revision);
+  const plan = installPlan(planned, host, revision, previousConfig);
   if (migrating) plan.steps.unshift(`Move the pi-durable-sessions installation (${legacy.ROOT}, ${legacy.CONFIG}, ${legacy.DATA}) to the boxen names`);
   if (args.dryRun) {
     // Inspect/dry-run are useful on unsupported development hosts too; apply is strict.
@@ -1088,6 +1114,7 @@ async function setup(args: Args): Promise<Obj> {
     const configFile = path.join(paths.CONFIG, 'config.json');
     await boxenctl.preflightPorts(config);
     boxenctl.preflightExposure(config);
+    if (leavingTailscale(previous, config)) boxenctl.releaseServe(config);
     boxenctl.preflightSandboxDns();
     for (const service of [SERVICE, STORAGE]) {
       const unit = path.join(paths.UNITS, `${service}.service`);
@@ -1400,7 +1427,7 @@ export const boxenctl = {
   validateSourceRelease, requireRoot, consent, withInstallLock, portAvailable, isActive, preflightPorts, containerResolvers, sandboxBlocked,
   preflightSandboxDns, sandboxDnsProbe, installPackages, download, runtimeDirectories, runtimeMatches, toolchain, serviceAccount,
   credentials, units, installUnits, restartCompleted, prepareSource, s3Request, ensureBucket, httpOk, waitHttp,
-  tailscaleStatus, serveConfig, serveOwned, recordedServe, preflightExposure, ensureTailscale, configureTailscale,
+  tailscaleStatus, serveConfig, serveOwned, recordedServe, releaseServe, preflightExposure, ensureTailscale, configureTailscale,
   installManager, migrateLegacy, setup, inspect, doctor, uninstall, parseCli, helpText,
   now: (): number => performance.now() / 1000,
   sleep: (seconds: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, seconds * 1000)),

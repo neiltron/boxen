@@ -156,6 +156,10 @@ export default {
       // JSON, and route preview hosts above before looking up static assets.
       if (env.ASSETS && !url.pathname.startsWith("/api/") && url.pathname !== "/api" &&
           (request.method === "GET" || request.method === "HEAD")) {
+        // The phone app (apps/mobile, at /m/): celld finds no index.html in
+        // a subdirectory, so its page is named outright. The installer turns
+        // celld's html_handling off, or /m/index.html would redirect to /m/.
+        if (url.pathname === "/m" || url.pathname === "/m/") return env.ASSETS.fetch(new Request(new URL("/m/index.html", url), request));
         return env.ASSETS.fetch(request);
       }
       return json({ error: "unknown route" }, 404);

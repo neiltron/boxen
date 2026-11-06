@@ -1,0 +1,14 @@
+# HTTPS in front of the installed boxen on desktron
+# (Caddyfile.desktron). A user unit, so the Caddy config is copied out of the
+# checkout: a branch switch must not take it away.
+[Unit]
+Description=boxen HTTPS (Caddy on 127.0.0.1:8444)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/caddy run --config %h/.config/boxen/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

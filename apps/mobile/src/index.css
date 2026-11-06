@@ -1,0 +1,3 @@
+/* The web app's styles, and its components as Tailwind sources. */
+@import "../../ui/src/index.css";
+@source "../../ui/src";

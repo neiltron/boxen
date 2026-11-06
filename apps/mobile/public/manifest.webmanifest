@@ -1,0 +1,7 @@
+{
+  "name": "pi",
+  "short_name": "pi",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone"
+}
