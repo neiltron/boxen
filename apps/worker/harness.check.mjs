@@ -1,6 +1,8 @@
 // Real published Harness and SQLite storage over the application's CellSqlite.
 // Only the cell host, provider, and Sandbox SDK transport are test seams.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +15,7 @@ import * as durable from "@earendil-works/pi-durable";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { CellSqlite } from "./src/cell-sqlite.js";
-import { sandboxEnv } from "./src/sandbox-env.js";
+import { sandboxEnv, shellQuote } from "./src/sandbox-env.js";
 import { localSandbox } from "./local-sandbox.check.mjs";
 import { load } from "./check-harness.mjs";
 import { SANDBOX_EXEC_URL } from "./src/sandbox-events.js";
@@ -159,40 +161,62 @@ function cellStorage(db) {
 // Real application extension, built-in tools, and Session failure/reopen path.
 {
   const cwd = await mkdtemp(join(tmpdir(), "boxen-harness-"));
+  // A repo, so the timeline's probe after each mutating call has something to say.
+  const git = (...args) => execFileSync("git", ["-c", "user.name=pi", "-c", "user.email=pi@example.test", ...args], { cwd, encoding: "utf8" }).trim();
+  git("init", "-q");
+  git("commit", "-q", "--allow-empty", "-m", "init");
+  const initial = git("rev-parse", "HEAD");
   const sandbox = localSandbox(cwd);
   const env = sandboxEnv(sandbox, "test", cwd);
   const db = new DatabaseSync(":memory:");
   const storage = cellStorage(db);
   let alarms = 0, prepares = 0, saved = 0, socketCloses = 0;
   const meta = { id: "test", cwd, titled: true };
-  Object.assign(storage, { async get() { return meta; }, async setAlarm() { alarms++; } });
+  const kv = new Map([["meta", meta]]);
+  Object.assign(storage, { async get(key) { return kv.get(key); }, async put(key, value) { kv.set(key, value); }, async setAlarm() { alarms++; } });
   const models = provider([
     tool("write", { path: "file.txt", content: "first\nsecond" }, "write"),
     tool("read", { path: "file.txt", offset: 2, limit: 1 }, "read"),
     tool("edit", { path: "file.txt", oldText: "second", newText: "changed" }, "edit"),
     tool("bash", { command: "printf out; printf err >&2; exit 7" }, "bash"),
+    tool("bash", { command: "git add -A && git -c user.name=pi -c user.email=pi@example.test commit -qm 'add file'" }, "commit"),
     tool("artifact", { title: "Plan", kind: "markdown", content: "body" }, "artifact"),
     answer("done"), answer("after recovery"),
   ]);
   const { Session } = await load({
     "@cloudflare/sandbox": { getSandbox: () => sandbox },
     // The VM is a second realm. Normalize only its returned JSON at the
-    // test boundary; production runs these modules in one worker realm.
-    "@earendil-works/pi-durable": { ...durable, defineTool: (spec) => durable.defineTool({ ...spec, execute: async (...args) => structuredClone(await spec.execute(...args)) }) },
+    // test boundary (tool results, and what the cell submits); production
+    // runs these modules in one worker realm.
+    "@earendil-works/pi-durable": {
+      ...durable,
+      defineTool: (spec) => durable.defineTool({ ...spec, execute: async (...args) => structuredClone(await spec.execute(...args)) }),
+      Harness: { async open(...args) {
+        const harness = await durable.Harness.open(...args);
+        const root = harness.root.bind(harness);
+        harness.root = async (...a) => {
+          const conversation = await root(...a);
+          const submit = conversation.submit.bind(conversation);
+          conversation.submit = (submission, context) => submit(structuredClone(submission), context);
+          return conversation;
+        };
+        return harness;
+      } },
+    },
     "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage },
     "@earendil-works/pi-durable/tools": { CodingTools },
     "@earendil-works/pi-ai": { Type },
     "@earendil-works/pi-ai/providers/all": { builtinModels: () => models },
     "@earendil-works/chord/context": { BACKGROUND_CONTEXT: ctx },
     "./cell-sqlite.js": { CellSqlite },
+    "./sandbox-env.js": { sandboxEnv, shellQuote }, // the real workspace over the local sandbox
     "./artifacts.js": { ARTIFACT_KINDS: ["markdown"], Artifacts: class {} },
   }, { setTimeout, clearTimeout });
   const cell = new Session({ id: "test", storage, getWebSockets: () => [{ close() { socketCloses++; } }] }, {
-    DIRECTORY: { getByName: () => ({ async defaultAgent() { return { model }; }, async touch() {} }) },
+    DIRECTORY: { getByName: () => ({ async defaultAgent() { return { model }; }, async touch() {}, async secrets() { return {}; } }) },
     ARTIFACTS: { getByName: () => ({ async save(args) { assert.equal(args.content, "body"); saved++; return { id: "artifact-id", version: 1 }; } }) },
     SESSION: { getByName: () => ({ async prepareWorkspace() { prepares++; } }) },
   });
-  cell.workspace = async () => ({ async env() { return env; } });
   cell.report = () => {}; // injected failure is expected
   try {
     const opened = await cell.open();
@@ -212,6 +236,29 @@ function cellStorage(db) {
     assert.equal(results.find((m) => m?.toolCallId === "bash").isError, true);
     assert.match(results.find((m) => m?.toolCallId === "artifact").content[0].text, /Artifact artifact-id/);
     assert.equal(results.find((m) => m?.toolCallId === "artifact").details.artifactId, "artifact-id");
+
+    // The timeline: each mutating call's changes, by git's blob ids, before
+    // the call's result; a commit as app.git with its tree, and no app.fs
+    // for the paths it took along.
+    const blob = (text) => createHash("sha1").update(`blob ${Buffer.byteLength(text)}\0${text}`).digest("hex");
+    const written = events.filter((e) => e.type === "entry_appended" && e.entry.kind.startsWith("app.")).map((e) => e.entry);
+    const fs = written.filter((e) => e.kind === "app.fs").map((e) => e.data);
+    assert.deepEqual(fs.map((d) => d.call), ["write", "edit"], "read, a no-op bash and the commit record no file change");
+    assert.deepEqual(fs[0], { call: "write", files: [{ status: "??", blob: blob("first\nsecond"), path: "file.txt" }], truncated: false });
+    assert.deepEqual(fs[1].files, [{ status: "??", blob: blob("first\nchanged"), path: "file.txt" }]);
+    const [start, commit, ...more] = written.filter((e) => e.kind === "app.git").map((e) => e.data);
+    assert.equal(more.length, 0, "HEAD moved once after the first probe recorded it");
+    assert.deepEqual(start, { call: "write", head: initial, branch: commit.branch, commits: [] }, "the first probe records where HEAD was, without the clone's history");
+    assert.equal(commit.call, "commit");
+    assert.equal(commit.head, git("rev-parse", "HEAD"));
+    assert.equal(commit.branch, git("symbolic-ref", "--short", "HEAD"));
+    assert.equal(commit.commits.length, 1);
+    assert.equal(commit.commits[0].sha, commit.head);
+    assert.equal(commit.commits[0].subject, "add file");
+    assert.deepEqual(commit.commits[0].files, [{ status: "A", blob: blob("first\nchanged"), path: "file.txt" }], "the tree holds the blob the probe saw");
+    const order = (type, call) => events.findIndex((e) => (e.type === "entry_appended" ? e.entry.data?.call : e.toolCallId) === call && e.type === type);
+    assert(order("entry_appended", "write") < order("tool_execution_end", "write"), "the change precedes the call's result");
+    assert.deepEqual(Object.keys(kv.get("probe").files), [], "the commit left nothing dirty");
 
     const oldAlarms = alarms;
     const failure = new Error("injected commit failure");

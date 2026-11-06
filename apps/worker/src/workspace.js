@@ -7,6 +7,8 @@
 //   env(cwd)                  pi-durable ExecutionEnv for a tool call, with secrets;
 //                             the caller prepares first (session.js says how)
 //   diff()                    { repo, patch }: the working tree against HEAD
+//   probe(previousHead)       the dirty paths with blob ids, HEAD, and the
+//                             commits since previousHead (the timeline)
 //   terminal(request)         the browser's upgrade, attached to the shell
 //   ports(), preview(request, port), checkpoint()
 //
@@ -28,6 +30,32 @@ const DIFF = (cwd) => [
   `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 4`,
   `idx=$(mktemp); cp "$(git rev-parse --git-dir)/index" "$idx" 2>/dev/null`,
   `GIT_INDEX_FILE=$idx git add -A -N . 2>/dev/null && GIT_INDEX_FILE=$idx git diff HEAD --no-color --no-ext-diff; s=$?; rm -f "$idx"; exit $s`,
+].join("\n");
+
+// What is dirty against HEAD and what HEAD is, after a tool call. Each dirty
+// path (tracked or untracked, ignored ones excluded) with git's own blob id
+// of its content, so a version seen here equals the one a later commit
+// tree holds. Then HEAD and its branch, and when HEAD has moved since
+// `previous`, each new commit with its tree changes (at most 20). The first
+// probe (no previous) only records HEAD: the clone's history is not the
+// session's. Lines are tagged F, HEAD, COMMIT, TREE; exit 3 or 4 as DIFF.
+// ponytail: one hash-object per dirty path; --stdin-paths if a session keeps hundreds dirty.
+const PROBE = (cwd, previous) => [
+  `cd ${shellQuote(cwd)} || exit 3`,
+  `git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 4`,
+  `git status --porcelain -z --untracked-files=all --no-renames | tr '\\0' '\\n' | while IFS= read -r rec; do`,
+  `  p=\${rec:3}; if [ -f "$p" ]; then b=$(git hash-object -- "$p"); else b=-; fi`,
+  `  printf 'F\\t%s\\t%s\\t%s\\n' "\${rec:0:2}" "$b" "$p"`,
+  `done`,
+  `head=$(git rev-parse -q --verify HEAD 2>/dev/null)`,
+  `printf 'HEAD\\t%s\\t%s\\n' "$head" "$(git symbolic-ref -q --short HEAD 2>/dev/null)"`,
+  `prev=${shellQuote(previous ?? "")}`,
+  `if [ -n "$head" ] && [ -n "$prev" ] && [ "$head" != "$prev" ]; then`,
+  `  for c in $(git rev-list --max-count=20 "$head" "^$prev" 2>/dev/null || git rev-list --max-count=1 "$head"); do`,
+  `    git log -1 --format='COMMIT%x09%H%x09%P%x09%ct%x09%an%x09%s' "$c"`,
+  `    git diff-tree -r --root --no-commit-id "$c" | sed 's/^/TREE\\t/'`,
+  `  done`,
+  `fi`,
 ].join("\n");
 
 // A Session's workspace in production: its Sandbox cell, the fleet's secrets.
@@ -77,6 +105,28 @@ export function workspace(sandbox, meta, { secrets = async () => ({}), onProgres
       if (r.value.exitCode === 4 || r.value.exitCode === 3) return { repo: false, patch: "" };
       if (r.value.exitCode !== 0) throw new Error(out.trim().split("\n").at(-1) || `git diff exited ${r.value.exitCode}`);
       return { repo: true, patch: out };
+    },
+
+    // No prepare: the caller's tool call just ran in this container, and a
+    // join here could be another event's prepare (session.js, the env option).
+    async probe(previousHead) {
+      let out = "";
+      const r = await shell(meta.cwd).exec(PROBE(meta.cwd, previousHead), { onOutput: (t, _context, info) => { if (info?.stream !== "stderr") out += t; } });
+      if (!r.ok) throw r.error;
+      if (r.value.exitCode === 4 || r.value.exitCode === 3) return { repo: false };
+      if (r.value.exitCode !== 0) throw new Error(`git probe exited ${r.value.exitCode}`);
+      const probe = { repo: true, files: [], head: null, branch: null, commits: [] };
+      for (const line of out.split("\n")) {
+        const [tag, ...rest] = line.split("\t");
+        if (tag === "F") probe.files.push({ status: rest[0].trim(), blob: rest[1] === "-" ? null : rest[1], path: rest.slice(2).join("\t") });
+        else if (tag === "HEAD") { probe.head = rest[0] || null; probe.branch = rest[1] || null; }
+        else if (tag === "COMMIT") probe.commits.push({ sha: rest[0], parents: rest[1] ? rest[1].split(" ") : [], time: Number(rest[2]) * 1000, author: rest[3], subject: rest.slice(4).join("\t"), files: [] });
+        else if (tag === "TREE") {
+          const m = rest.join("\t").match(/^:\d+ \d+ [0-9a-f]+ ([0-9a-f]+) (\w)\t(.*)$/);
+          if (m) probe.commits.at(-1)?.files.push({ status: m[2], blob: m[1], path: m[3] });
+        }
+      }
+      return probe;
     },
 
     // Keep the interactive shell separate from the agent's exec shell. Reuse
