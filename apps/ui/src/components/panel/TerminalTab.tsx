@@ -3,35 +3,43 @@ import { FitAddon, init, Terminal, type ITheme } from "ghostty-web";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useSessionContext } from "@/components/panel/session-context";
 import { WS_BASE } from "@/lib/api";
+import { useIsDark } from "@/lib/theme";
 
 let initializing: Promise<void> | undefined;
 
 function terminalTheme(host: HTMLElement): ITheme {
-  const style = getComputedStyle(host);
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none";
+  host.appendChild(probe);
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
   const ctx = canvas.getContext("2d")!;
-  // Ghostty's WASM color parser needs hex/rgb, not the app's oklch tokens.
+  // Ghostty's WASM color parser needs hex/rgb, not oklch() or light-dark() tokens.
   const color = (name: string) => {
+    probe.style.color = `var(${name})`;
     ctx.clearRect(0, 0, 1, 1);
-    ctx.fillStyle = style.getPropertyValue(name).trim();
+    ctx.fillStyle = getComputedStyle(probe).color;
     ctx.fillRect(0, 0, 1, 1);
     return "#" + Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3)
       .map((v) => v.toString(16).padStart(2, "0")).join("");
   };
-  return {
-    background: color("--background"), foreground: color("--foreground"),
-    cursor: color("--foreground"), cursorAccent: color("--background"),
-    selectionBackground: color("--secondary"), selectionForeground: color("--foreground"),
-    black: color("--terminal-black"), brightBlack: color("--muted-foreground"),
-    white: color("--terminal-white"), brightWhite: color("--terminal-bright-white"),
-    red: color("--terminal-red"), brightRed: color("--terminal-bright-red"),
-    green: color("--terminal-green"), brightGreen: color("--terminal-bright-green"),
-    yellow: color("--terminal-yellow"), brightYellow: color("--terminal-bright-yellow"),
-    blue: color("--terminal-blue"), brightBlue: color("--terminal-bright-blue"),
-    magenta: color("--terminal-magenta"), brightMagenta: color("--terminal-bright-magenta"),
-    cyan: color("--terminal-cyan"), brightCyan: color("--terminal-bright-cyan"),
-  };
+  try {
+    return {
+      background: color("--background"), foreground: color("--foreground"),
+      cursor: color("--foreground"), cursorAccent: color("--background"),
+      selectionBackground: color("--secondary"), selectionForeground: color("--foreground"),
+      black: color("--terminal-black"), brightBlack: color("--muted-foreground"),
+      white: color("--terminal-white"), brightWhite: color("--terminal-bright-white"),
+      red: color("--terminal-red"), brightRed: color("--terminal-bright-red"),
+      green: color("--terminal-green"), brightGreen: color("--terminal-bright-green"),
+      yellow: color("--terminal-yellow"), brightYellow: color("--terminal-bright-yellow"),
+      blue: color("--terminal-blue"), brightBlue: color("--terminal-bright-blue"),
+      magenta: color("--terminal-magenta"), brightMagenta: color("--terminal-bright-magenta"),
+      cyan: color("--terminal-cyan"), brightCyan: color("--terminal-bright-cyan"),
+    };
+  } finally {
+    probe.remove();
+  }
 }
 
 export function TerminalTab() {
@@ -39,13 +47,7 @@ export function TerminalTab() {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Connecting…");
   const [nonce, setNonce] = useState(0);
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains("dark")));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
+  const dark = useIsDark();
 
   useEffect(() => {
     const host = hostRef.current!;
