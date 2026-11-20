@@ -108,7 +108,9 @@ export class Directory extends DurableObject {
       },
       prompt: () => new Promise((resolve) => { login.answer = resolve; }),
     };
-    login.done = models.login(provider, "oauth", interaction, { getDeviceId: () => deviceId })
+    // celld cannot listen on a loopback port inside the cell. Vite forwards
+    // the redirect in dev; installed users can paste it into the same prompt.
+    login.done = models.login(provider, "oauth", interaction, { getDeviceId: () => deviceId, openaiCallbackServer: false })
       .then(() => this.connected(models, provider))
       .finally(() => { if (this.login === login) this.login = null; });
     login.done.catch(() => {});
