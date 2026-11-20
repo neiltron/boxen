@@ -8,3 +8,6 @@ allowBuilds:
   esbuild: true
   '@google/genai': false
   protobufjs: false
+
+patchedDependencies:
+  '@earendil-works/pi-ai@1.3.0': apps/worker/patches/@earendil-works__pi-ai@1.3.0.patch
