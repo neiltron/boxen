@@ -2,6 +2,7 @@ import { Markdown } from "@/components/Markdown";
 import type { Artifact } from "@/lib/api";
 
 // Pinned single-file Mermaid bundle verified with Subresource Integrity (SRI).
+// Full build is ~3.5MB; bumps are manual (`pnpm check:mermaid` verifies the hash).
 // When bumping the version, recompute the sha384 digest with:
 //   curl -fsSL "<MERMAID_CDN_URL>" | openssl dgst -sha384 -binary | openssl base64 -A
 const MERMAID_CDN_URL =
@@ -9,14 +10,22 @@ const MERMAID_CDN_URL =
 const MERMAID_CDN_INTEGRITY =
   "sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2";
 
-const frameBase = `<meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>
+const noReferrer = `<meta name="referrer" content="no-referrer">`;
+const frameBase = `<meta charset="utf-8">${noReferrer}<style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
   body { margin: 0; padding: 16px; display: flex; justify-content: center; }
   svg { max-width: 100%; height: auto; }
 </style>`;
 
 function frameDoc(a: Artifact): string {
-  if (a.kind === "html") return a.content;
+  if (a.kind === "html") {
+    // srcdoc frames ignore the iframe's referrerpolicy, so the meta must be in
+    // the document. After <head>, else after a leading doctype (keeps
+    // standards mode), else at the start.
+    const at = a.content.match(/<head(?:\s[^>]*)?>/i) ?? a.content.match(/^\s*<!doctype[^>]*>/i);
+    const i = at ? at.index! + at[0].length : 0;
+    return a.content.slice(0, i) + noReferrer + a.content.slice(i);
+  }
   if (a.kind === "svg") return `${frameBase}${a.content}`;
   // Mermaid renders inside the sandboxed frame, from the CDN, so the app
   // bundle stays small and diagram code never runs in the app's origin. The
@@ -52,8 +61,7 @@ export function ArtifactView({ artifact }: { artifact: Artifact }) {
   }
   return (
     <iframe
-      title={artifact.title} sandbox="allow-scripts" referrerPolicy="no-referrer"
-      srcDoc={frameDoc(artifact)}
+      title={artifact.title} sandbox="allow-scripts" srcDoc={frameDoc(artifact)}
       className="h-full w-full border-0 bg-white"
     />
   );
