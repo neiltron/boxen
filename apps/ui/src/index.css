@@ -158,6 +158,20 @@
 .transcript-prompt:focus-within .transcript-prompt-time { opacity: 1; }
 @media (hover: none) { .transcript-prompt-time { opacity: 1; } }
 
+/* Minimum interactive target size (WCAG 2.5.8 desktop, 2.5.5 touch). */
+:root {
+  --target-size: 24px;
+}
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+}
+.touch-target {
+  min-block-size: var(--target-size);
+  min-inline-size: var(--target-size);
+}
+
 /* Top-layer enter/exit transitions for the rename dialog and toast popover.
    Movement only without reduced motion; the opacity fade always runs. */
 .boxen-dialog, .boxen-dialog::backdrop, .boxen-toast {

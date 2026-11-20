@@ -1,0 +1,55 @@
+diff --git a/dist/auth/oauth/openai-chatgpt.js b/dist/auth/oauth/openai-chatgpt.js
+index a351c28f6972d3ede55ca09f812778a787ce6f16..1d13f8e28164697e6d44f8f78b4bee5e591bfe04 100644
+--- a/dist/auth/oauth/openai-chatgpt.js
++++ b/dist/auth/oauth/openai-chatgpt.js
+@@ -194,9 +194,9 @@ async function loginOpenAIChatGPT(interaction, options) {
+     const { verifier, challenge } = await generatePKCE();
+     const state = randomValue();
+     const nonce = randomValue();
+-    // Without this server, the browser's callback would reach whatever else holds the port (another
+-    // pending login or the Codex CLI), which rejects it as a state mismatch. Fail with a clear error instead.
+-    const callback = await startCallbackServer(state).catch((error) => {
++    // Worker hosts can opt out and provide the callback through the manual prompt instead.
++    // Otherwise fail if another process already holds the callback port.
++    const callback = options?.openaiCallbackServer === false ? undefined : await startCallbackServer(state).catch((error) => {
+         if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE"))
+             throw error;
+         throw new Error(`Port ${CALLBACK_PORT} is in use, probably by an unfinished login in another pi session or by the Codex CLI. Cancel that login and try again.`);
+@@ -230,7 +230,7 @@ async function loginOpenAIChatGPT(interaction, options) {
+     })
+         .then((input) => authorizationResultFromManualInput(input, state));
+     try {
+-        const result = await Promise.race([callback.result, manualCode]);
++        const result = await (callback ? Promise.race([callback.result, manualCode]) : manualCode);
+         interaction.notify({ type: "progress", message: "Exchanging authorization code for tokens..." });
+         return await exchangeAuthorizationCode(result.code, verifier, result.clientId, interaction.signal);
+     }
+@@ -241,13 +241,13 @@ async function loginOpenAIChatGPT(interaction, options) {
+     }
+     finally {
+         manualAbort.abort();
+-        callback.server.close();
++        callback?.server.close();
+         // close() only stops accepting new connections. Browsers open spare connections ahead of
+         // time, and one that has not sent a request yet stays open and attached to this server.
+         // A later login in the same process starts a new server with a new state, but the browser
+         // may send that login's callback over the spare connection. This server would then handle
+         // it and reject it with "OAuth state mismatch", and the new login would never see it.
+-        callback.server.closeAllConnections();
++        callback?.server.closeAllConnections();
+     }
+ }
+ export const openaiChatGPTOAuth = {
+diff --git a/dist/auth/types.d.ts b/dist/auth/types.d.ts
+index 35dd81a21beabcaaf25ae8be2fc4f3f74e59588b..56b18df1bd7de238d3ac2ade9f537f7a3ca13e54 100644
+--- a/dist/auth/types.d.ts
++++ b/dist/auth/types.d.ts
+@@ -207,6 +207,8 @@ export interface LoginOptions {
+      * Codex originator. Defaults to pi's own name.
+      */
+     agentName?: string;
++    /** Set to false if the host supplies the ChatGPT callback via the manual prompt. */
++    openaiCallbackServer?: boolean;
+ }
+ /**
+  * OAuth auth. The `refresh`/`toAuth` split lets `Models` own the locked

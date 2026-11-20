@@ -550,7 +550,7 @@ function runtimeMatches(binary: string, version: string): boolean {
   if (!fs.existsSync(binary)) return false;
   try {
     const result = boxenctl.run([binary, '--version'], { capture: true, check: false, timeout: 15 });
-    const found = result.stdout.trim().match(/^(?:celld\s+|v)(\d+\.\d+\.\d+)(?:\s|$)/)?.[1];
+    const found = result.stdout.trim().match(/^(?:celld\s+|v)(\d+\.\d+\.\d+)(?:\s|$)/m)?.[1];
     return result.returncode === 0 && found === version;
   } catch {
     return false; // Broken executable, permission error, timeout, or missing interpreter.
