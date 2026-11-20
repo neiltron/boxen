@@ -149,115 +149,53 @@
 @media (hover: none) { .transcript-prompt-time { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .transcript-prompt-time { transition: none; } }
 
-/* Keep scroll gestures inside modal dialogs and off the page behind them. */
-dialog:modal {
-  overscroll-behavior: contain;
-}
-dialog::backdrop {
-  overflow: hidden;
-  overscroll-behavior: contain;
+/* Top-layer enter/exit transitions for the rename dialog and toast popover.
+   Movement only without reduced motion; the opacity fade always runs. */
+.boxen-dialog, .boxen-dialog::backdrop, .boxen-toast {
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out, background-color 0.2s ease-out, display 0.2s allow-discrete, overlay 0.2s allow-discrete;
 }
 
-/* Native modal dialog and manual-popover toast top-layer transitions.
-   Never set display on dialog or [popover] unconditionally — scope to open states. */
 .boxen-dialog {
   margin: auto;
   max-height: calc(100dvh - 2rem);
   overflow: auto;
+  overscroll-behavior: contain;
   opacity: 0;
-  transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.2s;
-  transition-timing-function: ease-out;
-  transition-behavior: allow-discrete;
-
-  @media (prefers-reduced-motion: no-preference) {
-    transform: scale(0.96);
-  }
+  @media (prefers-reduced-motion: no-preference) { transform: scale(0.96); }
 }
-
 .boxen-dialog[open] {
-  display: block;
-  pointer-events: auto;
   opacity: 1;
-
+  transform: none;
   @starting-style {
     opacity: 0;
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    transform: scale(1);
-
-    @starting-style {
-      transform: scale(0.96);
-    }
+    @media (prefers-reduced-motion: no-preference) { transform: scale(0.96); }
   }
 }
-
 .boxen-dialog::backdrop {
+  overscroll-behavior: contain;
   background-color: rgb(0 0 0 / 0);
-  transition-property: background-color, display, overlay;
-  transition-duration: 0.2s;
-  transition-timing-function: ease-out;
-  transition-behavior: allow-discrete;
 }
-
 .boxen-dialog[open]::backdrop {
   background-color: rgb(0 0 0 / 0.45);
-
-  @starting-style {
-    background-color: rgb(0 0 0 / 0);
-  }
+  @starting-style { background-color: rgb(0 0 0 / 0); }
 }
 
-.boxen-toast[popover] {
+.boxen-toast {
   position: fixed;
   inset: auto 0 1rem 0;
   margin-inline: auto;
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   opacity: 0;
-  transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.2s;
-  transition-timing-function: ease-out;
-  transition-behavior: allow-discrete;
-
-  @media (prefers-reduced-motion: no-preference) {
-    transform: translateY(0.5rem);
-  }
+  @media (prefers-reduced-motion: no-preference) { transform: translateY(0.5rem); }
 }
-
-.boxen-toast[popover]:popover-open {
+.boxen-toast:popover-open {
   display: flex;
-  pointer-events: auto;
   opacity: 1;
-
+  transform: none;
   @starting-style {
     opacity: 0;
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    transform: translateY(0);
-
-    @starting-style {
-      transform: translateY(0.5rem);
-    }
-  }
-}
-
-@supports not selector(:popover-open) {
-  .boxen-toast[popover]:not([hidden]) {
-    display: flex;
-    z-index: 50;
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .boxen-dialog,
-  .boxen-dialog::backdrop,
-  .boxen-toast[popover] {
-    transition-duration: 0.08s;
+    @media (prefers-reduced-motion: no-preference) { transform: translateY(0.5rem); }
   }
 }
 

@@ -69,7 +69,7 @@ try {
     const input = dialog.getByRole("textbox", { name: "Session name" });
     assert.equal(await input.inputValue(), sessions[0].name);
     await input.fill(value);
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await input.press("Enter"); // implicit submission saves
     await dialog.waitFor({ state: "hidden" });
   };
   const revision = sessions[0].metadataRevision;
@@ -77,6 +77,11 @@ try {
   failNext = true;
   await rename(page, page.locator("nav"), "Renamed session");
   await page.getByRole("alert").filter({ hasText: "simulated outage" }).waitFor();
+  const trigger = page.locator("nav").getByRole("button", { name: `Actions for ${sessions[0].name}`, exact: true });
+  await trigger.focus();
+  await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+  await page.getByRole("button", { name: "Dismiss notification", exact: true }).waitFor({ state: "hidden" });
+  assert.ok(await trigger.evaluate((el) => el === document.activeElement), "Dismiss restores focus outside the toast");
   assert.equal(sessions[0].metadataRevision, revision, "blank and failed renames change nothing");
   await rename(page, page.locator("nav"), "Renamed session");
   await other.getByRole("button", { name: "Actions for Renamed session", exact: true }).waitFor();
