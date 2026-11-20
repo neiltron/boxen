@@ -13,7 +13,7 @@ command -v pnpm >/dev/null 2>&1 || { echo "error: pnpm not found on PATH" >&2; e
 pnpm run deploy
 
 echo
-echo "deployment submitted to local RustFS (s3://pid-cells)."
+echo "deployment submitted to object storage."
 echo "  hot-adoption: running celld picks up the new version on its next pointer poll (~15s)"
 echo "                without restarting containers (sandboxes keep their disks)."
 echo "  note:         adoption is not verified here — check .celld.log if changes don't appear,"

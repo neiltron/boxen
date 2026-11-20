@@ -119,8 +119,18 @@ test('development celld wrapper enforces the pin and propagates the runtime exit
     assert.equal(oldRuntime.status, 2);
     assert.ok(oldRuntime.stderr.includes(`Expected celld ${version}`));
     assert.equal(fs.existsSync(deployed), false, 'must not deploy with the baseline runtime');
-    fs.writeFileSync(binary, `#!/bin/sh\necho 'celld ${version}-rc.1'\n`);
+    fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}-rc.1'; exit 0; fi\n`);
     assert.equal(run().status, 2);
+    const argsFile = path.join(temporary, 'args.json');
+    fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nprintf '%s|%s|%s\\n' "$*" "$AWS_ACCESS_KEY_ID" "$AWS_REGION" > '${argsFile}'\n`, { mode: 0o755 });
+    assert.equal(run().status, 0);
+    assert.equal(fs.readFileSync(argsFile, 'utf8').trim(), 'deploy --bucket s3://pid-cells --endpoint http://127.0.0.1:9000|swarmadmin|auto');
+    const r2Run = spawnSync(process.execPath, [path.join(root, 'ops/celld.mjs'), 'deploy', '.'], {
+      env: { ...process.env, BOXEN_CELLD: binary, BOXEN_S3_BUCKET: 'my-r2', BOXEN_S3_ENDPOINT: 'https://acc.r2.cloudflarestorage.com', AWS_ACCESS_KEY_ID: 'r2key' },
+      encoding: 'utf8',
+    });
+    assert.equal(r2Run.status, 0);
+    assert.equal(fs.readFileSync(argsFile, 'utf8').trim(), 'deploy . --bucket s3://my-r2 --endpoint https://acc.r2.cloudflarestorage.com|r2key|auto');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

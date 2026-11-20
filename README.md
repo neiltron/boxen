@@ -7,7 +7,7 @@ boxen is a self-hosted web app for [pi](https://github.com/earendil-works/pi) co
 ## Features
 
 - **Persistent background runs:** Agents execute inside Durable Object cells on your server. Closing your browser doesn't interrupt a run, and in-progress Sessions resume automatically after a server restart.
-- **Isolated sandboxes with checkpointing:** Every Session gets its own Linux container with a `/workspace` directory and optional Git clone. After each run (and before idle sleep), `/workspace` is checkpointed to S3-compatible object storage (RustFS) and restored automatically when a new container starts. Running processes do not carry over across container restarts.
+- **Isolated sandboxes with checkpointing:** Every Session gets its own Linux container with a `/workspace` directory and optional Git clone. After each run (and before idle sleep), `/workspace` is checkpointed to S3-compatible object storage (Cloudflare R2, AWS S3, or local RustFS) and restored automatically when a new container starts. Running processes do not carry over across container restarts.
 - **Multi-browser live sync:** Open the same Session across multiple tabs or devices to view the live transcript and steer the agent over WebSockets.
 - **Dockable workspace panel:** Inspect agent output alongside chat with five Trellis views: **Artifacts**, **Changes**, **Preview**, **Terminal**, and **Events**.
 - **Any `pi` model provider:** Connect any provider supported by `pi` using an API key or OAuth sign-in.
@@ -55,9 +55,16 @@ Upgrading preserves your Sessions, transcripts, and stored credentials. If `cell
 
 For remote curl installs, `boxenctl` operations, networking, backups, and migration notes, see [Installation](docs/installation.md).
 
-## Cloudflare Workers compatibility
+## Architecture & ways to run
 
-boxen is built on Cloudflare Workers APIs, supplied on your own server by [celld](https://github.com/denoland/celld). Direct deployment to Cloudflare is not yet documented or tested.
+boxen separates the **application** from the **infrastructure** that hosts it:
+
+- **The Application (`apps/`, `packages/`):** Built entirely on the standard Cloudflare Workers, SQLite Durable Objects, R2 (`BACKUP_BUCKET`), Static Assets (`ASSETS`), and `@cloudflare/sandbox` container APIs. The application code has no dependency on any specific host runtime or storage implementation.
+- **The Infrastructure (`ops/`, `install.sh`, `start.sh`):** Convenience runners that execute the Workers + Containers application on your own machines using [celld](https://github.com/denoland/celld) backed by any S3-compatible object store:
+  - **Single-machine Linux installer (`install.sh` / `boxenctl`):** Bundles `celld` and a local RustFS container under `systemd` for a zero-external-dependency server setup.
+  - **Local development (`./start.sh`):** Runs `celld` against either your own **Cloudflare R2 / AWS S3** bucket (configured in `.env`) or a zero-config local `rustfs` process.
+  - **Cloud VM / Container hosts (EC2, ECS, Hetzner):** Run `celld` with Docker pointed at an S3 or R2 bucket (`celld --bucket s3://...`).
+  - **Cloudflare Workers & Containers (`cf`):** Because boxen targets the native Cloudflare platform APIs (`wrangler.jsonc` / the unified [Cloudflare `cf` CLI](https://developers.cloudflare.com/cf/reference/wrangler-to-cf/)), it is designed to map directly to Cloudflare's managed runtime (direct `cf deploy` instructions and tests are a follow-up).
 
 ## Documentation
 

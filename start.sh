@@ -1,5 +1,7 @@
 #!/bin/bash
-# Launch boxen: rustfs (shared, :9000) -> celld 0.6.2 node (:8093).
+# Convenience runner for local development: starts celld 0.6.2 (:8093) backed by
+# either external S3/R2 (when BOXEN_S3_BUCKET / BOXEN_S3_ENDPOINT / AWS_* are
+# set in .env or the environment) or a zero-config local rustfs (:9000).
 # Needs a Docker daemon for the per-session Sandbox containers.
 # UI is separate: pnpm ui (http://localhost:5176), then sign in from the sidebar.
 set -euo pipefail
@@ -25,6 +27,23 @@ wait_port() {
   exit 1
 }
 
+read_dotenv() {
+  local key="$1"
+  [[ -f .env ]] || return 0
+  node --input-type=module -e '
+    import fs from "node:fs";
+    const key = process.argv[1];
+    for (const line of fs.readFileSync(".env", "utf8").split(/\r?\n/)) {
+      const m = line.match(/^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*)/);
+      if (!m || m[1] !== key) continue;
+      let v = m[2].trim();
+      if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("\x27") && v.endsWith("\x27"))) v = v.slice(1, -1);
+      process.stdout.write(v);
+      process.exit(0);
+    }
+  ' "$key"
+}
+
 if ! command -v node >/dev/null 2>&1; then
   echo "error: node not found on PATH (requires Node >=24.5.0 <25)" >&2
   exit 1
@@ -35,18 +54,53 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! port_open 9000; then
-  if ! command -v rustfs >/dev/null 2>&1; then
-    echo "error: rustfs not found on PATH (install rustfs or place it in ~/.local/bin/rustfs)" >&2
-    exit 1
+# Resolve S3/R2 storage configuration from environment or .env.
+CFG_BUCKET="${BOXEN_S3_BUCKET:-$(read_dotenv BOXEN_S3_BUCKET)}"
+CFG_ENDPOINT="${BOXEN_S3_ENDPOINT:-$(read_dotenv BOXEN_S3_ENDPOINT)}"
+CFG_KEY="${AWS_ACCESS_KEY_ID:-$(read_dotenv AWS_ACCESS_KEY_ID)}"
+CFG_SECRET="${AWS_SECRET_ACCESS_KEY:-$(read_dotenv AWS_SECRET_ACCESS_KEY)}"
+CFG_REGION="${AWS_REGION:-$(read_dotenv AWS_REGION)}"
+
+USE_LOCAL_RUSTFS=1
+if [[ -n "$CFG_BUCKET" || -n "$CFG_ENDPOINT" || -n "$CFG_KEY" ]]; then
+  if [[ "$CFG_ENDPOINT" != "http://127.0.0.1:9000" && "$CFG_ENDPOINT" != "http://localhost:9000" ]]; then
+    USE_LOCAL_RUSTFS=0
   fi
-  RUSTFS_ACCESS_KEY=swarmadmin RUSTFS_SECRET_KEY=swarmsecret \
-    rustfs server --address 127.0.0.1:9000 ../.rustfs-data >> ../.rustfs.log 2>&1 &
-  echo "rustfs starting (pid $!)"
-else
-  echo "rustfs already listening on 127.0.0.1:9000"
 fi
-wait_port 9000 "rustfs; check ../.rustfs.log"
+
+if [[ "$USE_LOCAL_RUSTFS" -eq 1 ]]; then
+  S3_BUCKET="${CFG_BUCKET:-s3://pid-cells}"
+  S3_ENDPOINT="http://127.0.0.1:9000"
+  export AWS_ACCESS_KEY_ID="${CFG_KEY:-swarmadmin}"
+  export AWS_SECRET_ACCESS_KEY="${CFG_SECRET:-swarmsecret}"
+  export AWS_REGION="${CFG_REGION:-us-east-1}"
+
+  if ! port_open 9000; then
+    if ! command -v rustfs >/dev/null 2>&1; then
+      echo "error: rustfs not found on PATH (install rustfs in ~/.local/bin/rustfs, or configure external S3/R2 via BOXEN_S3_BUCKET and BOXEN_S3_ENDPOINT in .env)" >&2
+      exit 1
+    fi
+    RUSTFS_ACCESS_KEY="$AWS_ACCESS_KEY_ID" RUSTFS_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
+      rustfs server --address 127.0.0.1:9000 ../.rustfs-data >> ../.rustfs.log 2>&1 &
+    echo "rustfs starting (pid $!)"
+  else
+    echo "rustfs already listening on 127.0.0.1:9000"
+  fi
+  wait_port 9000 "rustfs; check ../.rustfs.log"
+else
+  S3_BUCKET="${CFG_BUCKET:-s3://pid-cells}"
+  S3_ENDPOINT="$CFG_ENDPOINT"
+  export AWS_ACCESS_KEY_ID="$CFG_KEY"
+  export AWS_SECRET_ACCESS_KEY="$CFG_SECRET"
+  export AWS_REGION="${CFG_REGION:-auto}"
+  echo "using external object storage: ${S3_BUCKET}${S3_ENDPOINT:+ ($S3_ENDPOINT)} (skipping local rustfs)"
+fi
+
+if [[ "$S3_BUCKET" != s3://* ]]; then
+  S3_BUCKET="s3://$S3_BUCKET"
+fi
+export BOXEN_S3_BUCKET="$S3_BUCKET"
+export BOXEN_S3_ENDPOINT="$S3_ENDPOINT"
 
 if ! port_open 8093; then
   BOXEN_CELLD="celld-0.6.2" node ops/celld.mjs --version >/dev/null
@@ -56,13 +110,17 @@ if ! port_open 8093; then
   # A missed lease renewal (the Mac sleeping) makes celld halt on purpose
   # ("SELF-FENCE" in .celld.log), so a loop restarts it. caffeinate -i holds
   # off idle sleep on macOS while it runs; a closed lid still sleeps.
-  export CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600 \
-    AWS_ACCESS_KEY_ID=swarmadmin AWS_SECRET_ACCESS_KEY=swarmsecret
+  export CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600
+  # shellcheck disable=SC2016
   nohup bash -c 'while :; do
+    args=(--bucket "$BOXEN_S3_BUCKET" --listen 127.0.0.1:8093)
+    if [[ -n "${BOXEN_S3_ENDPOINT:-}" ]]; then
+      args+=(--endpoint "$BOXEN_S3_ENDPOINT")
+    fi
     if command -v caffeinate >/dev/null 2>&1; then
-      caffeinate -i celld-0.6.2 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 --listen 127.0.0.1:8093
+      caffeinate -i celld-0.6.2 "${args[@]}"
     else
-      celld-0.6.2 --bucket s3://pid-cells --endpoint http://127.0.0.1:9000 --listen 127.0.0.1:8093
+      celld-0.6.2 "${args[@]}"
     fi
     echo "boxen-celld-supervisor: celld exited ($?), restarting"; sleep 2
   done' boxen-celld-supervisor >> .celld.log 2>&1 &
@@ -105,8 +163,9 @@ fi
 
 echo
 echo "boxen is up:"
-echo "  api     http://127.0.0.1:8093/api/sessions"
-echo "  ui      pnpm ui   ->  http://localhost:5176"
-echo "  logs    ../.rustfs.log, .celld.log"
-echo "  deploy  ./deploy.sh  (after editing apps/worker/src/ — no restart needed)"
-echo "  stop    ./stop.sh    (or ./stop.sh rustfs to stop storage too)"
+echo "  api      http://127.0.0.1:8093/api/sessions"
+echo "  storage  ${S3_BUCKET}${S3_ENDPOINT:+ ($S3_ENDPOINT)}"
+echo "  ui       pnpm ui   ->  http://localhost:5176"
+echo "  logs     .celld.log$([[ "$USE_LOCAL_RUSTFS" -eq 1 ]] && echo ", ../.rustfs.log" || true)"
+echo "  deploy   ./deploy.sh  (after editing apps/worker/src/ — no restart needed)"
+echo "  stop     ./stop.sh$([[ "$USE_LOCAL_RUSTFS" -eq 1 ]] && echo "    (or ./stop.sh rustfs to stop local storage too)" || true)"
