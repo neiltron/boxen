@@ -11,7 +11,7 @@ The local dev scripts (`start.sh`, `stop.sh`, `deploy.sh`) work on both macOS (u
 | **Node.js** | `>=24.5.0 <25` (enforced by `package.json` `engines`; `ops/runtime.json` pins `24.5.0`). |
 | **pnpm** | `package.json` pins `pnpm@12.9.1` (enable via `corepack enable` or install pnpm v10+/12). |
 | **Docker daemon** | Running locally for per-session Sandbox containers (e.g. OrbStack via `orbctl start` on macOS, or Docker Engine on Linux). |
-| **Object storage** | **Either** external S3 / Cloudflare R2 credentials (`BOXEN_S3_BUCKET`, `BOXEN_S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` in `.env` or environment) **or** the `rustfs` binary on `PATH` / `~/.local/bin/rustfs` (zero-config local S3 fallback on `:9000` storing data in `../.rustfs-data`). |
+| **Object storage** | **Either** an external S3 / Cloudflare R2 bucket (`BOXEN_S3_BUCKET` and/or `BOXEN_S3_ENDPOINT`, plus credentials, in `.env` or environment) **or** the `rustfs` binary on `PATH` / `~/.local/bin/rustfs` (zero-config local S3 fallback on `:9000` storing data in `../.rustfs-data`). |
 | **Pinned `celld`** | `celld-0.6.2` on `PATH` or at `~/.local/bin/celld-0.6.2` (or set `BOXEN_CELLD` to a `0.6.2` binary). `ops/celld.mjs` enforces the exact version pinned in `ops/runtime.json`. |
 | **shellcheck** | Required by `pnpm run check:ops` (`brew install shellcheck`, `apt install shellcheck`, or `pacman -S shellcheck`). |
 
@@ -44,7 +44,7 @@ chmod +x ~/.local/bin/celld-0.6.2
 
    `start.sh` checks that `node`, Docker, and `celld-0.6.2` are available, then configures object storage:
    - **Zero-config local storage (default):** Starts **RustFS** on `http://127.0.0.1:9000` (`s3://pid-cells`, data in `../.rustfs-data`, logs in `../.rustfs.log`).
-   - **External S3 / Cloudflare R2:** If `BOXEN_S3_BUCKET`, `BOXEN_S3_ENDPOINT`, or `AWS_ACCESS_KEY_ID` are set in `.env` or your environment, `start.sh` skips local RustFS altogether and points `celld-0.6.2` directly at your bucket.
+   - **External S3 / Cloudflare R2:** If `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is set in `.env` or your environment, `start.sh` skips local RustFS altogether and points `celld-0.6.2` directly at your bucket.
 
    It then starts **`celld-0.6.2`** on `http://127.0.0.1:8093` under a restart supervisor (logs in `.celld.log`).
 
@@ -91,7 +91,7 @@ GH_TOKEN=ghp_...
 LINEAR_API_KEY=lin_api_...
 ```
 
-When these variables are present, `./start.sh`, `pnpm run deploy`, and `./deploy.sh` automatically target your remote bucket and skip starting `rustfs`. (For AWS S3, omit `BOXEN_S3_ENDPOINT` and set `AWS_REGION`, e.g. `us-east-1`.)
+Setting `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is what switches `./start.sh`, `pnpm run deploy`, and `./deploy.sh` to your remote bucket and skips starting `rustfs`; ambient `AWS_*` variables alone never do. In external mode, `AWS_*` values are passed through only when set, so AWS profiles, SSO, and instance roles also work. (For AWS S3, omit `BOXEN_S3_ENDPOINT` and set `AWS_REGION`, e.g. `us-east-1`.)
 
 ## Running Checks & Tests
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Convenience runner for local development: starts celld 0.6.2 (:8093) backed by
-# either external S3/R2 (when BOXEN_S3_BUCKET / BOXEN_S3_ENDPOINT / AWS_* are
-# set in .env or the environment) or a zero-config local rustfs (:9000).
+# either external S3/R2 (when BOXEN_S3_BUCKET / BOXEN_S3_ENDPOINT is set in
+# .env or the environment) or a zero-config local rustfs (:9000).
 # Needs a Docker daemon for the per-session Sandbox containers.
 # UI is separate: pnpm ui (http://localhost:5176), then sign in from the sidebar.
 set -euo pipefail
@@ -27,23 +27,6 @@ wait_port() {
   exit 1
 }
 
-read_dotenv() {
-  local key="$1"
-  [[ -f .env ]] || return 0
-  node --input-type=module -e '
-    import fs from "node:fs";
-    const key = process.argv[1];
-    for (const line of fs.readFileSync(".env", "utf8").split(/\r?\n/)) {
-      const m = line.match(/^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*)/);
-      if (!m || m[1] !== key) continue;
-      let v = m[2].trim();
-      if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("\x27") && v.endsWith("\x27"))) v = v.slice(1, -1);
-      process.stdout.write(v);
-      process.exit(0);
-    }
-  ' "$key"
-}
-
 if ! command -v node >/dev/null 2>&1; then
   echo "error: node not found on PATH (requires Node >=24.5.0 <25)" >&2
   exit 1
@@ -54,30 +37,13 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# Resolve S3/R2 storage configuration from environment or .env.
-CFG_BUCKET="${BOXEN_S3_BUCKET:-$(read_dotenv BOXEN_S3_BUCKET)}"
-CFG_ENDPOINT="${BOXEN_S3_ENDPOINT:-$(read_dotenv BOXEN_S3_ENDPOINT)}"
-CFG_KEY="${AWS_ACCESS_KEY_ID:-$(read_dotenv AWS_ACCESS_KEY_ID)}"
-CFG_SECRET="${AWS_SECRET_ACCESS_KEY:-$(read_dotenv AWS_SECRET_ACCESS_KEY)}"
-CFG_REGION="${AWS_REGION:-$(read_dotenv AWS_REGION)}"
+# Storage settings (environment or .env) resolved in one place, shared with deploys.
+eval "$(node ops/celld.mjs --storage-env)"
 
-USE_LOCAL_RUSTFS=1
-if [[ -n "$CFG_BUCKET" || -n "$CFG_ENDPOINT" || -n "$CFG_KEY" ]]; then
-  if [[ "$CFG_ENDPOINT" != "http://127.0.0.1:9000" && "$CFG_ENDPOINT" != "http://localhost:9000" ]]; then
-    USE_LOCAL_RUSTFS=0
-  fi
-fi
-
-if [[ "$USE_LOCAL_RUSTFS" -eq 1 ]]; then
-  S3_BUCKET="${CFG_BUCKET:-s3://pid-cells}"
-  S3_ENDPOINT="http://127.0.0.1:9000"
-  export AWS_ACCESS_KEY_ID="${CFG_KEY:-swarmadmin}"
-  export AWS_SECRET_ACCESS_KEY="${CFG_SECRET:-swarmsecret}"
-  export AWS_REGION="${CFG_REGION:-us-east-1}"
-
+if [[ "$BOXEN_STORAGE" == local ]]; then
   if ! port_open 9000; then
     if ! command -v rustfs >/dev/null 2>&1; then
-      echo "error: rustfs not found on PATH (install rustfs in ~/.local/bin/rustfs, or configure external S3/R2 via BOXEN_S3_BUCKET and BOXEN_S3_ENDPOINT in .env)" >&2
+      echo "error: rustfs not found on PATH (install rustfs in ~/.local/bin/rustfs, or set BOXEN_S3_BUCKET / BOXEN_S3_ENDPOINT in .env for external S3/R2)" >&2
       exit 1
     fi
     RUSTFS_ACCESS_KEY="$AWS_ACCESS_KEY_ID" RUSTFS_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
@@ -88,19 +54,8 @@ if [[ "$USE_LOCAL_RUSTFS" -eq 1 ]]; then
   fi
   wait_port 9000 "rustfs; check ../.rustfs.log"
 else
-  S3_BUCKET="${CFG_BUCKET:-s3://pid-cells}"
-  S3_ENDPOINT="$CFG_ENDPOINT"
-  export AWS_ACCESS_KEY_ID="$CFG_KEY"
-  export AWS_SECRET_ACCESS_KEY="$CFG_SECRET"
-  export AWS_REGION="${CFG_REGION:-auto}"
-  echo "using external object storage: ${S3_BUCKET}${S3_ENDPOINT:+ ($S3_ENDPOINT)} (skipping local rustfs)"
+  echo "using external object storage: ${BOXEN_S3_BUCKET}${BOXEN_S3_ENDPOINT:+ ($BOXEN_S3_ENDPOINT)} (skipping local rustfs)"
 fi
-
-if [[ "$S3_BUCKET" != s3://* ]]; then
-  S3_BUCKET="s3://$S3_BUCKET"
-fi
-export BOXEN_S3_BUCKET="$S3_BUCKET"
-export BOXEN_S3_ENDPOINT="$S3_ENDPOINT"
 
 if ! port_open 8093; then
   BOXEN_CELLD="celld-0.6.2" node ops/celld.mjs --version >/dev/null
@@ -136,16 +91,9 @@ wait_port 8093 "celld; check .celld.log"
 if [[ -f .env ]]; then
   node --input-type=module -e '
     import fs from "node:fs";
-    const vals = {};
-    for (const line of fs.readFileSync(".env", "utf8").split(/\r?\n/)) {
-      const match = line.match(/^[ \t]*(?:export[ \t]+)?(GH_TOKEN|LINEAR_API_KEY)[ \t]*=[ \t]*(.*)/);
-      if (!match) continue;
-      let value = match[2].trim();
-      if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("\x27") && value.endsWith("\x27"))) {
-        value = value.slice(1, -1);
-      }
-      if (value) vals[match[1]] = value;
-    }
+    import { parseEnv } from "node:util";
+    const env = parseEnv(fs.readFileSync(".env", "utf8"));
+    const vals = Object.fromEntries(["GH_TOKEN", "LINEAR_API_KEY"].filter((k) => env[k]).map((k) => [k, env[k]]));
     const keys = Object.keys(vals);
     if (keys.length === 0) process.exit(0);
     const res = await fetch("http://127.0.0.1:8093/api/secrets", {
@@ -164,8 +112,8 @@ fi
 echo
 echo "boxen is up:"
 echo "  api      http://127.0.0.1:8093/api/sessions"
-echo "  storage  ${S3_BUCKET}${S3_ENDPOINT:+ ($S3_ENDPOINT)}"
+echo "  storage  ${BOXEN_S3_BUCKET}${BOXEN_S3_ENDPOINT:+ ($BOXEN_S3_ENDPOINT)}"
 echo "  ui       pnpm ui   ->  http://localhost:5176"
-echo "  logs     .celld.log$([[ "$USE_LOCAL_RUSTFS" -eq 1 ]] && echo ", ../.rustfs.log" || true)"
+echo "  logs     .celld.log$([[ "$BOXEN_STORAGE" == local ]] && echo ", ../.rustfs.log" || true)"
 echo "  deploy   ./deploy.sh  (after editing apps/worker/src/ — no restart needed)"
-echo "  stop     ./stop.sh$([[ "$USE_LOCAL_RUSTFS" -eq 1 ]] && echo "    (or ./stop.sh rustfs to stop local storage too)" || true)"
+echo "  stop     ./stop.sh$([[ "$BOXEN_STORAGE" == local ]] && echo "    (or ./stop.sh rustfs to stop local storage too)" || true)"

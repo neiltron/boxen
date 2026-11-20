@@ -121,16 +121,28 @@ test('development celld wrapper enforces the pin and propagates the runtime exit
     assert.equal(fs.existsSync(deployed), false, 'must not deploy with the baseline runtime');
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}-rc.1'; exit 0; fi\n`);
     assert.equal(run().status, 2);
-    const argsFile = path.join(temporary, 'args.json');
+    // Run a copy of the wrapper so the checkout's .env and the caller's shell can't leak in.
+    const ops = path.join(temporary, 'ops');
+    fs.mkdirSync(ops);
+    for (const name of ['celld.mjs', 'runtime.json']) fs.copyFileSync(path.join(root, 'ops', name), path.join(ops, name));
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(AWS_|BOXEN_)/.test(k)));
+    const argsFile = path.join(temporary, 'args');
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nprintf '%s|%s|%s\\n' "$*" "$AWS_ACCESS_KEY_ID" "$AWS_REGION" > '${argsFile}'\n`, { mode: 0o755 });
-    assert.equal(run().status, 0);
-    assert.equal(fs.readFileSync(argsFile, 'utf8').trim(), 'deploy --bucket s3://pid-cells --endpoint http://127.0.0.1:9000|swarmadmin|auto');
-    const r2Run = spawnSync(process.execPath, [path.join(root, 'ops/celld.mjs'), 'deploy', '.'], {
-      env: { ...process.env, BOXEN_CELLD: binary, BOXEN_S3_BUCKET: 'my-r2', BOXEN_S3_ENDPOINT: 'https://acc.r2.cloudflarestorage.com', AWS_ACCESS_KEY_ID: 'r2key' },
-      encoding: 'utf8',
-    });
-    assert.equal(r2Run.status, 0);
-    assert.equal(fs.readFileSync(argsFile, 'utf8').trim(), 'deploy . --bucket s3://my-r2 --endpoint https://acc.r2.cloudflarestorage.com|r2key|auto');
+    const deploy = (env, dotenv) => {
+      fs.rmSync(path.join(temporary, '.env'), { force: true });
+      if (dotenv) fs.writeFileSync(path.join(temporary, '.env'), dotenv);
+      assert.equal(spawnSync(process.execPath, [path.join(ops, 'celld.mjs'), 'deploy', '.'], {
+        env: { ...clean, BOXEN_CELLD: binary, ...env }, encoding: 'utf8',
+      }).status, 0);
+      return fs.readFileSync(argsFile, 'utf8').trim();
+    };
+    const local = 'deploy . --bucket s3://pid-cells --endpoint http://127.0.0.1:9000|swarmadmin|us-east-1';
+    assert.equal(deploy({}), local);
+    assert.equal(deploy({ AWS_ACCESS_KEY_ID: 'AKIAREAL', AWS_REGION: 'eu-west-1' }), local, 'ambient AWS creds must not leave local mode');
+    assert.equal(deploy({ BOXEN_S3_ENDPOINT: 'http://localhost:9000/' }), local);
+    assert.equal(deploy({ AWS_ACCESS_KEY_ID: 'shell' }, 'BOXEN_S3_BUCKET=my-r2 # comment\nexport BOXEN_S3_ENDPOINT="https://acc.r2.cloudflarestorage.com"\nAWS_ACCESS_KEY_ID=file\nAWS_REGION=auto\n'),
+      'deploy . --bucket s3://my-r2 --endpoint https://acc.r2.cloudflarestorage.com|shell|auto', 'shell overrides .env');
+    assert.equal(deploy({ BOXEN_S3_BUCKET: 's3://aws-bucket' }), 'deploy . --bucket s3://aws-bucket||', 'external mode never injects dev credentials');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
