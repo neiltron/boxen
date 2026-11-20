@@ -115,7 +115,7 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto scroll-pt-9"
         style={{ "--diffs-font-family": "var(--font-jetbrains-mono)", "--diffs-font-size": "12px" } as React.CSSProperties}
       >
         {error && <p className="px-3 py-2 text-xs text-destructive">{error}</p>}
@@ -131,16 +131,18 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
           const shut = collapsed.has(f.name);
           return (
             <section key={f.name} className="border-b border-border">
-              <button type="button" onClick={() => toggle(f.name)}
-                className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-left text-xs hover:bg-muted">
-                <CaretRightIcon className={cn("size-3 shrink-0 text-muted-foreground transition-transform", !shut && "rotate-90")} />
-                <span className="min-w-0 flex-1 truncate font-mono">
-                  {f.prevName && f.prevName !== f.name ? `${f.prevName} → ${f.name}` : f.name}
-                </span>
-                {CHANGE_LABEL[f.type] && <span className="shrink-0 text-muted-foreground">{CHANGE_LABEL[f.type]}</span>}
-                <span className="shrink-0 tabular-nums text-green-600 dark:text-green-400">+{c.add}</span>
-                <span className="shrink-0 tabular-nums text-red-600 dark:text-red-400">−{c.del}</span>
-              </button>
+              <div className="diff-sticky-header sticky top-0 z-10">
+                <button type="button" onClick={() => toggle(f.name)}
+                  className="diff-sticky-header-inner flex w-full items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-left text-xs hover:bg-muted">
+                  <CaretRightIcon className={cn("size-3 shrink-0 text-muted-foreground transition-transform", !shut && "rotate-90")} />
+                  <span className="min-w-0 flex-1 truncate font-mono">
+                    {f.prevName && f.prevName !== f.name ? `${f.prevName} → ${f.name}` : f.name}
+                  </span>
+                  {CHANGE_LABEL[f.type] && <span className="shrink-0 text-muted-foreground">{CHANGE_LABEL[f.type]}</span>}
+                  <span className="shrink-0 tabular-nums text-green-600 dark:text-green-400">+{c.add}</span>
+                  <span className="shrink-0 tabular-nums text-red-600 dark:text-red-400">−{c.del}</span>
+                </button>
+              </div>
               {!shut && <Diff file={f} options={options} />}
             </section>
           );

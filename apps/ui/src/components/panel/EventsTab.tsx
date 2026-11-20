@@ -43,8 +43,8 @@ export function EventsTab({ model }: { model: ChatModel }) {
         <span className="shrink-0 tabular-nums text-muted-foreground">{rows.length}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
-        {rows.map((r) => (
-          <div key={r.n} className="border-b border-border/50">
+        {rows.map((r, i) => (
+          <div key={r.n} className={cn("border-b border-border/50", i >= 15 && "event-row")}>
             <button
               type="button" onClick={() => setOpen(open === r.n ? null : r.n)}
               className={cn("flex w-full items-baseline gap-2 px-3 py-1 text-left hover:bg-muted", open === r.n && "bg-muted")}
