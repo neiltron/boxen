@@ -311,6 +311,50 @@
         }
       }
     },
+    "/api/github/issues": {
+      "get": {
+        "operationId": "listIssues",
+        "summary": "A repo's open issues, newest first",
+        "description": "Pull requests are left out. At most 100. Public repos work without a GitHub token.",
+        "parameters": [
+          { "name": "repo", "in": "query", "required": true, "description": "owner/name", "schema": { "type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$" } },
+          { "name": "label", "in": "query", "required": false, "description": "Only issues with this label", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The issues",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Issue" } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/files": {
+      "get": {
+        "operationId": "listRepoFiles",
+        "summary": "Every file path on a repo's default branch",
+        "description": "One recursive tree read. truncated is GitHub's flag for a tree too large to list whole. Public repos work without a GitHub token.",
+        "parameters": [{ "name": "repo", "in": "query", "required": true, "description": "owner/name", "schema": { "type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$" } }],
+        "responses": {
+          "200": {
+            "description": "The file paths",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["defaultBranch", "paths", "truncated"],
+              "additionalProperties": false,
+              "properties": {
+                "defaultBranch": { "type": "string" },
+                "paths": { "type": "array", "items": { "type": "string" } },
+                "truncated": { "type": "boolean" }
+              }
+            } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/secrets": {
       "get": {
         "operationId": "listSandboxTokens",
@@ -504,6 +548,20 @@
           "pushedAt": { "type": "string", "format": "date-time" },
           "defaultBranch": { "type": "string" },
           "private": { "type": "boolean" }
+        }
+      },
+      "Issue": {
+        "type": "object",
+        "required": ["number", "title", "body", "url", "labels", "createdAt", "author"],
+        "additionalProperties": false,
+        "properties": {
+          "number": { "type": "integer" },
+          "title": { "type": "string" },
+          "body": { "type": "string", "description": "Markdown; empty when the issue has none" },
+          "url": { "type": "string", "description": "The issue on github.com" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "author": { "type": ["string", "null"], "description": "The login that opened it" }
         }
       },
       "SandboxToken": {

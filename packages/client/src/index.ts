@@ -25,6 +25,7 @@ export type ArtifactKind = Schemas["ArtifactKind"];
 export type ArtifactSummary = Schemas["ArtifactSummary"];
 export type Artifact = Schemas["Artifact"];
 export type Repo = Schemas["Repo"];
+export type Issue = Schemas["Issue"];
 export type SandboxToken = Schemas["SandboxToken"];
 
 // Constants the contract defines, for code that needs them at runtime.
@@ -91,6 +92,8 @@ export function apiClient(baseUrl: string, fetch?: (request: Request) => Promise
 
     listRepos: async () => ok(await api.GET("/api/github/repos")),
     listBranches: async (repo: string) => ok(await api.GET("/api/github/branches", { params: { query: { repo } } })),
+    listIssues: async (repo: string, label?: string) => ok(await api.GET("/api/github/issues", { params: { query: { repo, label } } })),
+    listRepoFiles: async (repo: string) => ok(await api.GET("/api/github/files", { params: { query: { repo } } })),
     listSandboxTokens: async () => ok(await api.GET("/api/secrets")),
     setSandboxTokens: async (body: Partial<Record<SandboxToken, string>>) => ok(await api.POST("/api/secrets", { body })),
   };

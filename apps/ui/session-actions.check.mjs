@@ -59,21 +59,29 @@ try {
     await tab.getByRole("button", { name: "Actions for Investigate reconnects", exact: true }).waitFor();
   }
 
-  // Rename an unopened session through the prompt: blank is ignored, a failure
-  // is reported, and a retry succeeds.
+  // Rename an unopened session through the modal dialog: blank is ignored, a
+  // failure is reported, and a retry succeeds.
   const rename = async (tab, menu, value) => {
-    tab.once("dialog", (dialog) => {
-      assert.equal(dialog.defaultValue(), sessions[0].name);
-      void dialog.accept(value);
-    });
     await menu.getByRole("button", { name: `Actions for ${sessions[0].name}`, exact: true }).click();
     await tab.getByRole("menuitem", { name: "Rename", exact: true }).click();
+    const dialog = tab.getByRole("dialog", { name: "Rename session" });
+    await dialog.waitFor();
+    const input = dialog.getByRole("textbox", { name: "Session name" });
+    assert.equal(await input.inputValue(), sessions[0].name);
+    await input.fill(value);
+    await input.press("Enter"); // implicit submission saves
+    await dialog.waitFor({ state: "hidden" });
   };
   const revision = sessions[0].metadataRevision;
   await rename(page, page.locator("nav"), "   ");
   failNext = true;
   await rename(page, page.locator("nav"), "Renamed session");
   await page.getByRole("alert").filter({ hasText: "simulated outage" }).waitFor();
+  const trigger = page.locator("nav").getByRole("button", { name: `Actions for ${sessions[0].name}`, exact: true });
+  await trigger.focus();
+  await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+  await page.getByRole("button", { name: "Dismiss notification", exact: true }).waitFor({ state: "hidden" });
+  assert.ok(await trigger.evaluate((el) => el === document.activeElement), "Dismiss restores focus outside the toast");
   assert.equal(sessions[0].metadataRevision, revision, "blank and failed renames change nothing");
   await rename(page, page.locator("nav"), "Renamed session");
   await other.getByRole("button", { name: "Actions for Renamed session", exact: true }).waitFor();
@@ -128,11 +136,15 @@ try {
   await other.getByText("No archived sessions", { exact: true }).waitFor();
   assert.equal(await draft.inputValue(), "Keep my unsent draft");
 
-  // Dismissing the prompt cancels; keyboard can reach menus; touch layout retains them.
-  page.once("dialog", (dialog) => void dialog.dismiss());
+  // Dismissing the dialog cancels; keyboard can reach menus; touch layout retains them.
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  const renameDialog = page.getByRole("dialog", { name: "Rename session" });
+  await renameDialog.waitFor();
+  await renameDialog.getByRole("textbox", { name: "Session name" }).fill("Cancelled name");
+  await page.keyboard.press("Escape");
+  await renameDialog.waitFor({ state: "hidden" });
   assert.equal(sessions[0].name, "Renamed session");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("header").getByRole("button", { name: "Actions for Renamed session", exact: true }).click();

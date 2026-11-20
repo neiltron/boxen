@@ -21,18 +21,17 @@ import { cn } from "@/lib/utils";
 import type { Block, ChatItem } from "@boxen/client";
 
 function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="my-1 text-xs text-muted-foreground">
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1.5 hover:text-foreground">
+    <details className="boxen-details group my-1 text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer items-center gap-1.5 hover:text-foreground">
         <BrainIcon aria-hidden="true" className="size-3.5" />
         <span className={cn("italic", block.streaming && "shimmer")}>
           {block.streaming ? "thinking…" : "thought"}
         </span>
-        <CaretDownIcon aria-hidden="true" className={cn("size-3 motion-safe:transition-transform", open && "rotate-180")} />
-      </button>
-      {open && <div className="mt-1 border-l-2 border-border pl-3 whitespace-pre-wrap italic">{block.text}</div>}
-    </div>
+        <CaretDownIcon aria-hidden="true" className="size-3 group-open:rotate-180 motion-safe:transition-transform" />
+      </summary>
+      <div className="mt-1 border-l-2 border-border pl-3 whitespace-pre-wrap italic">{block.text}</div>
+    </details>
   );
 }
 
