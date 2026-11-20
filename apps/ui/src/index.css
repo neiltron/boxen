@@ -212,6 +212,32 @@
   animation: shimmer 1.6s ease-in-out infinite;
 }
 
+/* Opt-in native <details> disclosures (keeps markdown <details> in typeset.css untouched). */
+.boxen-details {
+  interpolate-size: allow-keywords;
+}
+.boxen-details > summary {
+  list-style: none;
+}
+.boxen-details > summary::-webkit-details-marker {
+  display: none;
+}
+.boxen-details::details-content {
+  overflow: clip;
+  contain: layout;
+}
+.boxen-details:not([open])::details-content {
+  block-size: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .boxen-details::details-content {
+    transition-property: block-size, content-visibility, display;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-in-out;
+    transition-behavior: allow-discrete;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

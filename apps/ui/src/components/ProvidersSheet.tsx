@@ -60,6 +60,82 @@ function SandboxTokens({ open }: { open: boolean }) {
   );
 }
 
+function ProviderRow({
+  provider: p,
+  pending,
+  pasted,
+  onPastedChange,
+  busy,
+  onSignIn,
+  onFinishLogin,
+  onSaveApiKey,
+  onDisconnect,
+}: {
+  provider: ProviderInfo;
+  pending: Pending | null;
+  pasted: string;
+  onPastedChange: (value: string) => void;
+  busy: boolean;
+  onSignIn: (p: ProviderInfo) => void;
+  onFinishLogin: (url: string) => void;
+  onSaveApiKey: (providerId: string, apiKey: string, onSaved: () => void) => void;
+  onDisconnect: (providerId: string) => void;
+}) {
+  const [key, setKey] = useState("");
+  const pendingForRow = pending?.provider === p.id ? pending : null;
+
+  return (
+    <details
+      className="boxen-details border-b border-border/60"
+      onToggle={(e) => { if (!e.currentTarget.open) setKey(""); }}
+    >
+      <summary className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left hover:bg-muted">
+        <span className={cn("size-2 shrink-0 rounded-full", p.connected ? "bg-green-500" : "bg-muted-foreground/30")} />
+        <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {p.connected === "oauth" ? "signed in" : p.connected === "api_key" ? "API key" : ""}
+        </span>
+      </summary>
+      <div className="space-y-2 px-4 pb-3 text-xs">
+        {p.oauth && !pendingForRow && (
+          <Button size="sm" variant="outline" className="w-full" disabled={busy} onClick={() => onSignIn(p)}>
+            {p.oauth.label} <span className="text-muted-foreground">· {p.oauth.name}</span>
+          </Button>
+        )}
+        {pendingForRow && (
+          <div className="space-y-2 rounded-md border border-border p-2">
+            <a href={pendingForRow.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 underline underline-offset-2">
+              Open the sign-in page <ArrowSquareOutIcon className="size-3.5" />
+            </a>
+            {pendingForRow.code && <p>Enter the code <span className="font-mono font-medium">{pendingForRow.code}</span> there.</p>}
+            <p className="text-muted-foreground">
+              This finishes by itself once you approve. If you're on another machine and the page lands on a localhost address that won't load, paste that address here:
+            </p>
+            <div className="flex gap-2">
+              <Input value={pasted} onChange={(e) => onPastedChange(e.target.value)} placeholder="http://localhost:…/callback?code=…" className="font-mono text-xs" />
+              <Button size="sm" disabled={busy || !pasted.trim()} onClick={() => onFinishLogin(pasted.trim())}>Finish</Button>
+            </div>
+          </div>
+        )}
+        {p.apiKey && (
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); onSaveApiKey(p.id, key.trim(), () => setKey("")); }}>
+            <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={p.apiKey.name} className="text-xs" />
+            <Button size="sm" type="submit" disabled={busy || !key.trim()}>Save</Button>
+          </form>
+        )}
+        {p.connected && (
+          <Button
+            size="sm" variant="ghost" className="w-full text-destructive" disabled={busy}
+            onClick={() => onDisconnect(p.id)}
+          >
+            Disconnect
+          </Button>
+        )}
+      </div>
+    </details>
+  );
+}
+
 // Model providers this fleet can use: any pi-ai provider, by API key or by
 // its own sign-in. Credentials live in the Directory cell, never copied
 // from a pi login on the host.
@@ -67,8 +143,6 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
   const [open, setOpen] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [key, setKey] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [pasted, setPasted] = useState("");
   const [busy, setBusy] = useState(false);
@@ -123,55 +197,18 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
         {error && <p className="border-b border-border px-4 py-2 text-xs text-destructive">{error}</p>}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {shown.map((p) => (
-            <div key={p.id} className="border-b border-border/60">
-              <button
-                type="button"
-                onClick={() => { setExpanded(expanded === p.id ? null : p.id); setKey(""); }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-muted"
-              >
-                <span className={cn("size-2 shrink-0 rounded-full", p.connected ? "bg-green-500" : "bg-muted-foreground/30")} />
-                <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
-                  {p.connected === "oauth" ? "signed in" : p.connected === "api_key" ? "API key" : ""}
-                </span>
-              </button>
-              {expanded === p.id && (
-                <div className="space-y-2 px-4 pb-3 text-xs">
-                  {p.oauth && pending?.provider !== p.id && (
-                    <Button size="sm" variant="outline" className="w-full" disabled={busy} onClick={() => signIn(p)}>
-                      {p.oauth.label} <span className="text-muted-foreground">· {p.oauth.name}</span>
-                    </Button>
-                  )}
-                  {pending?.provider === p.id && (
-                    <div className="space-y-2 rounded-md border border-border p-2">
-                      <a href={pending.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 underline underline-offset-2">
-                        Open the sign-in page <ArrowSquareOutIcon className="size-3.5" />
-                      </a>
-                      {pending.code && <p>Enter the code <span className="font-mono font-medium">{pending.code}</span> there.</p>}
-                      <p className="text-muted-foreground">
-                        This finishes by itself once you approve. If you're on another machine and the page lands on a localhost address that won't load, paste that address here:
-                      </p>
-                      <div className="flex gap-2">
-                        <Input value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="http://localhost:…/callback?code=…" className="font-mono text-xs" />
-                        <Button size="sm" disabled={busy || !pasted.trim()} onClick={() => run(async () => { await finishLogin(pasted.trim()); })}>Finish</Button>
-                      </div>
-                    </div>
-                  )}
-                  {p.apiKey && (
-                    <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(async () => { await setApiKey(p.id, key.trim()); setKey(""); }); }}>
-                      <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={p.apiKey.name} className="text-xs" />
-                      <Button size="sm" type="submit" disabled={busy || !key.trim()}>Save</Button>
-                    </form>
-                  )}
-                  {p.connected && (
-                    <Button size="sm" variant="ghost" className="w-full text-destructive" disabled={busy}
-                      onClick={() => run(async () => { await logout(p.id); })}>
-                      Disconnect
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+            <ProviderRow
+              key={p.id}
+              provider={p}
+              pending={pending}
+              pasted={pasted}
+              onPastedChange={setPasted}
+              busy={busy}
+              onSignIn={signIn}
+              onFinishLogin={(url) => void run(async () => { await finishLogin(url); })}
+              onSaveApiKey={(providerId, apiKey, onSaved) => void run(async () => { await setApiKey(providerId, apiKey); onSaved(); })}
+              onDisconnect={(providerId) => void run(async () => { await logout(providerId); })}
+            />
           ))}
         </div>
         <SandboxTokens open={open} />
