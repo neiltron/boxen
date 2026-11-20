@@ -169,8 +169,8 @@ export function TerminalTab() {
       <div className="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
         <span role="status" className="min-w-0 flex-1 truncate" title={status}>{status}</span>
         <button type="button" aria-label="Reconnect terminal" title="Reconnect terminal"
-          onClick={() => setNonce((n) => n + 1)} className="rounded-md p-1 hover:bg-muted hover:text-foreground">
-          <ArrowClockwiseIcon className="size-3.5" />
+          onClick={() => setNonce((n) => n + 1)} className="touch-target inline-flex items-center justify-center rounded-md p-1 hover:bg-muted hover:text-foreground">
+          <ArrowClockwiseIcon aria-hidden="true" className="size-3.5" />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden p-2">

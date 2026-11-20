@@ -149,6 +149,20 @@
 @media (hover: none) { .transcript-prompt-time { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .transcript-prompt-time { transition: none; } }
 
+/* Minimum interactive target size (WCAG 2.5.8 desktop, 2.5.5 touch). */
+:root {
+  --target-size: 24px;
+}
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+}
+.touch-target {
+  min-block-size: var(--target-size);
+  min-inline-size: var(--target-size);
+}
+
 /* Used for "thinking…" / "working…" while the agent streams. */
 @keyframes shimmer {
   50% { opacity: 0.45; }

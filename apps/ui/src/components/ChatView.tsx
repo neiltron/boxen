@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaperPlaneRightIcon, StopIcon, CaretDownIcon, BrainIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import {
   MessageScrollerProvider, MessageScroller, MessageScrollerViewport,
@@ -24,12 +24,12 @@ function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> 
   const [open, setOpen] = useState(false);
   return (
     <div className="my-1 text-xs text-muted-foreground">
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1.5 hover:text-foreground">
-        <BrainIcon className="size-3.5" />
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 hover:text-foreground">
+        <BrainIcon aria-hidden="true" className="size-3.5" />
         <span className={cn("italic", block.streaming && "shimmer")}>
           {block.streaming ? "thinking…" : "thought"}
         </span>
-        <CaretDownIcon className={cn("size-3 transition-transform", open && "rotate-180")} />
+        <CaretDownIcon aria-hidden="true" className={cn("size-3 transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="mt-1 border-l-2 border-border pl-3 whitespace-pre-wrap italic">{block.text}</div>}
     </div>
@@ -70,6 +70,11 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
   const { model, meta, ready } = session;
   const [draft, setDraft] = useState("");
 
+  useEffect(() => {
+    document.title = meta?.name ? `${meta.name} — pi sessions` : "pi sessions";
+    return () => { document.title = "pi sessions"; };
+  }, [meta?.name]);
+
   // Stick to the end while the reader is there. The scroller's own follow
   // mode drops out when content shrinks (a finished tool card loses its live
   // output tail, the browser clamps scrollTop, and that reads as scrolling
@@ -106,7 +111,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
           aria-label="Show or hide the panel"
           onClick={onTogglePanel}
         >
-          <SidebarSimpleIcon className="size-4 -scale-x-100" />
+          <SidebarSimpleIcon aria-hidden="true" className="size-4 -scale-x-100" />
         </Button>
       </header>
 
@@ -157,6 +162,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
           <InputGroup className="rounded-2xl">
             <InputGroupTextarea
               data-chat-composer
+              aria-label="Message"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               enterKeyHint="enter"
@@ -181,7 +187,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
                   type="button" variant="outline" size="icon-sm" className="ml-auto rounded-full"
                   aria-label="Stop the agent" disabled={!ready} onClick={() => session.abort()}
                 >
-                  <StopIcon className="size-3.5" />
+                  <StopIcon aria-hidden="true" className="size-3.5" />
                 </InputGroupButton>
               )}
               <InputGroupButton
@@ -189,7 +195,7 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
                 className={cn("rounded-full", !model.running && "ml-auto")}
                 aria-label="Send" disabled={!ready || !draft.trim()}
               >
-                <PaperPlaneRightIcon className="size-3.5" />
+                <PaperPlaneRightIcon aria-hidden="true" className="size-3.5" />
               </InputGroupButton>
             </InputGroupAddon>
           </InputGroup>

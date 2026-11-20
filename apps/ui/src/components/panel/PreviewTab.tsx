@@ -1,6 +1,8 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowClockwiseIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { fetchListeningPorts, PREVIEW_PORTS, validPreviewPort } from "@/lib/api";
+
+const PORT_ERROR = `Enter a valid port from ${PREVIEW_PORTS.min}–${PREVIEW_PORTS.max}, except ${PREVIEW_PORTS.reserved} (sandbox control server).`;
 
 function validPort(value: string) {
   return /^\d+$/.test(value) && validPreviewPort(Number(value));
@@ -19,18 +21,32 @@ function savedPort(sessionId: string) {
 export function PreviewTab({ sessionId }: { sessionId: string }) {
   const [port, setPort] = useState(() => savedPort(sessionId));
   const [input, setInput] = useState(port);
+  const [touched, setTouched] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const [nonce, setNonce] = useState(0);
   const [ports, setPorts] = useState<number[] | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const fieldId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const announceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const valid = validPort(input);
+  const showError = touched && !valid;
   // The UI is on :5176; preview traffic goes straight to celld, not Vite.
   const url = `http://p${port}-${sessionId}.localhost:8093/`;
+
+  useEffect(() => {
+    inputRef.current?.setCustomValidity(valid ? "" : PORT_ERROR);
+  }, [valid]);
+
+  useEffect(() => () => clearTimeout(announceTimer.current), []);
 
   function show(value: string) {
     if (!validPort(value)) return;
     const next = String(Number(value));
+    clearTimeout(announceTimer.current);
+    setAnnouncement("");
+    setTouched(false);
     setPort(next);
     setInput(next);
     setNonce((n) => n + 1);
@@ -53,26 +69,65 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <form onSubmit={(event) => { event.preventDefault(); show(input); }}
-        className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!valid) {
+            clearTimeout(announceTimer.current);
+            setAnnouncement("");
+            setTouched(true);
+            inputRef.current?.focus();
+            return;
+          }
+          show(input);
+        }}
+        className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs"
+      >
         <label htmlFor={fieldId} className="text-muted-foreground">Port</label>
-        <input id={fieldId} type="text" inputMode="numeric" value={input}
-          onChange={(event) => setInput(event.target.value)} aria-invalid={!valid}
-          aria-describedby={!valid ? `${fieldId}-error` : undefined}
-          className="w-20 rounded-md border border-border bg-background px-2 py-1 font-mono outline-none focus:border-ring" />
-        <button type="submit" disabled={!valid}
-          className="rounded-md px-2 py-1 hover:bg-muted disabled:opacity-40">Go</button>
+        <input
+          ref={inputRef}
+          id={fieldId}
+          type="text"
+          inputMode="numeric"
+          required
+          pattern="[0-9]+"
+          value={input}
+          onChange={(event) => {
+            const next = event.target.value;
+            setInput(next);
+            if (validPort(next)) {
+              clearTimeout(announceTimer.current);
+              setAnnouncement("");
+            }
+          }}
+          onBlur={() => {
+            setTouched(true);
+            clearTimeout(announceTimer.current);
+            if (!validPort(input)) {
+              setAnnouncement("");
+              // Delay slightly so assistive tech finishes announcing the next focused element.
+              announceTimer.current = setTimeout(() => setAnnouncement(`Port: ${PORT_ERROR}`), 500);
+            }
+          }}
+          aria-invalid={showError ? "true" : "false"}
+          aria-describedby={showError ? `${fieldId}-error` : undefined}
+          className="w-20 rounded-md border border-border bg-background px-2 py-1 font-mono text-base outline-none focus:border-ring aria-[invalid=true]:border-destructive user-invalid:border-destructive sm:text-xs"
+        />
+        <button type="submit"
+          className="rounded-md px-2 py-1 hover:bg-muted">Go</button>
         <span className="flex-1" />
         <button type="button" aria-label="Reload preview" title="Reload preview" onClick={() => setNonce((n) => n + 1)}
-          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ArrowClockwiseIcon className="size-3.5" />
+          className="touch-target inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ArrowClockwiseIcon aria-hidden="true" className="size-3.5" />
         </button>
         <a href={url} target="_blank" rel="noopener noreferrer" aria-label="Open preview in new tab" title="Open preview in new tab"
-          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ArrowSquareOutIcon className="size-3.5" />
+          className="touch-target inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ArrowSquareOutIcon aria-hidden="true" className="size-3.5" />
         </a>
       </form>
-      {!valid && <p id={`${fieldId}-error`} className="px-3 py-1 text-xs text-destructive">Use a port from {PREVIEW_PORTS.min}–{PREVIEW_PORTS.max}, except {PREVIEW_PORTS.reserved} (sandbox control server).</p>}
+      <span className="sr-only" aria-live="polite">{announcement}</span>
+      {showError && <p id={`${fieldId}-error`} className="px-3 py-1 text-xs text-destructive">{PORT_ERROR}</p>}
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted-foreground">
         <button type="button" disabled={scanning} onClick={() => void scan()} className="hover:text-foreground disabled:opacity-40">
           {scanning ? "Checking…" : "Find listening ports"}
