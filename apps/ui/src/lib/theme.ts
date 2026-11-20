@@ -1,42 +1,37 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 // Kept in sync with the inline script in index.html, which applies the stored
 // choice before first paint so there is no light flash on load.
 const KEY = "pids.theme";
 
-export type Theme = "light" | "dark" | "system";
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
-const dark = window.matchMedia("(prefers-color-scheme: dark)");
-
-function stored(): Theme {
-  const v = localStorage.getItem(KEY);
-  return v === "light" || v === "dark" ? v : "system";
+function hasStoredOverride(): boolean {
+  try {
+    const v = localStorage.getItem(KEY);
+    return v === "light" || v === "dark";
+  } catch {
+    return false;
+  }
 }
 
-// `color-scheme` on <html> is what makes native scrollbars and form controls
-// follow along; the .dark class is what the shadcn tokens key off.
-function apply(theme: Theme) {
-  const isDark = theme === "dark" || (theme === "system" && dark.matches);
-  document.documentElement.classList.toggle("dark", isDark);
-  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+// Follow OS theme changes for the life of the page (main.tsx imports this
+// module), unless a stored override pins the theme. The .dark class drives
+// Tailwind's dark: variant, the CSS tokens and color-scheme, and useIsDark.
+darkQuery.addEventListener("change", (e) => {
+  if (!hasStoredOverride()) document.documentElement.classList.toggle("dark", e.matches);
+});
+
+function getIsDark(): boolean {
+  return document.documentElement.classList.contains("dark");
 }
 
-export function useTheme() {
-  const [theme, setTheme] = useState(stored);
+function subscribeDark(listener: () => void) {
+  const observer = new MutationObserver(listener);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
+}
 
-  useEffect(() => {
-    apply(theme);
-    if (theme !== "system") return;
-    const onChange = () => apply("system");
-    dark.addEventListener("change", onChange);
-    return () => dark.removeEventListener("change", onChange);
-  }, [theme]);
-
-  return {
-    theme,
-    setTheme: (next: Theme) => {
-      localStorage.setItem(KEY, next);
-      setTheme(next);
-    },
-  };
+export function useIsDark(): boolean {
+  return useSyncExternalStore(subscribeDark, getIsDark);
 }

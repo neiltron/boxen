@@ -336,6 +336,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/github/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A repo's open issues, newest first
+         * @description Pull requests are left out. At most 100. Public repos work without a GitHub token.
+         */
+        get: operations["listIssues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every file path on a repo's default branch
+         * @description One recursive tree read. truncated is GitHub's flag for a tree too large to list whole. Public repos work without a GitHub token.
+         */
+        get: operations["listRepoFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/secrets": {
         parameters: {
             query?: never;
@@ -495,6 +535,19 @@ export interface components {
             pushedAt: string;
             defaultBranch: string;
             private: boolean;
+        };
+        Issue: {
+            number: number;
+            title: string;
+            /** @description Markdown; empty when the issue has none */
+            body: string;
+            /** @description The issue on github.com */
+            url: string;
+            labels: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The login that opened it */
+            author: string | null;
         };
         /**
          * @description A token every sandbox command gets in its environment. The web app and the worker both read the list from here.
@@ -999,6 +1052,62 @@ export interface operations {
                     "application/json": {
                         defaultBranch: string;
                         branches: string[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["Error"];
+        };
+    };
+    listIssues: {
+        parameters: {
+            query: {
+                /** @description owner/name */
+                repo: string;
+                /** @description Only issues with this label */
+                label?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The issues */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Issue"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["Error"];
+        };
+    };
+    listRepoFiles: {
+        parameters: {
+            query: {
+                /** @description owner/name */
+                repo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file paths */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        defaultBranch: string;
+                        paths: string[];
+                        truncated: boolean;
                     };
                 };
             };

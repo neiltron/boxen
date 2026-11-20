@@ -231,6 +231,28 @@ export class Directory extends DurableObject {
     return { defaultBranch: repo.default_branch, branches: [repo.default_branch, ...names] };
   }
 
+  // A repo's open issues, newest first; the issues API lists pull requests too.
+  async githubIssues(fullName, label) {
+    const labels = label ? `&labels=${encodeURIComponent(label)}` : "";
+    const issues = await this.github(`/repos/${fullName}/issues?state=open&per_page=100${labels}`);
+    return issues.filter((i) => !i.pull_request).map((i) => ({
+      number: i.number, title: i.title, body: i.body ?? "", url: i.html_url,
+      labels: i.labels.map((l) => (typeof l === "string" ? l : l.name)),
+      createdAt: i.created_at, author: i.user?.login ?? null,
+    }));
+  }
+
+  // Every file on the default branch, for drawing the repo's shape.
+  async githubFiles(fullName) {
+    const repo = await this.github(`/repos/${fullName}`);
+    const tree = await this.github(`/repos/${fullName}/git/trees/${encodeURIComponent(repo.default_branch)}?recursive=1`);
+    return {
+      defaultBranch: repo.default_branch,
+      paths: tree.tree.filter((t) => t.type === "blob").map((t) => t.path),
+      truncated: !!tree.truncated,
+    };
+  }
+
   async defaultAgent() {
     return (await this.state.storage.get("agent")) ?? {};
   }

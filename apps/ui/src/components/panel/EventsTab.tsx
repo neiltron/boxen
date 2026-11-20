@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { ChatModel, LoggedEvent } from "@boxen/client";
-import { cn } from "@/lib/utils";
 
 // Streaming deltas and usage ticks outnumber everything else by far.
 const NOISY = new Set(["message_update", "tool_execution_update", "usage_changed"]);
@@ -20,12 +19,39 @@ function summary(ev: LoggedEvent["ev"]): string {
   }
 }
 
+const EventRow = memo(function EventRow({ row }: { row: LoggedEvent }) {
+  const time = useMemo(
+    () => new Date(row.ts).toLocaleTimeString([], { hour12: false }),
+    [row.ts],
+  );
+  // Lazy body: up to 1000 rows, and Find-in-page over raw event JSON isn't
+  // worth serializing every one up front.
+  const [open, setOpen] = useState(false);
+
+  return (
+    <details
+      className="boxen-details group border-b border-border/50"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="flex w-full cursor-pointer items-baseline gap-2 px-3 py-1 text-left hover:bg-muted group-open:bg-muted">
+        <span className="shrink-0 text-muted-foreground tabular-nums">{time}</span>
+        <span className="shrink-0">{row.ev.type}</span>
+        <span className="truncate text-muted-foreground">{summary(row.ev)}</span>
+      </summary>
+      {open && (
+        <pre className="max-h-96 overflow-auto bg-muted/40 px-3 py-2 whitespace-pre-wrap break-all">
+          {JSON.stringify(row.ev, null, 2)}
+        </pre>
+      )}
+    </details>
+  );
+});
+
 // The raw agent event stream this tab received: the snapshot it joined with,
 // then one batch per commit. Click a row for its JSON.
 export function EventsTab({ model }: { model: ChatModel }) {
   const [showNoisy, setShowNoisy] = useState(false);
   const [filter, setFilter] = useState("");
-  const [open, setOpen] = useState<number | null>(null);
   const rows = model.log.filter((r) =>
     (showNoisy || !NOISY.has(r.ev.type)) && (!filter || r.ev.type.includes(filter)));
 
@@ -45,23 +71,7 @@ export function EventsTab({ model }: { model: ChatModel }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
         {rows.map((r) => (
-          <div key={r.n} className="border-b border-border/50">
-            <button
-              type="button" onClick={() => setOpen(open === r.n ? null : r.n)}
-              className={cn("flex w-full items-baseline gap-2 px-3 py-1 text-left hover:bg-muted", open === r.n && "bg-muted")}
-            >
-              <span className="shrink-0 text-muted-foreground tabular-nums">
-                {new Date(r.ts).toLocaleTimeString([], { hour12: false })}
-              </span>
-              <span className="shrink-0">{r.ev.type}</span>
-              <span className="truncate text-muted-foreground">{summary(r.ev)}</span>
-            </button>
-            {open === r.n && (
-              <pre className="max-h-96 overflow-auto bg-muted/40 px-3 py-2 whitespace-pre-wrap break-all">
-                {JSON.stringify(r.ev, null, 2)}
-              </pre>
-            )}
-          </div>
+          <EventRow key={r.n} row={r} />
         ))}
       </div>
     </div>
