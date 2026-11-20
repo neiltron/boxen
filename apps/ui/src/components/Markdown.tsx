@@ -14,7 +14,7 @@ const components: Components = {
     </a>
   ),
   table: ({ children }) => (
-    <div className="typeset-scroll" tabIndex={0} role="region" aria-label="Scrollable table">
+    <div className="typeset-scroll" tabIndex={0} role="region" aria-label="Table">
       <table>{children}</table>
     </div>
   ),

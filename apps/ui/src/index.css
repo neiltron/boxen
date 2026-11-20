@@ -239,6 +239,13 @@
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
+/* scrollbar-color inherits into the @pierre/diffs shadow root, and in Chrome
+   121+ any non-auto value disables its ::-webkit-scrollbar hide-until-hover
+   styles. Reset it on the shadow host. */
+diffs-container {
+  scrollbar-color: auto;
+}
+
 .dark {
   --scrollbar-thumb: oklch(0.6 0 0);
   --scrollbar-track: oklch(0.22 0 0);
