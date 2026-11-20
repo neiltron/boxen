@@ -144,6 +144,19 @@ try {
   await page.getByPlaceholder("Steer the running agent…").fill("Mobile draft rerender");
   await page.getByRole("tab", { name: "Artifacts", exact: true }).waitFor();
   assert.equal(await page.getByRole("tablist").count(), 1, "fresh mobile panel stays open across rerenders");
+  // Reduced motion: shimmer stops, spinners slow, vendored enter/exit animations collapse.
+  const calm = await browser.newPage({ reducedMotion: "reduce" });
+  await calm.goto("http://127.0.0.1:5177");
+  const motion = await calm.evaluate(() => {
+    document.body.insertAdjacentHTML("beforeend",
+      '<div class="shimmer" id="rm-a"></div><div class="spinner-icon" id="rm-b"></div>'
+      + '<div class="group/attachment" data-state="processing"><span class="group-data-[state=processing]/attachment:shimmer" id="rm-c"></span></div>'
+      + '<div class="data-[state=open]:animate-in" data-state="open" id="rm-d"></div>');
+    const css = (id) => getComputedStyle(document.getElementById(id));
+    return [css("rm-a").animationName, css("rm-b").animationDuration, css("rm-c").animationName, parseFloat(css("rm-d").animationDuration) < 0.001];
+  });
+  assert.deepEqual(motion, ["none", "6s", "none", true], "reduced motion gates shimmer/spinner/enter animations");
+  await calm.close();
   assert.deepEqual(errors, [], "no uncaught browser errors");
   console.log("session-actions.check ok (two browsers, rename/archive/undo/restore, failures, draft, keyboard/mobile)");
 } finally {

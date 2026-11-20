@@ -56,7 +56,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
                 return <ToolCallBlock key={i} block={b} />;
               })}
               {item.blocks.length === 0 && item.streaming && (
-                <div role="status" className="shimmer text-sm text-muted-foreground">working…</div>
+                <div className="shimmer text-sm text-muted-foreground">working…</div>
               )}
             </div>
           </BubbleContent>
@@ -102,6 +102,8 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
           )}
         />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
+        {/* Persistent live region: announced when the text changes. */}
+        <span role="status" className="sr-only">{model.running ? "Agent working" : ""}</span>
         {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
         {meta && <SessionActions session={meta} />}
         <Button

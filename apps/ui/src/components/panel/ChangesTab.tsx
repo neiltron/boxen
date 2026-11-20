@@ -108,7 +108,7 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
             </button>
           ))}
         </div>
-        <button type="button" aria-label="Refresh changes" aria-busy={loading} onClick={() => setNonce((n) => n + 1)}
+        <button type="button" aria-label="Refresh changes" onClick={() => setNonce((n) => n + 1)}
           className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
           <ArrowClockwiseIcon aria-hidden="true" className={cn("size-3.5", loading && "spinner-icon")} />
         </button>
@@ -125,7 +125,10 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
         {!error && state?.repo && !files.length && (
           <p className="px-3 py-8 text-center text-xs text-muted-foreground">No changes against HEAD.</p>
         )}
-        {!state && !error && <p role="status" className="px-3 py-8 text-center text-xs text-muted-foreground">Loading…</p>}
+        {/* Always mounted so screen readers announce the text when it appears. */}
+        <p role="status" className="text-center text-xs text-muted-foreground has-[span]:px-3 has-[span]:py-8">
+          {!state && !error && loading && <span>Loading…</span>}
+        </p>
         {files.map((f) => {
           const c = count(f);
           const shut = collapsed.has(f.name);

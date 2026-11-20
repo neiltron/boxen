@@ -179,6 +179,18 @@
   }
 }
 
+/* Vendored shadcn/Radix enter/exit animations (tw-animate-css animate-in/out:
+   slide, zoom, fade). One global override instead of editing each component.
+   A near-zero duration still fires animationend, so Radix Presence unmounts. */
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-in"], [class*="animate-out"] {
+    animation-duration: 0.01ms !important;
+  }
+  /* Variant forms like group-data-[state=…]/attachment:shimmer miss the
+     vendored `.shimmer` reduced-motion rule. */
+  [class*=":shimmer"] { animation: none !important; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

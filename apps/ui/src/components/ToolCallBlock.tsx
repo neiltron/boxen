@@ -37,10 +37,7 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
     : "Running";
 
   return (
-    <div
-      aria-busy={block.state !== "done"}
-      className="my-1 w-full max-w-full overflow-hidden rounded-lg border border-border bg-muted/40 text-sm"
-    >
+    <div className="my-1 w-full max-w-full overflow-hidden rounded-lg border border-border bg-muted/40 text-sm">
       <button
         type="button"
         onClick={() => setOpen(!open)}
