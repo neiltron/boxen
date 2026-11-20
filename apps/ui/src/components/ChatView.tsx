@@ -25,11 +25,11 @@ function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> 
   return (
     <div className="my-1 text-xs text-muted-foreground">
       <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1.5 hover:text-foreground">
-        <BrainIcon className="size-3.5" />
+        <BrainIcon aria-hidden="true" className="size-3.5" />
         <span className={cn("italic", block.streaming && "shimmer")}>
           {block.streaming ? "thinking…" : "thought"}
         </span>
-        <CaretDownIcon className={cn("size-3 transition-transform", open && "rotate-180")} />
+        <CaretDownIcon aria-hidden="true" className={cn("size-3 motion-safe:transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="mt-1 border-l-2 border-border pl-3 whitespace-pre-wrap italic">{block.text}</div>}
     </div>
@@ -48,7 +48,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
                   return (
                     <div key={i}>
                       <Markdown text={b.text} />
-                      {b.streaming && <span className="inline-block h-4 w-2 animate-pulse bg-foreground/60 align-text-bottom" />}
+                      {b.streaming && <span aria-hidden="true" className="inline-block h-4 w-2 motion-safe:animate-pulse bg-foreground/60 align-text-bottom" />}
                     </div>
                   );
                 }
@@ -56,7 +56,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
                 return <ToolCallBlock key={i} block={b} />;
               })}
               {item.blocks.length === 0 && item.streaming && (
-                <div className="shimmer text-sm text-muted-foreground">working…</div>
+                <div role="status" className="shimmer text-sm text-muted-foreground">working…</div>
               )}
             </div>
           </BubbleContent>
@@ -94,10 +94,13 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-2 border-b border-border px-2 py-2.5 sm:gap-3">
         <SidebarTrigger className="shrink-0" />
-        <span className={cn(
-          "size-2 shrink-0 rounded-full",
-          model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",
-        )} />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            model.running ? "motion-safe:animate-pulse bg-green-500" : "bg-muted-foreground/40",
+          )}
+        />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
         {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
         {meta && <SessionActions session={meta} />}

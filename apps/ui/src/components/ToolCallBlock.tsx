@@ -32,16 +32,22 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
   const { artifactId } = block;
   const Icon = toolIcon(block.name);
   const preview = argsPreview(block);
+  const statusLabel = block.state === "done"
+    ? (block.isError ? "Failed" : "Done")
+    : "Running";
 
   return (
-    <div className="my-1 w-full max-w-full overflow-hidden rounded-lg border border-border bg-muted/40 text-sm">
+    <div
+      aria-busy={block.state !== "done"}
+      className="my-1 w-full max-w-full overflow-hidden rounded-lg border border-border bg-muted/40 text-sm"
+    >
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
       >
-        <CaretRightIcon className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <CaretRightIcon aria-hidden="true" className={cn("size-3 shrink-0 text-muted-foreground motion-safe:transition-transform", open && "rotate-90")} />
+        <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium">{block.name}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{preview}</span>
         {artifactId && (
@@ -51,15 +57,16 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
             onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); panel?.open("artifacts", artifactId); } }}
             className="flex shrink-0 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
           >
-            open <ArrowSquareOutIcon className="size-3" />
+            open <ArrowSquareOutIcon aria-hidden="true" className="size-3" />
           </span>
         )}
+        <span className="sr-only">{statusLabel}</span>
         {block.state === "done" ? (
           block.isError
-            ? <XIcon className="size-3.5 shrink-0 text-destructive" />
-            : <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            ? <XIcon aria-hidden="true" className="size-3.5 shrink-0 text-destructive" />
+            : <CheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
-          <CircleNotchIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+          <CircleNotchIcon aria-hidden="true" className="spinner-icon size-3.5 shrink-0 text-muted-foreground" />
         )}
       </button>
       {open && (

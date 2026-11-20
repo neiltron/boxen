@@ -108,9 +108,9 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
             </button>
           ))}
         </div>
-        <button type="button" aria-label="Refresh changes" onClick={() => setNonce((n) => n + 1)}
+        <button type="button" aria-label="Refresh changes" aria-busy={loading} onClick={() => setNonce((n) => n + 1)}
           className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ArrowClockwiseIcon className={cn("size-3.5", loading && "animate-spin")} />
+          <ArrowClockwiseIcon aria-hidden="true" className={cn("size-3.5", loading && "spinner-icon")} />
         </button>
       </div>
 
@@ -125,7 +125,7 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
         {!error && state?.repo && !files.length && (
           <p className="px-3 py-8 text-center text-xs text-muted-foreground">No changes against HEAD.</p>
         )}
-        {!state && !error && <p className="px-3 py-8 text-center text-xs text-muted-foreground">Loading…</p>}
+        {!state && !error && <p role="status" className="px-3 py-8 text-center text-xs text-muted-foreground">Loading…</p>}
         {files.map((f) => {
           const c = count(f);
           const shut = collapsed.has(f.name);
@@ -133,7 +133,7 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
             <section key={f.name} className="border-b border-border">
               <button type="button" onClick={() => toggle(f.name)}
                 className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-left text-xs hover:bg-muted">
-                <CaretRightIcon className={cn("size-3 shrink-0 text-muted-foreground transition-transform", !shut && "rotate-90")} />
+                <CaretRightIcon aria-hidden="true" className={cn("size-3 shrink-0 text-muted-foreground motion-safe:transition-transform", !shut && "rotate-90")} />
                 <span className="min-w-0 flex-1 truncate font-mono">
                   {f.prevName && f.prevName !== f.name ? `${f.prevName} → ${f.name}` : f.name}
                 </span>
