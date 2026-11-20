@@ -35,11 +35,14 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
   // The UI is on :5176; preview traffic goes straight to celld, not Vite.
   const url = `http://p${port}-${sessionId}.localhost:8093/`;
 
-  useEffect(() => {
-    inputRef.current?.setCustomValidity(valid ? "" : PORT_ERROR);
-  }, [valid]);
-
   useEffect(() => () => clearTimeout(announceTimer.current), []);
+
+  function announce() {
+    clearTimeout(announceTimer.current);
+    setAnnouncement("");
+    // Delay slightly so assistive tech finishes announcing the next focused element.
+    announceTimer.current = setTimeout(() => setAnnouncement(`Port: ${PORT_ERROR}`), 500);
+  }
 
   function show(value: string) {
     if (!validPort(value)) return;
@@ -74,10 +77,10 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
         onSubmit={(event) => {
           event.preventDefault();
           if (!valid) {
-            clearTimeout(announceTimer.current);
-            setAnnouncement("");
             setTouched(true);
             inputRef.current?.focus();
+            // focus() is a no-op when the input is already focused, so announce directly.
+            announce();
             return;
           }
           show(input);
@@ -90,8 +93,6 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
           id={fieldId}
           type="text"
           inputMode="numeric"
-          required
-          pattern="[0-9]+"
           value={input}
           onChange={(event) => {
             const next = event.target.value;
@@ -103,16 +104,12 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
           }}
           onBlur={() => {
             setTouched(true);
-            clearTimeout(announceTimer.current);
-            if (!validPort(input)) {
-              setAnnouncement("");
-              // Delay slightly so assistive tech finishes announcing the next focused element.
-              announceTimer.current = setTimeout(() => setAnnouncement(`Port: ${PORT_ERROR}`), 500);
-            }
+            if (!validPort(input)) announce();
+            else clearTimeout(announceTimer.current);
           }}
           aria-invalid={showError ? "true" : "false"}
           aria-describedby={showError ? `${fieldId}-error` : undefined}
-          className="w-20 rounded-md border border-border bg-background px-2 py-1 font-mono text-base outline-none focus:border-ring aria-[invalid=true]:border-destructive user-invalid:border-destructive sm:text-xs"
+          className="w-20 rounded-md border border-border bg-background px-2 py-1 font-mono text-base outline-none focus:border-ring aria-[invalid=true]:border-destructive sm:text-xs"
         />
         <button type="submit"
           className="rounded-md px-2 py-1 hover:bg-muted">Go</button>

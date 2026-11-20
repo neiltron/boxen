@@ -174,7 +174,8 @@ export function TerminalTab() {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden p-2">
-        <div ref={hostRef} className="h-full w-full overflow-hidden" aria-label="Sandbox terminal" />
+        {/* 16px on ghostty-web's invisible input textarea so iOS doesn't focus-zoom. */}
+        <div ref={hostRef} className="h-full w-full overflow-hidden [&>textarea]:text-[16px]" aria-label="Sandbox terminal" />
       </div>
     </div>
   );

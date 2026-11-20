@@ -51,7 +51,7 @@ export function ArtifactsTab({ sessionId, selected, onSelect, refresh }: {
           <span className="text-muted-foreground">{artifact.kind}</span>
           <select
             value={artifact.version} onChange={(e) => setVersion(Number(e.target.value))}
-            className="rounded border border-border bg-background px-1 py-0.5"
+            className="rounded border border-border bg-background px-1 py-0.5 text-base sm:text-xs"
             aria-label="Version"
           >
             {Array.from({ length: Math.max(artifact.version, version ?? 0) }, (_, i) => i + 1).reverse().map((v) => (
