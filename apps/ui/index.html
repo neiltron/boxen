@@ -9,12 +9,16 @@
     <title>pi sessions</title>
     <!-- Applies the theme before first paint, so a dark session doesn't flash
          light while the module bundle loads. Mirrors src/lib/theme.ts. -->
+    <meta name="color-scheme" content="light dark" />
     <script>
-      const stored = localStorage.getItem("pids.theme");
-      const isDark = stored === "dark"
-        || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      let stored = null;
+      try { stored = localStorage.getItem("pids.theme"); } catch {}
+      const scheme = stored === "light" || stored === "dark" ? stored : "light dark";
+      const meta = document.querySelector('meta[name="color-scheme"]');
+      if (meta) meta.content = scheme;
+      const isDark = scheme === "dark"
+        || (scheme === "light dark" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.classList.toggle("dark", isDark);
-      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
     </script>
   </head>
   <body>
