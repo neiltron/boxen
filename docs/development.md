@@ -1,91 +1,177 @@
 # Development
 
-## Run it from a checkout
+This guide covers running, testing, and iterating on boxen from a local Git checkout. To install and run boxen on a Linux server instead, see [installation.md](installation.md).
 
-For working on boxen itself; to use it, [install it](installation.md) instead.
-The scripts are written for macOS (`caffeinate`, OrbStack). They need a Docker
-daemon (`orbctl start`), `rustfs` on your PATH, and the pinned celld **0.6.2**
-at `~/.local/bin/celld-0.6.2`. RustFS keeps its data in `../.rustfs-data`,
-beside the checkout.
+The local dev scripts (`start.sh`, `stop.sh`, `deploy.sh`) work on both macOS (using `caffeinate` when available) and Linux.
+
+## Prerequisites
+
+| Requirement | Details |
+| --- | --- |
+| **Node.js** | `>=24.5.0 <25` (enforced by `package.json` `engines`; `ops/runtime.json` pins `24.5.0`). |
+| **pnpm** | `package.json` pins `pnpm@12.9.1` (enable via `corepack enable` or install pnpm v10+/12). |
+| **Docker daemon** | Running locally for per-session Sandbox containers (e.g. OrbStack via `orbctl start` on macOS, or Docker Engine on Linux). |
+| **Object storage** | **Either** an external S3 / Cloudflare R2 bucket (`BOXEN_S3_BUCKET` and/or `BOXEN_S3_ENDPOINT`, plus credentials, in `.env` or environment) **or** the `rustfs` binary on `PATH` / `~/.local/bin/rustfs` (zero-config local S3 fallback on `:9000` storing data in `../.rustfs-data`). |
+| **Pinned `celld`** | `celld-0.6.2` on `PATH` or at `~/.local/bin/celld-0.6.2` (or set `BOXEN_CELLD` to a `0.6.2` binary). `ops/celld.mjs` enforces the exact version pinned in `ops/runtime.json`. |
+| **shellcheck** | Required by `pnpm run check:ops` (`brew install shellcheck`, `apt install shellcheck`, or `pacman -S shellcheck`). |
+
+### Installing the pinned `celld` binary
+
+Download the `v0.6.2` archive for your platform from the [`denoland/celld` v0.6.2 release](https://github.com/denoland/celld/releases/tag/v0.6.2) (the Linux x86-64 URL and SHA-256 are pinned in `ops/runtime.json`), decompress it, and place the executable at `~/.local/bin/celld-0.6.2`:
 
 ```sh
-pnpm install && pnpm run deploy  # bundles the worker, saves the sandbox image to the bucket
-./start.sh                       # rustfs (:9000) + celld (:8093) + .env tokens
-pnpm ui                          # http://localhost:5176
+# Example (macOS Apple Silicon — substitute celld-x86_64-unknown-linux-gnu.gz on x86-64 Linux):
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-aarch64-apple-darwin.gz \
+  | gunzip > ~/.local/bin/celld-0.6.2
+chmod +x ~/.local/bin/celld-0.6.2
+~/.local/bin/celld-0.6.2 --version
 ```
 
-Write `pnpm run deploy`, not `pnpm deploy`: that is a built-in pnpm command.
-`pnpm build` builds the UI into `apps/ui/dist`.
+## Running Locally from a Checkout
 
-After editing `apps/worker/src/`, run `./deploy.sh`. 0.6.2 nodes pick up a new version
-in about 15 seconds without a restart, so sandboxes keep their disks.
+1. **Install workspace dependencies:**
 
-## Checks
+   ```sh
+   pnpm install
+   ```
 
-Node 22+. `pnpm check` runs every check in the workspace: the
-installer's tests, type-check and `shellcheck install.sh` (install shellcheck
-first; the check fails without it), then each package's `check` script (`apps/worker/`: the metadata,
-assets, workspace and contract checks; `packages/client/`: generated types
-current, type-check; `apps/ui/`: session client, lint, Playwright, build,
-built-app smoke).
+2. **Start the `celld` node (and local storage if not using external S3/R2):**
+
+   ```sh
+   ./start.sh
+   ```
+
+   `start.sh` checks that `node`, Docker, and `celld-0.6.2` are available, then configures object storage:
+   - **Zero-config local storage (default):** Starts **RustFS** on `http://127.0.0.1:9000` (`s3://pid-cells`, data in `../.rustfs-data`, logs in `../.rustfs.log`).
+   - **External S3 / Cloudflare R2:** If `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is set in `.env` or your environment, `start.sh` skips local RustFS altogether and points `celld-0.6.2` directly at your bucket.
+
+   It then starts **`celld-0.6.2`** on `http://127.0.0.1:8093` under a restart supervisor (logs in `.celld.log`).
+
+   If a gitignored `.env` file exists in the repository root, `start.sh` also loads `GH_TOKEN` and/or `LINEAR_API_KEY` into the running node via `POST /api/secrets`. Only keys present in `.env` are sent, so tokens already configured in the UI are preserved.
+
+3. **Deploy the worker and Sandbox image to object storage:**
+
+   ```sh
+   pnpm run deploy
+   ```
+
+   > **Important:** Write `pnpm run deploy`, **not** `pnpm deploy` (which is a built-in pnpm command).
+
+   `pnpm run deploy` invokes `ops/celld.mjs deploy .`, which reads your `.env` / environment S3 settings (or defaults to `s3://pid-cells` at `http://127.0.0.1:9000`), bundles the worker, and pushes the Sandbox container image into the bucket. If using local RustFS, run `./start.sh` first so `:9000` is listening. On a brand-new checkout with `.env` tokens, re-run `./start.sh` once after this initial deploy so the worker receives them.
+
+4. **Start the web UI dev server:**
+
+   ```sh
+   pnpm ui
+   ```
+
+   Opens Vite at `http://localhost:5176` with `/api` and WebSocket traffic proxied to `http://127.0.0.1:8093`, plus local OAuth callback listeners (`1455`, `1456`, `53692`). Sign in to a model provider from the sidebar. To build a production UI bundle into `apps/ui/dist`, run `pnpm build`.
+
+### Hot-deploying worker changes and stopping
+
+- **After editing `apps/worker/src/`**, run `./deploy.sh`. Running `celld-0.6.2` nodes adopt the new version on their next pointer poll (~15 seconds) without restarting, so Sandbox containers keep their disks and in-flight sign-ins survive. If adoption stalls, check `.celld.log` or restart with `./stop.sh && ./start.sh`.
+- **To stop `celld`** (leaving local RustFS running for faster restarts): `./stop.sh`
+- **To stop both `celld` and local RustFS**: `./stop.sh rustfs`
+
+### Using Cloudflare R2 or AWS S3 in local development
+
+To use Cloudflare R2 or AWS S3 instead of a local `rustfs` binary, add your bucket settings to `.env` in the repository root:
+
+```ini
+# Cloudflare R2 example:
+BOXEN_S3_BUCKET=s3://my-boxen-cells
+BOXEN_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+AWS_ACCESS_KEY_ID=<r2-access-key-id>
+AWS_SECRET_ACCESS_KEY=<r2-secret-access-key>
+AWS_REGION=auto
+
+# Optional sandbox tokens:
+GH_TOKEN=ghp_...
+LINEAR_API_KEY=lin_api_...
+```
+
+Setting `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is what switches `./start.sh`, `pnpm run deploy`, and `./deploy.sh` to your remote bucket and skips starting `rustfs`; ambient `AWS_*` variables alone never do. In external mode, `AWS_*` values are passed through only when set, so AWS profiles, SSO, and instance roles also work. (For AWS S3, omit `BOXEN_S3_ENDPOINT` and set `AWS_REGION`, e.g. `us-east-1`.)
+
+## Running Checks & Tests
+
+Install Playwright's Chromium browser once per machine before running the UI checks:
 
 ```sh
-pnpm install
-pnpm --dir apps/ui exec playwright install --with-deps chromium  # once per machine
+pnpm --dir apps/ui exec playwright install --with-deps chromium
+```
+
+Run the full workspace verification suite:
+
+```sh
 pnpm check
-pnpm --filter @boxen/worker run check  # or one package
 ```
 
-`packages/client/openapi.json` is the REST contract: every endpoint the worker
-serves, and the constants the web app shares with it (sandbox token names,
-artifact kinds, the Preview port rule). The worker routes from it, so an
-endpoint must be in the spec to be served, and the web app calls the API only
-through the client. After editing it, run `pnpm --filter
-@boxen/client run generate` to regenerate the client's types.
-`apps/worker/contract.check.mjs` drives every operation through the client,
-checks each response against the spec, and fails when the worker and the spec
-disagree on a route or a method.
+`pnpm check` runs the following checks in order:
 
-**API reference.** `pnpm reference` builds the REST reference from
-`openapi.json` into [docs/api-reference.html](api-reference.html); open that
-file in a browser (the link works once it is built).
-It is built on demand and git-ignored, not committed, so no generated HTML
-lands in diffs and there is nothing to keep current: rebuild it after a spec
-change. Redocly CLI (`@redocly/cli`, one bundled package) renders it. The
-page holds the whole reference prerendered, and loads Redoc's script from
-cdn.redocly.com for search and the collapsible parts; offline it still reads.
-The Session WebSocket's messages are not in the spec:
-[docs/session-protocol.md](session-protocol.md), beside the reference,
-describes them, and the reference links to it.
+| Target | Command | What it verifies |
+| --- | --- | --- |
+| Release pins | `pnpm run check:release` | `ops/release.mjs check` (verifies generated runtime pins across `package.json`, `ops/boxenctl.ts`, `install.sh`, `apps/worker/Dockerfile`, `start.sh`, `stop.sh`, package versions, and lockfile pins) and `ops/release.test.mjs`. |
+| Ops & installer | `pnpm run check:ops` | `ops/boxenctl.test.ts`, `tsc -p ops`, and `shellcheck install.sh`. |
+| `@boxen/client` | `pnpm --filter @boxen/client run check` | `session.check.ts`, `openapi-typescript --check` (generated types match `openapi.json`), and `tsc` (`tsconfig.json` and `tsconfig.core.json`). |
+| `@boxen/worker` | `pnpm --filter @boxen/worker run check` | `metadata`, `assets`, `workspace`, `contract`, `protocol`, `turn-env`, `sandbox-env`, `harness`, and `stranded` checks using real in-memory SQLite with mocked runtime/agent boundaries. |
+| `@boxen/cli` | `pnpm --filter @boxen/cli run check` | `cli.check.ts` and `tsc`. |
+| `@boxen/mcp` | `pnpm --filter @boxen/mcp run check` | `mcp.check.ts` and `tsc`. |
+| `@boxen/ui` | `pnpm --filter @boxen/ui run check` | `oxlint`, Playwright workspace tests, `tsc -b && vite build`, and built-app Chromium smoke tests (`session-actions.check.mjs`: two-viewer sync, rename failure, archive/undo/restore, draft preservation, keyboard controls, and narrow-screen menus). |
 
-The backend check uses real in-memory SQLite with mocked runtime/agent
-boundaries. The Chromium smoke check serves the built UI and mocks HTTP/WS;
-it checks two-viewer updates, rename failure, archive/undo/restore, draft
-preservation, keyboard controls, and narrow-screen menus.
-Neither replaces a live celld/deployment smoke test.
+You can run any individual package check with `pnpm --filter <package> run check` (for example, `pnpm --filter @boxen/worker run check`).
 
-## Preview checks
+> Note: Offline worker and UI checks mock runtime/HTTP/WS boundaries and do not replace a live `celld`/deployment smoke test.
 
-Run `node workspace.check.js` in `apps/worker/` for proxy/port checks without a container. On a
-running stack, also check absolute assets in the Network tab, edit a source
-file to confirm HMR, and switch sessions/reload the UI to check port recall.
-Try port 3000 and 65536 directly in the preview host: both should return 400.
+## API Contract & Reference (`openapi.json`)
 
-## Terminal checks
+`packages/client/openapi.json` is the single REST contract for boxen. It defines every HTTP endpoint the worker serves along with shared constants (sandbox token names, artifact kinds, and the Preview port rule):
 
-Browser smoke test (after deploying the worker and starting the UI):
+- The worker routes directly from `openapi.json`, so an endpoint must be declared in the spec to be served.
+- The web app, CLI, and MCP server call the API only through `@boxen/client`.
+- After editing `packages/client/openapi.json`, regenerate client types:
 
-1. Open Terminal in a repo session; check `pwd`, typing, paste, Unicode,
-   ANSI colors, and Ctrl-C. Try a session without a repo too.
-2. Run `stty size`; resize, dock, hide/show, and switch tabs. Check that the
-   first render isn't blank and a full-screen program fits the new size.
-3. Switch light/dark themes and reconnect; check that the shell's cwd and
-   variables survive. Disconnect/reconnect the network and watch the status.
-4. Run `exit`, then use Reconnect. Send the agent a bash task to confirm its
-   shell still works. Switch sessions and check that output doesn't leak.
+  ```sh
+  pnpm --filter @boxen/client run generate
+  ```
 
-Offline checks, in `apps/worker/`: `node workspace.check.js` (the shell, with an
-in-memory sandbox) and `node --experimental-vm-modules assets.check.mjs` (the route).
-They do not test celld's upgrade transport or the container's PTY
-implementation.
+- `apps/worker/contract.check.mjs` exercises every operation through `@boxen/client`, validates each response against the spec, and fails if the worker and spec disagree on any route or method.
 
+### Building the HTML API reference
+
+```sh
+pnpm reference
+```
+
+Generates [docs/api-reference.html](api-reference.html) using `@redocly/cli`. The output is git-ignored and built on demand (rebuild after spec changes). The HTML is prerendered so it reads cleanly offline, and loads Redoc's script from `cdn.redocly.com` for search and collapsible sections.
+
+Session WebSocket messages are outside OpenAPI and documented in [docs/session-protocol.md](session-protocol.md), which the generated reference links to.
+
+## Manual Smoke Checks
+
+### Preview checks
+
+- **Offline check** (in `apps/worker/`):
+  ```sh
+  node workspace.check.js
+  ```
+  Covers proxy/port rules without starting a container.
+- **Live stack checklist** (after deploying the worker and starting the UI):
+  - [ ] Load a dev server in Preview and verify absolute asset requests succeed in the browser Network tab.
+  - [ ] Edit a source file in the sandbox and confirm HMR updates live through the preview proxy.
+  - [ ] Switch sessions and reload the UI to confirm the selected preview port is recalled.
+  - [ ] Request port `3000` and port `65536` directly on the preview host and confirm both return HTTP `400`.
+
+### Terminal checks
+
+- **Offline checks** (in `apps/worker/`):
+  ```sh
+  node workspace.check.js
+  node --experimental-vm-modules assets.check.mjs
+  ```
+  Verify shell logic (in-memory sandbox) and routing; they do not exercise `celld`'s WebSocket upgrade transport or the container PTY.
+- **Live stack checklist** (after deploying the worker and starting the UI):
+  - [ ] Open Terminal in a repo session and check `pwd`, typing, paste, Unicode, ANSI colors, and `Ctrl-C`. Repeat in a session without a repo.
+  - [ ] Run `stty size`; resize, dock, hide/show, and switch tabs. Confirm the initial render is not blank and full-screen programs adapt to the new dimensions.
+  - [ ] Switch light/dark themes and reconnect; confirm the shell's working directory and variables survive. Disconnect and reconnect the network and verify the connection status updates.
+  - [ ] Run `exit`, then click **Reconnect**. Send the agent a bash task to confirm its exec shell still works independently. Switch sessions and confirm terminal output does not leak across sessions.

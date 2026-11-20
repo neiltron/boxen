@@ -101,6 +101,16 @@ const handlers = {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return json({ error: "repo must be owner/name" }, 400);
     return json(await env.DIRECTORY.getByName("main").githubBranches(repo));
   },
+  async listIssues(request, env, params, url) {
+    const repo = url.searchParams.get("repo") ?? "";
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return json({ error: "repo must be owner/name" }, 400);
+    return json(await env.DIRECTORY.getByName("main").githubIssues(repo, url.searchParams.get("label") || null));
+  },
+  async listRepoFiles(request, env, params, url) {
+    const repo = url.searchParams.get("repo") ?? "";
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return json({ error: "repo must be owner/name" }, 400);
+    return json(await env.DIRECTORY.getByName("main").githubFiles(repo));
+  },
   // Names only, never values.
   listSandboxTokens: async (request, env) => json({ keys: Object.keys(await env.DIRECTORY.getByName("main").secrets()) }),
   setSandboxTokens: async (request, env) => json({ keys: await env.DIRECTORY.getByName("main").setSecrets(await request.json()) }),

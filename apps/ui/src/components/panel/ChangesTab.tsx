@@ -2,18 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff, parsePatchFiles, type FileDiffMetadata, type FileDiffOptions } from "@pierre/diffs";
 import { ArrowClockwiseIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { fetchDiff } from "@/lib/api";
+import { useIsDark } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-
-// Pierre picks light/dark from `themeType`; follow the app's .dark class.
-function useIsDark() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains("dark")));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-  return dark;
-}
 
 // One file's diff with Pierre's vanilla renderer. Inside a Trellis view the
 // first render can come out blank (Pierre's React FileDiff stayed empty

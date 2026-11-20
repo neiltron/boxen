@@ -41,6 +41,16 @@ async function github(url) {
   }
   if (pathname === "/repos/neiltron/celld-test") return Response.json({ default_branch: "main" });
   if (pathname === "/repos/neiltron/celld-test/branches") return Response.json([{ name: "dev" }, { name: "main" }]);
+  if (pathname === "/repos/neiltron/celld-test/issues") {
+    const issue = { number: 7, title: "Fix it", body: null, html_url: "https://github.com/neiltron/celld-test/issues/7",
+      labels: [{ name: "ready-for-agent" }], created_at: "2026-10-02T12:00:00Z", user: { login: "neiltron" } };
+    const all = [issue, { ...issue, number: 8, labels: [] }, { ...issue, number: 9, pull_request: {} }];
+    const label = new URL(url).searchParams.get("labels");
+    return Response.json(all.filter((i) => !label || i.labels.some((l) => l.name === label)));
+  }
+  if (pathname === "/repos/neiltron/celld-test/git/trees/main") {
+    return Response.json({ truncated: false, tree: [{ path: "src", type: "tree" }, { path: "src/a.js", type: "blob" }, { path: "README.md", type: "blob" }] });
+  }
   return Response.json({ message: "Not Found" }, { status: 404 });
 }
 const listening = [80, 3000, 5173, 8080].map((p, i) => `${i}: 00000000:${p.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 0A`).join("\n");
@@ -220,6 +230,11 @@ assert.deepEqual((await client.listRepos()).map((r) => r.fullName), ["neiltron/c
 assert.deepEqual(await client.listBranches("neiltron/celld-test"), { defaultBranch: "main", branches: ["main", "dev"] });
 await assert.rejects(client.listBranches("not a repo"), /owner\/name/);
 await assert.rejects(client.listBranches("neiltron/missing"), /GitHub 404: Not Found/);
+assert.deepEqual((await client.listIssues("neiltron/celld-test")).map((i) => i.number), [7, 8]);
+assert.deepEqual(await client.listIssues("neiltron/celld-test", "ready-for-agent"), [{ number: 7, title: "Fix it", body: "",
+  url: "https://github.com/neiltron/celld-test/issues/7", labels: ["ready-for-agent"], createdAt: "2026-10-02T12:00:00Z", author: "neiltron" }]);
+await assert.rejects(client.listIssues("not a repo"), /owner\/name/);
+assert.deepEqual(await client.listRepoFiles("neiltron/celld-test"), { defaultBranch: "main", paths: ["src/a.js", "README.md"], truncated: false });
 
 // Artifacts, saved the way the agent's tool saves them.
 const plan = await artifacts.save({ session: repo.id, title: "Plan", kind: "markdown", content: "# Plan\nRoute from the spec" });
