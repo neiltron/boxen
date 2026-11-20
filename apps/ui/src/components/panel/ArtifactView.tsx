@@ -16,8 +16,10 @@ function frameBase(dark: boolean): string {
 
 function frameDoc(a: Artifact, dark: boolean): string {
   if (a.kind === "html") return a.content;
+  // SVG fill defaults to black, so svg artifacts stay on light; only mermaid,
+  // which themes its own output, follows the app theme.
+  if (a.kind === "svg") return `${frameBase(false)}${a.content}`;
   const base = frameBase(dark);
-  if (a.kind === "svg") return `${base}${a.content}`;
   // Mermaid renders inside the sandboxed frame, from the CDN, so the app
   // bundle stays small and diagram code never runs in the app's origin. The
   // source goes in as a JSON string: mermaid reads DOM text via innerHTML,
@@ -51,7 +53,7 @@ export function ArtifactView({ artifact }: { artifact: Artifact }) {
       title={artifact.title}
       sandbox="allow-scripts"
       srcDoc={frameDoc(artifact, dark)}
-      className={`h-full w-full border-0 ${artifact.kind === "html" ? "bg-white" : "bg-background"}`}
+      className={`h-full w-full border-0 ${artifact.kind === "mermaid" ? "bg-background" : "bg-white"}`}
     />
   );
 }

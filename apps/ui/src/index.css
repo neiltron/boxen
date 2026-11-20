@@ -72,18 +72,10 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* The .dark class (set before first paint by index.html, then kept in sync by
+   src/lib/theme.ts) is the single theme switch: tokens and color-scheme. */
 :root {
-  color-scheme: light dark;
-
-  &:has(> head > meta[name="color-scheme"][content="dark"]) {
-    color-scheme: dark;
-  }
-  &:has(> head > meta[name="color-scheme"][content="light"]) {
     color-scheme: light;
-  }
-}
-
-:root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -118,44 +110,8 @@
     --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* No-JS dark fallback when following the system preference (<meta> is "light dark"). */
-@media (prefers-color-scheme: dark) {
-    :root:where(:has(> head > meta[name="color-scheme"][content="light dark"])) {
-        --background: oklch(0.145 0 0);
-        --foreground: oklch(0.985 0 0);
-        --card: oklch(0.205 0 0);
-        --card-foreground: oklch(0.985 0 0);
-        --popover: oklch(0.205 0 0);
-        --popover-foreground: oklch(0.985 0 0);
-        --primary: oklch(0.922 0 0);
-        --primary-foreground: oklch(0.205 0 0);
-        --secondary: oklch(0.269 0 0);
-        --secondary-foreground: oklch(0.985 0 0);
-        --muted: oklch(0.269 0 0);
-        --muted-foreground: oklch(0.708 0 0);
-        --accent: oklch(0.269 0 0);
-        --accent-foreground: oklch(0.985 0 0);
-        --destructive: oklch(0.704 0.191 22.216);
-        --border: oklch(1 0 0 / 10%);
-        --input: oklch(1 0 0 / 15%);
-        --ring: oklch(0.556 0 0);
-        --chart-1: oklch(0.87 0 0);
-        --chart-2: oklch(0.556 0 0);
-        --chart-3: oklch(0.439 0 0);
-        --chart-4: oklch(0.371 0 0);
-        --chart-5: oklch(0.269 0 0);
-        --sidebar: oklch(0.205 0 0);
-        --sidebar-foreground: oklch(0.985 0 0);
-        --sidebar-primary: oklch(0.488 0.243 264.376);
-        --sidebar-primary-foreground: oklch(0.985 0 0);
-        --sidebar-accent: oklch(0.269 0 0);
-        --sidebar-accent-foreground: oklch(0.985 0 0);
-        --sidebar-border: oklch(1 0 0 / 10%);
-        --sidebar-ring: oklch(0.556 0 0);
-    }
-}
-
 .dark {
+    color-scheme: dark;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
@@ -258,26 +214,6 @@
   --terminal-bright-cyan: #0891b2;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:where(:has(> head > meta[name="color-scheme"][content="light dark"])) {
-    --terminal-black: #27272a;
-    --terminal-white: #d4d4d8;
-    --terminal-bright-white: #fafafa;
-    --terminal-red: #f87171;
-    --terminal-green: #4ade80;
-    --terminal-yellow: #facc15;
-    --terminal-blue: #60a5fa;
-    --terminal-magenta: #e879f9;
-    --terminal-cyan: #22d3ee;
-    --terminal-bright-red: #fca5a5;
-    --terminal-bright-green: #86efac;
-    --terminal-bright-yellow: #fde047;
-    --terminal-bright-blue: #93c5fd;
-    --terminal-bright-magenta: #f0abfc;
-    --terminal-bright-cyan: #67e8f9;
-  }
-}
-
 .dark {
   --terminal-black: #27272a;
   --terminal-white: #d4d4d8;
@@ -294,25 +230,4 @@
   --terminal-bright-blue: #93c5fd;
   --terminal-bright-magenta: #f0abfc;
   --terminal-bright-cyan: #67e8f9;
-}
-
-@supports (color: light-dark(white, black)) {
-  :root,
-  .dark {
-    --terminal-black: light-dark(#18181b, #27272a);
-    --terminal-white: light-dark(#a1a1aa, #d4d4d8);
-    --terminal-bright-white: light-dark(#e4e4e7, #fafafa);
-    --terminal-red: light-dark(#b91c1c, #f87171);
-    --terminal-green: light-dark(#15803d, #4ade80);
-    --terminal-yellow: light-dark(#a16207, #facc15);
-    --terminal-blue: light-dark(#1d4ed8, #60a5fa);
-    --terminal-magenta: light-dark(#a21caf, #e879f9);
-    --terminal-cyan: light-dark(#0e7490, #22d3ee);
-    --terminal-bright-red: light-dark(#dc2626, #fca5a5);
-    --terminal-bright-green: light-dark(#16a34a, #86efac);
-    --terminal-bright-yellow: light-dark(#ca8a04, #fde047);
-    --terminal-bright-blue: light-dark(#2563eb, #93c5fd);
-    --terminal-bright-magenta: light-dark(#c026d3, #f0abfc);
-    --terminal-bright-cyan: light-dark(#0891b2, #67e8f9);
-  }
 }
