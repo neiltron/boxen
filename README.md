@@ -20,6 +20,8 @@ boxen is a self-hosted web app for [pi](https://github.com/earendil-works/pi) co
 - **OS:** x86-64 Linux with `systemd` (Omarchy, Arch, Ubuntu 22.04+, or Debian 12+). On AWS EC2, use an Ubuntu x86-64 AMI rather than Amazon Linux or Graviton.
 - **Hardware:** 8 GiB RAM and 40 GiB disk (no GPU required).
 
+On a Mac, run boxen from a checkout instead: see [Running on macOS](docs/macos.md).
+
 ## Quick install
 
 Clone the repository on your server and run the installer:
@@ -75,6 +77,7 @@ boxen separates the **application** from the **infrastructure** that hosts it:
 | [Automation](docs/automation.md) | The `boxen` CLI, MCP server, and headless Node client |
 | [Architecture](docs/architecture.md) | Cells, the agent loop, sandboxes, and repository layout |
 | [Session protocol](docs/session-protocol.md) | WebSocket messages and state sync for a Session |
+| [Running on macOS](docs/macos.md) | Setting up and running boxen and the inbox on Apple Silicon |
 | [Development](docs/development.md) | Running from a checkout, checks, and the OpenAPI contract |
 | [Releases](docs/releases.md) | Versioning, pinned runtimes, and release verification |
 | [Changelog](CHANGELOG.md) | Release history and notable changes |

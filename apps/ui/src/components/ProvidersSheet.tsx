@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ArrowSquareOutIcon, PlugsConnectedIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ function SandboxTokens({ open }: { open: boolean }) {
   const [set, setSet] = useState<SandboxToken[]>([]);
   const [drafts, setDrafts] = useState<Partial<Record<SandboxToken, string>>>({});
   const [error, setError] = useState("");
+  const idPrefix = useId();
 
   useEffect(() => {
     if (open) listSecrets().then((r) => setSet(r.keys), (e: Error) => setError(e.message));
@@ -40,21 +41,25 @@ function SandboxTokens({ open }: { open: boolean }) {
   return (
     <div className="space-y-2 border-t border-border px-4 py-3 text-xs">
       <div className="font-medium">Sandbox tokens</div>
-      {TOKENS.map(({ key, label, hint }) => (
-        <form key={key} className="space-y-1" onSubmit={(e) => { e.preventDefault(); void save(key, drafts[key]?.trim() ?? ""); }}>
-          <div className="flex items-center gap-2">
-            <span className={cn("size-2 shrink-0 rounded-full", set.includes(key) ? "bg-green-500" : "bg-muted-foreground/30")} />
-            <span>{label}</span>
-            <span className="truncate text-muted-foreground">{hint}</span>
-          </div>
-          <div className="flex gap-2">
-            <Input type="password" autoComplete="off" value={drafts[key] ?? ""} placeholder={set.includes(key) ? "set — paste to replace" : key}
-              onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} className="text-xs" />
-            <Button size="sm" type="submit" disabled={!drafts[key]?.trim()}>Save</Button>
-            {set.includes(key) && <Button size="sm" type="button" variant="ghost" onClick={() => void save(key, "")}>Clear</Button>}
-          </div>
-        </form>
-      ))}
+      {TOKENS.map(({ key, label, hint }) => {
+        const inputId = `${idPrefix}-${key}`;
+        const hintId = `${inputId}-hint`;
+        return (
+          <form key={key} className="space-y-1" onSubmit={(e) => { e.preventDefault(); void save(key, drafts[key]?.trim() ?? ""); }}>
+            <div className="flex items-center gap-2">
+              <span className={cn("size-2 shrink-0 rounded-full", set.includes(key) ? "bg-green-500" : "bg-muted-foreground/30")} />
+              <label htmlFor={inputId}>{label}</label>
+              <span id={hintId} className="truncate text-muted-foreground">{hint}</span>
+            </div>
+            <div className="flex gap-2">
+              <Input id={inputId} aria-describedby={hintId} type="password" autoComplete="off" value={drafts[key] ?? ""} placeholder={set.includes(key) ? "set — paste to replace" : key}
+                onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} className="text-base sm:text-xs" />
+              <Button size="sm" type="submit" disabled={!drafts[key]?.trim()}>Save</Button>
+              {set.includes(key) && <Button size="sm" type="button" variant="ghost" onClick={() => void save(key, "")}>Clear</Button>}
+            </div>
+          </form>
+        );
+      })}
       {error && <p className="text-destructive">{error}</p>}
     </div>
   );
@@ -105,21 +110,21 @@ function ProviderRow({
         {pendingForRow && (
           <div className="space-y-2 rounded-md border border-border p-2">
             <a href={pendingForRow.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 underline underline-offset-2">
-              Open the sign-in page <ArrowSquareOutIcon className="size-3.5" />
+              Open the sign-in page <ArrowSquareOutIcon aria-hidden="true" className="size-3.5" />
             </a>
             {pendingForRow.code && <p>Enter the code <span className="font-mono font-medium">{pendingForRow.code}</span> there.</p>}
             <p className="text-muted-foreground">
               This finishes by itself once you approve. If you're on another machine and the page lands on a localhost address that won't load, paste that address here:
             </p>
             <div className="flex gap-2">
-              <Input value={pasted} onChange={(e) => onPastedChange(e.target.value)} placeholder="http://localhost:…/callback?code=…" className="font-mono text-xs" />
+              <Input aria-label="Sign-in callback URL" value={pasted} onChange={(e) => onPastedChange(e.target.value)} placeholder="http://localhost:…/callback?code=…" className="font-mono text-base sm:text-xs" />
               <Button size="sm" disabled={busy || !pasted.trim()} onClick={() => onFinishLogin(pasted.trim())}>Finish</Button>
             </div>
           </div>
         )}
         {p.apiKey && (
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); onSaveApiKey(p.id, key.trim(), () => setKey("")); }}>
-            <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={p.apiKey.name} className="text-xs" />
+            <Input aria-label={`${p.name} API key`} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={p.apiKey.name} className="text-base sm:text-xs" />
             <Button size="sm" type="submit" disabled={busy || !key.trim()}>Save</Button>
           </form>
         )}
@@ -181,7 +186,7 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button type="button" className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-left text-xs hover:bg-muted">
-          <PlugsConnectedIcon className="size-3.5 text-muted-foreground" />
+          <PlugsConnectedIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
           <span className="flex-1">Providers</span>
           <span className={cn("text-muted-foreground", !connectedCount && "text-destructive")}>
             {connectedCount ? `${connectedCount} connected` : "none connected"}
@@ -192,7 +197,7 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
         <SheetHeader className="border-b border-border">
           <SheetTitle>Model providers</SheetTitle>
           <SheetDescription>Add an API key or sign in. Sessions use these from the cells; nothing is read from the host.</SheetDescription>
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search providers…" className="mt-2" />
+          <Input aria-label="Search providers" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search providers…" className="mt-2 text-base sm:text-xs" />
         </SheetHeader>
         {error && <p className="border-b border-border px-4 py-2 text-xs text-destructive">{error}</p>}
         <div className="scroll-shadows min-h-0 flex-1 overflow-y-auto">

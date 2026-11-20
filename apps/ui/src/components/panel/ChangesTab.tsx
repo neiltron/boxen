@@ -92,6 +92,7 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
         <div className="flex rounded-md border border-border p-0.5">
           {(["unified", "split"] as const).map((s) => (
             <button key={s} type="button"
+              aria-pressed={style === s}
               onClick={() => { setStyle(s); try { localStorage.setItem("pids.diffStyle", JSON.stringify(s)); } catch { /* not persisted */ } }}
               className={cn("rounded px-1.5 py-0.5", style === s ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")}>
               {s}
@@ -99,8 +100,8 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
           ))}
         </div>
         <button type="button" aria-label="Refresh changes" onClick={() => setNonce((n) => n + 1)}
-          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ArrowClockwiseIcon className={cn("size-3.5", loading && "animate-spin")} />
+          className="touch-target inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ArrowClockwiseIcon aria-hidden="true" className={cn("size-3.5", loading && "animate-spin")} />
         </button>
       </div>
 
@@ -122,9 +123,9 @@ export function ChangesTab({ sessionId, refresh }: { sessionId: string; refresh:
           return (
             <section key={f.name} className="border-b border-border">
               <div className="diff-sticky-header sticky top-0 z-10">
-                <button type="button" onClick={() => toggle(f.name)}
+                <button type="button" aria-expanded={!shut} onClick={() => toggle(f.name)}
                   className="diff-sticky-header-inner flex w-full items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-left text-xs hover:bg-muted">
-                  <CaretRightIcon className={cn("size-3 shrink-0 text-muted-foreground transition-transform", !shut && "rotate-90")} />
+                  <CaretRightIcon aria-hidden="true" className={cn("size-3 shrink-0 text-muted-foreground transition-transform", !shut && "rotate-90")} />
                   <span className="min-w-0 flex-1 truncate font-mono">
                     {f.prevName && f.prevName !== f.name ? `${f.prevName} → ${f.name}` : f.name}
                   </span>

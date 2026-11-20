@@ -46,11 +46,11 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
         >
           <span className="truncate font-mono">{current?.modelId ?? "no model"}</span>
           {model.agent.thinkingLevel && <span className="text-muted-foreground/70">· {model.agent.thinkingLevel}</span>}
-          <CaretDownIcon className="size-3 shrink-0" />
+          <CaretDownIcon aria-hidden="true" className="size-3 shrink-0" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-[min(22rem,calc(100vw-2rem))] space-y-2 rounded-lg">
-        <Input value={query} placeholder="Search models…" onChange={(e) => setQuery(e.target.value)} />
+        <Input aria-label="Search models" value={query} placeholder="Search models…" onChange={(e) => setQuery(e.target.value)} className="text-base sm:text-xs" />
         {!models && <p className="text-xs text-muted-foreground">Checking…</p>}
         {models?.length === 0 && <p className="text-xs text-muted-foreground">No models. Sign in from the sidebar first.</p>}
         {!!currentInfo?.thinkingLevels.length && (
@@ -59,8 +59,9 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
               <button
                 key={level}
                 type="button"
+                aria-pressed={model.agent.thinkingLevel === level}
                 onClick={() => session.configure({ model: current, thinkingLevel: level })}
-                className={cn("rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted",
+                className={cn("touch-target inline-flex items-center justify-center rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted",
                   model.agent.thinkingLevel === level && "border-foreground/40 bg-muted text-foreground")}
               >
                 {level}
@@ -83,7 +84,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
                   <span className="block truncate">{m.name}</span>
                   <span className="block truncate font-mono text-xs text-muted-foreground">{m.id}</span>
                 </span>
-                {m.provider === current?.provider && m.id === current?.modelId && <CheckIcon className="size-4 shrink-0" />}
+                {m.provider === current?.provider && m.id === current?.modelId && <CheckIcon aria-hidden="true" className="size-4 shrink-0" />}
               </button>
             </Fragment>
           ))}

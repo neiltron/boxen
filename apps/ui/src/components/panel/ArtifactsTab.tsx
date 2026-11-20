@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ArrowLeftIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { ArtifactView } from "@/components/panel/ArtifactView";
 import { getArtifact, listArtifacts, searchArtifacts, type Artifact, type ArtifactSummary } from "@/lib/api";
@@ -14,6 +14,7 @@ export function ArtifactsTab({ sessionId, selected, onSelect, refresh }: {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [version, setVersion] = useState<number | undefined>();
   const [error, setError] = useState("");
+  const searchId = useId();
 
   useEffect(() => {
     let live = true;
@@ -43,14 +44,14 @@ export function ArtifactsTab({ sessionId, selected, onSelect, refresh }: {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-xs">
           <button type="button" onClick={() => onSelect(null)} aria-label="All artifacts"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <ArrowLeftIcon className="size-3.5" />
+            className="touch-target inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
           </button>
           <span className="min-w-0 flex-1 truncate font-medium">{artifact.title}</span>
           <span className="text-muted-foreground">{artifact.kind}</span>
           <select
             value={artifact.version} onChange={(e) => setVersion(Number(e.target.value))}
-            className="rounded border border-border bg-background px-1 py-0.5"
+            className="rounded border border-border bg-background px-1 py-0.5 text-base sm:text-xs"
             aria-label="Version"
           >
             {Array.from({ length: Math.max(artifact.version, version ?? 0) }, (_, i) => i + 1).reverse().map((v) => (
@@ -65,10 +66,11 @@ export function ArtifactsTab({ sessionId, selected, onSelect, refresh }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <label className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
-        <MagnifyingGlassIcon className="size-3.5 text-muted-foreground" />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all artifacts…"
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground" />
+      <label htmlFor={searchId} className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
+        <span className="sr-only">Search all artifacts</span>
+        <MagnifyingGlassIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        <input id={searchId} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all artifacts…"
+          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-xs" />
       </label>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {error && <p className="px-3 py-2 text-xs text-destructive">{error}</p>}
