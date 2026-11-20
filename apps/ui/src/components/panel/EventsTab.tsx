@@ -24,18 +24,25 @@ const EventRow = memo(function EventRow({ row }: { row: LoggedEvent }) {
     () => new Date(row.ts).toLocaleTimeString([], { hour12: false }),
     [row.ts],
   );
-  const json = useMemo(() => JSON.stringify(row.ev, null, 2), [row.ev]);
+  // Lazy body: up to 1000 rows, and Find-in-page over raw event JSON isn't
+  // worth serializing every one up front.
+  const [open, setOpen] = useState(false);
 
   return (
-    <details className="boxen-details group border-b border-border/50">
+    <details
+      className="boxen-details group border-b border-border/50"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary className="flex w-full cursor-pointer items-baseline gap-2 px-3 py-1 text-left hover:bg-muted group-open:bg-muted">
         <span className="shrink-0 text-muted-foreground tabular-nums">{time}</span>
         <span className="shrink-0">{row.ev.type}</span>
         <span className="truncate text-muted-foreground">{summary(row.ev)}</span>
       </summary>
-      <pre className="max-h-96 overflow-auto bg-muted/40 px-3 py-2 whitespace-pre-wrap break-all">
-        {json}
-      </pre>
+      {open && (
+        <pre className="max-h-96 overflow-auto bg-muted/40 px-3 py-2 whitespace-pre-wrap break-all">
+          {JSON.stringify(row.ev, null, 2)}
+        </pre>
+      )}
     </details>
   );
 });

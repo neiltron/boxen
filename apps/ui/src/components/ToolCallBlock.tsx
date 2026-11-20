@@ -42,7 +42,7 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
           "flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
           artifactId && "pr-21",
         )}>
-          <CaretRightIcon className="boxen-disclosure-caret size-3 shrink-0 text-muted-foreground" />
+          <CaretRightIcon className="size-3 shrink-0 text-muted-foreground group-open:rotate-90 motion-safe:transition-transform" />
           <ToolIcon name={block.name} className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">{block.name}</span>
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{preview}</span>
