@@ -11,7 +11,7 @@ The local dev scripts (`start.sh`, `stop.sh`, `deploy.sh`) work on both macOS (u
 | **Node.js** | `>=24.5.0 <25` (enforced by `package.json` `engines`; `ops/runtime.json` pins `24.5.0`). |
 | **pnpm** | `package.json` pins `pnpm@12.9.1` (enable via `corepack enable` or install pnpm v10+/12). |
 | **Docker daemon** | Running locally for per-session Sandbox containers (e.g. OrbStack via `orbctl start` on macOS, or Docker Engine on Linux). |
-| **RustFS** | `rustfs` binary on `PATH` or at `~/.local/bin/rustfs`. Used as local S3-compatible storage on `:9000` with data stored in `../.rustfs-data` beside the checkout. |
+| **Object storage** | **Either** an external S3 / Cloudflare R2 bucket (`BOXEN_S3_BUCKET` and/or `BOXEN_S3_ENDPOINT`, plus credentials, in `.env` or environment) **or** the `rustfs` binary on `PATH` / `~/.local/bin/rustfs` (zero-config local S3 fallback on `:9000` storing data in `../.rustfs-data`). |
 | **Pinned `celld`** | `celld-0.6.2` on `PATH` or at `~/.local/bin/celld-0.6.2` (or set `BOXEN_CELLD` to a `0.6.2` binary). `ops/celld.mjs` enforces the exact version pinned in `ops/runtime.json`. |
 | **shellcheck** | Required by `pnpm run check:ops` (`brew install shellcheck`, `apt install shellcheck`, or `pacman -S shellcheck`). |
 
@@ -36,19 +36,21 @@ chmod +x ~/.local/bin/celld-0.6.2
    pnpm install
    ```
 
-2. **Start local storage and the `celld` node:**
+2. **Start the `celld` node (and local storage if not using external S3/R2):**
 
    ```sh
    ./start.sh
    ```
 
-   `start.sh` checks that `node`, Docker, `rustfs`, and `celld-0.6.2` are available, then starts:
-   - **RustFS** on `http://127.0.0.1:9000` (data in `../.rustfs-data`, logs in `../.rustfs.log`)
-   - **`celld-0.6.2`** on `http://127.0.0.1:8093` under a restart supervisor (logs in `.celld.log`)
+   `start.sh` checks that `node`, Docker, and `celld-0.6.2` are available, then configures object storage:
+   - **Zero-config local storage (default):** Starts **RustFS** on `http://127.0.0.1:9000` (`s3://pid-cells`, data in `../.rustfs-data`, logs in `../.rustfs.log`).
+   - **External S3 / Cloudflare R2:** If `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is set in `.env` or your environment, `start.sh` skips local RustFS altogether and points `celld-0.6.2` directly at your bucket.
 
-   If a gitignored `.env` file exists in the repository root, `start.sh` loads `GH_TOKEN` and/or `LINEAR_API_KEY` into the running node via `POST /api/secrets`. Only keys present in `.env` are sent, so tokens already configured in the UI are preserved.
+   It then starts **`celld-0.6.2`** on `http://127.0.0.1:8093` under a restart supervisor (logs in `.celld.log`).
 
-3. **Deploy the worker and Sandbox image to local RustFS:**
+   If a gitignored `.env` file exists in the repository root, `start.sh` also loads `GH_TOKEN` and/or `LINEAR_API_KEY` into the running node via `POST /api/secrets`. Only keys present in `.env` are sent, so tokens already configured in the UI are preserved.
+
+3. **Deploy the worker and Sandbox image to object storage:**
 
    ```sh
    pnpm run deploy
@@ -56,7 +58,7 @@ chmod +x ~/.local/bin/celld-0.6.2
 
    > **Important:** Write `pnpm run deploy`, **not** `pnpm deploy` (which is a built-in pnpm command).
 
-   `pnpm run deploy` runs `@boxen/worker`'s `deploy` script (`ops/celld.mjs deploy . --bucket s3://pid-cells --endpoint http://127.0.0.1:9000`), which bundles the worker and builds/pushes the Sandbox container image into the local RustFS bucket. Because it pushes to `127.0.0.1:9000`, RustFS must be running first (`./start.sh`). On a brand-new checkout with `.env` tokens, re-run `./start.sh` once after this initial deploy so the worker receives them.
+   `pnpm run deploy` invokes `ops/celld.mjs deploy .`, which reads your `.env` / environment S3 settings (or defaults to `s3://pid-cells` at `http://127.0.0.1:9000`), bundles the worker, and pushes the Sandbox container image into the bucket. If using local RustFS, run `./start.sh` first so `:9000` is listening. On a brand-new checkout with `.env` tokens, re-run `./start.sh` once after this initial deploy so the worker receives them.
 
 4. **Start the web UI dev server:**
 
@@ -69,8 +71,27 @@ chmod +x ~/.local/bin/celld-0.6.2
 ### Hot-deploying worker changes and stopping
 
 - **After editing `apps/worker/src/`**, run `./deploy.sh`. Running `celld-0.6.2` nodes adopt the new version on their next pointer poll (~15 seconds) without restarting, so Sandbox containers keep their disks and in-flight sign-ins survive. If adoption stalls, check `.celld.log` or restart with `./stop.sh && ./start.sh`.
-- **To stop `celld`** (leaving RustFS running for faster restarts): `./stop.sh`
-- **To stop both `celld` and RustFS**: `./stop.sh rustfs`
+- **To stop `celld`** (leaving local RustFS running for faster restarts): `./stop.sh`
+- **To stop both `celld` and local RustFS**: `./stop.sh rustfs`
+
+### Using Cloudflare R2 or AWS S3 in local development
+
+To use Cloudflare R2 or AWS S3 instead of a local `rustfs` binary, add your bucket settings to `.env` in the repository root:
+
+```ini
+# Cloudflare R2 example:
+BOXEN_S3_BUCKET=s3://my-boxen-cells
+BOXEN_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+AWS_ACCESS_KEY_ID=<r2-access-key-id>
+AWS_SECRET_ACCESS_KEY=<r2-secret-access-key>
+AWS_REGION=auto
+
+# Optional sandbox tokens:
+GH_TOKEN=ghp_...
+LINEAR_API_KEY=lin_api_...
+```
+
+Setting `BOXEN_S3_BUCKET` or `BOXEN_S3_ENDPOINT` is what switches `./start.sh`, `pnpm run deploy`, and `./deploy.sh` to your remote bucket and skips starting `rustfs`; ambient `AWS_*` variables alone never do. In external mode, `AWS_*` values are passed through only when set, so AWS profiles, SSO, and instance roles also work. (For AWS S3, omit `BOXEN_S3_ENDPOINT` and set `AWS_REGION`, e.g. `us-east-1`.)
 
 ## Running Checks & Tests
 

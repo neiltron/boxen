@@ -1,6 +1,11 @@
 # How boxen works
 
-boxen runs shared, persistent `pi` coding agent sessions on `celld` (a local/self-hosted Cloudflare Workers & Durable Objects runtime). Each Session runs a [`pi-durable`](https://github.com/earendil-works/pi/tree/main/packages/durable) agent Harness inside its own Durable Object cell backed by SQLite, while file operations, shell commands, git diffs, interactive terminals, and live previews run inside a per-session Linux container supervised by `celld`. There is no separate host-side agent daemon.
+boxen cleanly separates the **application** from the **infrastructure** that runs it:
+
+- **The Application (`apps/`, `packages/`)** is a pure Cloudflare Workers, Durable Objects (`storage.sql`), R2 (`BACKUP_BUCKET`), and `@cloudflare/sandbox` Containers application. Each Session runs a [`pi-durable`](https://github.com/earendil-works/pi/tree/main/packages/durable) agent Harness inside its own SQLite-backed Durable Object cell, while file operations, shell commands, git diffs, interactive terminals, and live previews run inside a per-session Linux container. There is no separate host-side agent daemon.
+- **The Infrastructure (`celld` + S3/R2, or Cloudflare)** provides the Workers, Durable Objects, Containers, and R2/S3 runtime bindings:
+  - **Self-hosted / Local (`celld`):** [`celld`](https://github.com/denoland/celld) supplies the Cloudflare Workers & Containers runtime on any machine with a Docker daemon, storing Durable Object SQLite state and `BACKUP_BUCKET` workspace checkpoints in any S3-compatible bucket (Cloudflare R2, AWS S3, or a bundled local RustFS instance).
+  - **Cloudflare Platform (`cf`):** Because the app targets the standard Workers, Durable Objects, R2, and Sandbox SDK surface (configured via `wrangler.jsonc` / the unified [Cloudflare `cf` CLI](https://developers.cloudflare.com/cf/reference/wrangler-to-cf/)), the application layer stays decoupled from `celld` and local storage specifics.
 
 ```text
 Browser tabs / boxen CLI / MCP server

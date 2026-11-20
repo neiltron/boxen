@@ -247,12 +247,14 @@ boxenctl inspect --domain sessions.example.com --json
 
 This reports `A`/`AAAA` records targeting the host's Tailscale IPs with `proxied: false` and never guesses LAN or public IPs. Custom-domain TLS and remote preview routing are not yet implemented—creating DNS records alone will not make the hostname work, and a custom domain does not add access control. Use the `*.ts.net` URL for now.
 
-### Backing up storage
+### Backing up storage (or using external S3 / R2)
 
-Session transcripts, credentials, and artifacts are stored in RustFS under `/var/lib/boxen/rustfs/`. Local host storage is not protected against host or disk failure—keep off-machine backups:
+The application itself only talks to `celld`'s Durable Object SQLite storage and the `BACKUP_BUCKET` binding; `celld` persists both to whatever S3-compatible bucket it is started with (`--bucket s3://...` and `--endpoint ...`):
 
-- Do **not** copy live RustFS files while `boxen-storage.service` is running. Either use a storage-aware S3 backup tool, or stop the server (`sudo boxenctl stop`), back up `/var/lib/boxen/rustfs/`, and restart (`sudo boxenctl start`).
-- Back up `/etc/boxen/credentials.json` securely alongside your storage backups. Setup refuses to rotate missing credentials automatically when storage already contains data.
+- **Default bundled RustFS (`boxen-storage.service`):** By default, `boxenctl` runs a local digest-pinned RustFS container storing data in `/var/lib/boxen/rustfs/`. Local host storage is not protected against host or disk failure—keep off-machine backups:
+  - Do **not** copy live RustFS files while `boxen-storage.service` is running. Either use a storage-aware S3 backup tool, or stop the server (`sudo boxenctl stop`), back up `/var/lib/boxen/rustfs/`, and restart (`sudo boxenctl start`).
+  - Back up `/etc/boxen/credentials.json` securely alongside your storage backups. Setup refuses to rotate missing credentials automatically when storage already contains data.
+- **External S3 or Cloudflare R2 (custom deployments):** If you run `celld` directly on EC2, ECS, or a custom systemd unit pointed at an AWS S3 or Cloudflare R2 bucket (`celld --bucket s3://<bucket> --endpoint https://<account>.r2.cloudflarestorage.com` with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`), no local RustFS container is needed and Durable Object state plus `/workspace` checkpoints live off-machine in S3/R2 automatically.
 - Deleting individual session snapshots and temporary uploads on session deletion is tracked in [plans/linux-installer.md](plans/linux-installer.md) and is separate from `boxenctl uninstall`.
 
 ---

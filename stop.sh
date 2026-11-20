@@ -19,7 +19,7 @@ if pkill -f "boxen-celld-supervisor" 2>/dev/null; then
   stopped_supervisor=1
 fi
 
-if pkill -f "celld-0.6.2 --bucket s3://pid-cells" 2>/dev/null; then
+if pkill -f "celld-0.6.2 --bucket s3://" 2>/dev/null; then
   echo "celld stopped"
 elif [[ "$stopped_supervisor" -eq 1 ]]; then
   echo "celld supervisor stopped (celld was not running)"
