@@ -48,8 +48,8 @@ export function Sidebar({
     <SidebarRoot collapsible="offcanvas">
       <div className="flex items-center justify-between px-3 py-2.5">
         <span className="text-sm font-semibold tracking-tight">pi sessions</span>
-        <Button variant="ghost" size="icon-sm" onClick={() => setCreating(!creating)}>
-          <PlusIcon className="size-4" />
+        <Button variant="ghost" size="icon-sm" aria-label="New session" aria-expanded={creating} onClick={() => setCreating(!creating)}>
+          <PlusIcon aria-hidden="true" className="size-4" />
         </Button>
       </div>
 
@@ -68,7 +68,7 @@ export function Sidebar({
         <Button size="sm" variant={archived ? "ghost" : "secondary"} aria-pressed={!archived} onClick={() => setArchived(false)}>Active</Button>
         <Button size="sm" variant={archived ? "secondary" : "ghost"} aria-pressed={archived} onClick={() => setArchived(true)}>Archived</Button>
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto p-1.5">
+      <nav aria-label="Sessions" className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {visible.map((s) => (
           <div key={s.id} className={cn("flex items-center rounded-md pr-1 hover:bg-muted", selected === s.id && "bg-muted")}>
             <button

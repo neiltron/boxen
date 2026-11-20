@@ -59,8 +59,9 @@ export function EventsTab({ model }: { model: ChatModel }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs">
         <input
+          aria-label="Filter events by type"
           value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by type…"
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-xs"
         />
         <label className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           <input type="checkbox" checked={showNoisy} onChange={(e) => setShowNoisy(e.target.checked)} />

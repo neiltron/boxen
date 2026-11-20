@@ -43,6 +43,7 @@ export function RepoField({ value, onChange }: { value: string; onChange: (v: st
   return (
     <div className="relative">
       <Input
+        aria-label="Git repository to clone"
         placeholder="git repo to clone (optional)"
         autoFocus
         value={value}
@@ -60,7 +61,7 @@ export function RepoField({ value, onChange }: { value: string; onChange: (v: st
         aria-expanded={showing}
         aria-controls={listId}
         aria-activedescendant={cursor >= 0 ? `${listId}-${cursor}` : undefined}
-        className="font-mono text-xs"
+        className="font-mono text-base sm:text-xs"
       />
       {showing && (
         <ul
@@ -114,9 +115,10 @@ export function BranchField({ repo, value, onChange }: { repo: string; value: st
   return (
     <>
       <Input
+        aria-label="Git branch"
         list={listId} value={value} onChange={(e) => onChange(e.target.value)}
         placeholder={defaultBranch ? `branch (default: ${defaultBranch})` : "branch (default)"}
-        className="font-mono text-xs"
+        className="font-mono text-base sm:text-xs"
       />
       <datalist id={listId}>
         {branches.map((b) => <option key={b} value={b} />)}

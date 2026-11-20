@@ -101,7 +101,7 @@ export function SessionActionsProvider({ children }: { children: ReactNode }) {
             <label htmlFor={renameInputId} className="block text-xs font-medium text-foreground">
               Session name
             </label>
-            <Input ref={renameInputRef} id={renameInputId} name="name" autoComplete="off" />
+            <Input ref={renameInputRef} id={renameInputId} name="name" autoComplete="off" className="text-base sm:text-xs" />
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => dialogRef.current?.close("cancel")}>
