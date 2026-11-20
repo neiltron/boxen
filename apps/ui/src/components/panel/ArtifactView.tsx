@@ -1,7 +1,15 @@
 import { Markdown } from "@/components/Markdown";
 import type { Artifact } from "@/lib/api";
 
-const frameBase = `<meta charset="utf-8"><style>
+// Pinned single-file Mermaid bundle verified with Subresource Integrity (SRI).
+// When bumping the version, recompute the sha384 digest with:
+//   curl -fsSL "<MERMAID_CDN_URL>" | openssl dgst -sha384 -binary | openssl base64 -A
+const MERMAID_CDN_URL =
+  "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js";
+const MERMAID_CDN_INTEGRITY =
+  "sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2";
+
+const frameBase = `<meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
   body { margin: 0; padding: 16px; display: flex; justify-content: center; }
   svg { max-width: 100%; height: auto; }
@@ -16,13 +24,18 @@ function frameDoc(a: Artifact): string {
   // which would re-escape labels like <br/> and arrows like -->.
   const source = JSON.stringify(a.content).replaceAll("<", "\\u003c");
   return `${frameBase}<div id="out"></div>
+<script src="${MERMAID_CDN_URL}" integrity="${MERMAID_CDN_INTEGRITY}" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
   const out = document.getElementById("out");
-  try { out.innerHTML = (await mermaid.render("diagram", ${source})).svg; }
-  catch (e) { out.textContent = String(e.message ?? e); }
+  try {
+    const mermaid = window.mermaid;
+    if (!mermaid) throw new Error("Failed to load Mermaid diagram renderer.");
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
+    out.innerHTML = (await mermaid.render("diagram", ${source})).svg;
+  } catch (e) {
+    out.textContent = String(e?.message ?? e);
+  }
 </script>`;
 }
 
@@ -39,7 +52,8 @@ export function ArtifactView({ artifact }: { artifact: Artifact }) {
   }
   return (
     <iframe
-      title={artifact.title} sandbox="allow-scripts" srcDoc={frameDoc(artifact)}
+      title={artifact.title} sandbox="allow-scripts" referrerPolicy="no-referrer"
+      srcDoc={frameDoc(artifact)}
       className="h-full w-full border-0 bg-white"
     />
   );
