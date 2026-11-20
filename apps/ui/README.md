@@ -1,77 +1,32 @@
-# Session UI
+# `@boxen/ui`
 
-## Workspace controls
+The web application for boxen: a React and TypeScript interface providing the Session sidebar, provider settings, live streaming chat transcript, and a dockable Trellis workspace (Artifacts, Changes, Preview, Terminal, and Events).
 
-- **Ctrl+Alt+J / Ctrl+Alt+K** (Cmd instead of Ctrl on macOS): next / previous
-  visible panel. From the session list or elsewhere outside the selected
-  session's workspace, either shortcut first enters the chat composer.
-  With the default two-panel layout, subsequent presses alternate chat and
-  the right-hand panel. This changes keyboard focus, not the selected session.
-- **F6 / Shift+F6**: next / previous panel while focus is inside the workspace,
-  including the composer. Outside it, F6 retains its browser behavior.
-- **Ctrl+Alt+] / Ctrl+Alt+[** (Cmd on macOS): Trellis's next / previous tab.
-- The panel toggle hides/restores whole tab groups, retaining docking,
-  tab order, selection and proportions. Hidden groups aren't cycled into.
+For user-facing workspace controls and keyboard shortcuts, see [Using boxen — Workspace layout and keyboard shortcuts](../../docs/using.md#workspace-layout-and-keyboard-shortcuts).
 
-Global panel shortcuts are inactive when no session is selected and do not
-escape dialogs or handle IME/AltGr input. Embedded Preview/artifact iframes
-have their own keyboard context: click outside the iframe to use the shortcuts.
+## Local development
 
-Layout version 2 resets saved desktop/mobile arrangements once to clear the
-floating panels created by the old per-tab hide loop. Phones still start with
-the panel hidden below chat, using a separate layout from desktop.
-
-## Checks
-
-`pnpm run check` here runs all of these in order; `pnpm check` at the workspace
-root runs them with every other check.
+Run these commands from the repository root after `pnpm install`:
 
 ```sh
-pnpm install  # at the workspace root, once
-pnpm exec playwright install --with-deps chromium  # first run on a supported host
-pnpm run lint
-pnpm run test:workspace
-pnpm run build
-pnpm run check:sessions  # built-app smoke test with HTTP/WebSocket fixtures
+pnpm ui                            # Start the Vite dev server on http://localhost:5176
+pnpm build                         # Type-check (tsc -b) and build the production bundle
+pnpm --filter @boxen/ui run check  # Run lint, workspace tests, build, and session smoke checks
 ```
 
-The Playwright suite uses a real Trellis workspace in an isolated Vite fixture;
-no cell backend is required. It covers entering from the session list, cycling
-and composer focus, macOS key codes, nested hide/restore, horizontal/vertical
-layouts, partial hiding, dialogs/IME, and listener teardown/rebinding.
-The built-app session smoke test also covers entering from the real session
-list, panel hide/show, and keeping a newly opened mobile panel visible across
-composer rerenders.
+## Checks and tests
 
-## React + TypeScript + Vite
+On a fresh machine, install the Chromium browser Playwright uses once:
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+pnpm --dir apps/ui exec playwright install --with-deps chromium
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+`pnpm --filter @boxen/ui run check` (or `pnpm run check` inside `apps/ui/`, and `pnpm check` at the workspace root) runs four steps in order:
+
+| Script | What it runs |
+| --- | --- |
+| `pnpm --filter @boxen/ui run lint` | Oxlint static checks across `apps/ui/` |
+| `pnpm --filter @boxen/ui run test:workspace` | Playwright suite against a real Trellis workspace in an isolated Vite fixture (no `celld` backend required). Covers entering from the session list, panel cycling and composer focus, macOS key codes, nested hide/restore, horizontal/vertical layouts, partial hiding, dialogs/IME, and listener teardown/rebinding. |
+| `pnpm --filter @boxen/ui run build` | TypeScript project build (`tsc -b`) and Vite production bundle |
+| `pnpm --filter @boxen/ui run check:sessions` | Built-app smoke test backed by HTTP and WebSocket fixtures. Covers entering from the real session list, panel hide/show, and keeping a newly opened mobile panel visible across composer rerenders. |
