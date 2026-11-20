@@ -37,7 +37,7 @@ if (process.argv[2] === '--storage-env') {
 const runtime = JSON.parse(fs.readFileSync(new URL('./runtime.json', import.meta.url), 'utf8'));
 const binary = process.env.BOXEN_CELLD ?? `celld-${runtime.celld.version}`;
 const version = spawnSync(binary, ['--version'], { encoding: 'utf8' });
-const found = version.stdout?.trim().match(/^celld\s+(\d+\.\d+\.\d+)(?:\s|$)/)?.[1];
+const found = version.stdout?.trim().match(/^celld\s+(\d+\.\d+\.\d+)(?:\s|$)/m)?.[1];
 if (version.status !== 0 || found !== runtime.celld.version) {
   console.error(`Expected celld ${runtime.celld.version}; install ${binary} or set BOXEN_CELLD to that version's binary.`);
   process.exit(2);
