@@ -9,7 +9,7 @@ import { createSession, type AuthStatus, type SessionMeta } from "@/lib/api";
 import { ago, cn } from "@/lib/utils";
 
 const statusDot: Record<string, string> = {
-  running: "bg-green-500 animate-pulse",
+  running: "bg-green-500 motion-safe:animate-pulse",
   idle: "bg-muted-foreground/40",
 };
 
@@ -76,7 +76,7 @@ export function Sidebar({
               onClick={() => select(s.id)}
               className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left"
             >
-              <span className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
+              <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", statusDot[s.status ?? "idle"] ?? statusDot.idle)} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{s.name}</span>
                 {s.repo && (
