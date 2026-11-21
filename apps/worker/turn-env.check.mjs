@@ -23,7 +23,7 @@ const { Session } = await load({
   "./sandbox-env.js": { sandboxEnv: (sb, id, cwd) => ({ cwd }), shellQuote() {} },
   "@earendil-works/pi-ai": { Type: new Proxy({}, { get: () => () => ({}) }) },
   "@earendil-works/pi-durable": {
-    SessionFailed: class extends Error {}, createRegistry: () => ({ install() {} }), defineExtension: (x) => x, defineTool() {}, section() {}, watchEvents() {},
+    SessionFailed: class extends Error {}, createRegistry: () => ({ install() {} }), defineExtension: (x) => x, defineTool() {}, hook() {}, section() {}, ToolTask: {}, watchEvents() {},
     Harness: { async open(storage, o) { options = o; throw new Error("stop: options captured"); } },
   },
   "@earendil-works/pi-durable/storage/sqlite": { SqliteStorage: { async open() {} } },
