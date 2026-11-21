@@ -126,7 +126,7 @@ button.cell:hover { border-color: var(--field); }
 .secondary { min-height: 40px; padding: 0 16px; border: 1px solid var(--field); border-radius: 8px; background: #fff; }
 .said { margin: 0; padding: 14px 16px; border-radius: 8px; background: var(--side); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .said.failed { background: #fdf0e6; color: var(--wait-ink); }
-/* The agent's reply as markdown: block spacing from one rule, wide blocks scroll on their own. */
+/* Issue bodies and agent replies as markdown: block spacing from one rule, wide blocks scroll on their own. */
 .md { white-space: normal; }
 .md > * { margin: 0; }
 .md > * + * { margin-top: 0.75em; }
@@ -140,6 +140,8 @@ button.cell:hover { border-color: var(--field); }
 .md :is(th, td) { padding: 4px 10px; border: 1px solid var(--line); text-align: left; }
 .md hr { border: 0; border-top: 1px solid var(--line); }
 .md img { max-width: 100%; }
+/* GitHub keeps single line breaks in issue text; standard markdown would fold them. */
+.body.md p { white-space: pre-line; }
 
 @media (max-width: 640px) {
   .side { display: none; }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { memo, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { reconnecting, system, webSocketTransport, type Issue, type Session, type SessionClient } from "@boxen/client";
 import {
@@ -247,6 +247,13 @@ function Strip({ marks, waitingSince, now, className }: { marks: Mark[]; waiting
   );
 }
 
+// Issue bodies and agent replies as GitHub-flavored markdown. react-markdown builds a
+// React tree (no innerHTML), so neither can inject markup; links leave in a new tab.
+const mdLink: Components = { a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> };
+const Md = memo(function Md({ text, className }: { text: string; className: string }) {
+  return <div className={`${className} md`}><ReactMarkdown remarkPlugins={[remarkGfm]} components={mdLink}>{text}</ReactMarkdown></div>;
+});
+
 function Legend() {
   return (
     <div className="legend">
@@ -318,7 +325,7 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
           </p>
         </header>
 
-        {issue.body.trim() && <p className="body">{issue.body.trim()}</p>}
+        {issue.body.trim() && <Md className="body" text={issue.body.trim()} />}
 
         {session && (
           <section className="block">
@@ -374,14 +381,7 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
             {lane === "waiting" && word && (
               <>
                 <h2>{failed ? "The turn failed" : "The agent says"}</h2>
-                {failed ? <p className="said failed">{word.text}</p> : (
-                  // react-markdown builds a React tree (no innerHTML), so agent output can't inject markup.
-                  <div className="said md">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
-                      {word.text}
-                    </ReactMarkdown>
-                  </div>
-                )}
+                {failed ? <p className="said failed">{word.text}</p> : <Md className="said" text={word.text} />}
               </>
             )}
             <label htmlFor="reply">{lane === "running" ? "Steer" : "Reply"}</label>
