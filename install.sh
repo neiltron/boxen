@@ -8,8 +8,8 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   exit 2
 fi
 
-# The manager (ops/boxenctl.ts) runs on the same checksum-pinned Node the app uses.
-# Keep these identical to NODE_URL/NODE_SHA in ops/boxenctl.ts; a test enforces it.
+# The manager (infra/boxenctl.ts) runs on the same checksum-pinned Node the app uses.
+# Keep these identical to NODE_URL/NODE_SHA in infra/boxenctl.ts; a test enforces it.
 # BEGIN GENERATED BOOTSTRAP PINS
 NODE_URL='https://nodejs.org/dist/v24.5.0/node-v24.5.0-linux-x64.tar.gz'
 NODE_SHA='369f2a3668dde7e324697040fafdcf442fd198b8c102317145417b3c83a9794a'
@@ -110,7 +110,7 @@ source_dir=''
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-if [[ -z "$source_dir" || ! -f "$source_dir/ops/boxenctl.ts" ]]; then
+if [[ -z "$source_dir" || ! -f "$source_dir/infra/boxenctl.ts" ]]; then
   ref="${BOXEN_REF:-v0.1.0-rc.3}"
   if [[ ! "$ref" =~ ^[a-zA-Z0-9._/-]+$ || "$ref" == *..* ]]; then
     echo 'BOXEN_REF must be a Git ref or commit SHA, not a URL or path traversal.' >&2
@@ -122,7 +122,7 @@ if [[ -z "$source_dir" || ! -f "$source_dir/ops/boxenctl.ts" ]]; then
   mkdir "$staging/source"
   tar -xzf "$staging/source.tar.gz" --strip-components=1 -C "$staging/source"
   source_dir="$staging/source"
-  [[ -f "$source_dir/ops/boxenctl.ts" ]] || { echo "The selected ref does not contain this installer yet." >&2; exit 2; }
+  [[ -f "$source_dir/infra/boxenctl.ts" ]] || { echo "The selected ref does not contain this installer yet." >&2; exit 2; }
 fi
 
 # sudo authenticates normally for humans, but must fail immediately for agents.
@@ -131,7 +131,7 @@ if ! "$dry_run" && [[ "$EUID" != 0 ]]; then
   elevate=(sudo)
   if "$no_input"; then elevate+=(-n); fi
 fi
-manager=("$node" --disable-warning=ExperimentalWarning "$source_dir/ops/boxenctl.ts" setup --source "$source_dir" "$@")
+manager=("$node" --disable-warning=ExperimentalWarning "$source_dir/infra/boxenctl.ts" setup --source "$source_dir" "$@")
 if ! "$no_input" && ( : </dev/tty ) 2>/dev/null; then
   "${elevate[@]}" "${manager[@]}" </dev/tty
 else

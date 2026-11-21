@@ -1,4 +1,4 @@
-// Test-only worker entry. ops/smoke.ts copies this into its isolated deployment;
+// Test-only worker entry. infra/smoke.ts copies this into its isolated deployment;
 // the application's wrangler.jsonc never points here. No production test route.
 export * from "./src/index.js";
 import worker from "./src/index.js";

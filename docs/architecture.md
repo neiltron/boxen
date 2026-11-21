@@ -89,7 +89,7 @@ boxen is a `pnpm` workspace (`pnpm` 10+ automatically switches to the version pi
 | `apps/cli/` | `@boxen/cli` | `boxen` CLI for listing, creating, and prompting Sessions |
 | `apps/mcp/` | `@boxen/mcp` | Stdio MCP server exposing Sessions and artifacts to external agents |
 | `packages/client/` | `@boxen/client` | `openapi.json` REST contract, Session WebSocket protocol, and typed clients for browsers and Node |
-| `ops/`, `install.sh` | *(standalone)* | Linux installer and `boxenctl` operations tooling; imports nothing from the workspace |
+| `infra/`, `install.sh` | *(standalone)* | Linux installer and `boxenctl` operations tooling; imports nothing from the workspace |
 
 ## Runtime notes
 

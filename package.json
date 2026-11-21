@@ -6,15 +6,17 @@
   "packageManager": "pnpm@12.9.1",
   "scripts": {
     "boxen": "node apps/cli/boxen.ts",
+    "start": "infra/start.sh",
+    "stop": "infra/stop.sh",
     "ui": "pnpm --filter @boxen/ui run dev",
     "inbox": "pnpm --filter @boxen/inbox run dev",
     "build": "pnpm --filter @boxen/ui run build",
     "deploy": "pnpm --filter @boxen/worker run deploy",
     "reference": "REDOCLY_TELEMETRY=off REDOCLY_SUPPRESS_UPDATE_NOTICE=true redocly build-docs packages/client/openapi.json -o docs/api-reference.html --disableGoogleFont",
-    "check": "pnpm run check:release && pnpm run check:ops && pnpm -r run check",
-    "check:ops": "node --test ops/boxenctl.test.ts && tsc -p ops && if ! command -v shellcheck >/dev/null; then echo 'shellcheck not found: install it (pacman -S shellcheck, apt install shellcheck, brew install shellcheck)' >&2; exit 1; fi && shellcheck install.sh",
-    "check:release": "node ops/release.mjs check && node --test ops/release.test.mjs",
-    "release:manifest": "node ops/release.mjs manifest"
+    "check": "pnpm run check:release && pnpm run check:infra && pnpm -r run check",
+    "check:infra": "node --test infra/boxenctl.test.ts && tsc -p infra && if ! command -v shellcheck >/dev/null; then echo 'shellcheck not found: install it (pacman -S shellcheck, apt install shellcheck, brew install shellcheck)' >&2; exit 1; fi && shellcheck install.sh infra/start.sh infra/stop.sh",
+    "check:release": "node infra/release.mjs check && node --test infra/release.test.mjs",
+    "release:manifest": "node infra/release.mjs manifest"
   },
   "devDependencies": {
     "@redocly/cli": "^2.57.0",

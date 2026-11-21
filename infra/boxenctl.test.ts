@@ -1,4 +1,4 @@
-// Offline installer checks: node --test ops/boxenctl.test.ts
+// Offline installer checks: node --test infra/boxenctl.test.ts
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -49,7 +49,7 @@ function source(): string {
     fs.mkdirSync(path.join(root, name), { recursive: true });
     fs.writeFileSync(path.join(root, name, 'example.txt'), name);
   }
-  fs.copyFileSync(path.join(HERE, 'runtime.json'), path.join(root, 'ops/runtime.json'));
+  fs.copyFileSync(path.join(HERE, 'runtime.json'), path.join(root, 'infra/runtime.json'));
   fs.mkdirSync(path.join(root, 'apps/worker'));
   fs.writeFileSync(path.join(root, 'apps/worker/wrangler.jsonc'), '{}');
   return root;
@@ -163,7 +163,7 @@ describe('sources and files', () => {
   test('source hash excludes secrets, dependencies and builds', () => {
     const root = source();
     const before = boxenctl.sourceRevision(root);
-    for (const name of ['apps/ui/node_modules/lib', 'apps/ui/dist/app.js', 'apps/ui/.env.local', 'ops/__pycache__/cache']) {
+    for (const name of ['apps/ui/node_modules/lib', 'apps/ui/dist/app.js', 'apps/ui/.env.local', 'infra/__pycache__/cache']) {
       fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
       fs.writeFileSync(path.join(root, name), 'not a source file');
     }
@@ -177,14 +177,14 @@ describe('sources and files', () => {
     const workspace = fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
     // Globs of whole directories (apps/*), each one copied as a source directory.
     const globs = [...workspace.matchAll(/^ {2}- (\S+)$/gm)].map((match) => match[1]);
-    assert.deepEqual(globs.map((glob) => glob.replace(/^'?([a-z]+)\/\*'?$/, '$1')), SOURCE_DIRS.filter((name) => name !== 'ops'));
+    assert.deepEqual(globs.map((glob) => glob.replace(/^'?([a-z]+)\/\*'?$/, '$1')), SOURCE_DIRS.filter((name) => name !== 'infra'));
     assert.match(boxenctl.sourceRevision(root), /^[0-9a-f]{20}$/);
   });
 
   test('an installer refuses a different application or runtime release before mutations', async () => {
     const root = source();
     boxenctl.validateSourceRelease(root);
-    const runtimeFile = path.join(root, 'ops/runtime.json');
+    const runtimeFile = path.join(root, 'infra/runtime.json');
     const runtime = JSON.parse(fs.readFileSync(runtimeFile, 'utf8'));
     runtime.celld.version = '9.0.0';
     fs.writeFileSync(runtimeFile, JSON.stringify(runtime));
@@ -365,7 +365,7 @@ describe('sources and files', () => {
     const script = fs.readFileSync(path.join(HERE, '../install.sh'), 'utf8');
     assert.equal(script.match(/^NODE_URL='([^']+)'$/m)?.[1], NODE_URL);
     assert.equal(script.match(/^NODE_SHA='([^']+)'$/m)?.[1], NODE_SHA);
-    assert.ok(script.includes('ops/boxenctl.ts'));
+    assert.ok(script.includes('infra/boxenctl.ts'));
     assert.ok(!/python/i.test(script));
   });
 });

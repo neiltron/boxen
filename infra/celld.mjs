@@ -2,7 +2,7 @@
 // Development deploys must use the same runtime pin as the installer.
 // Storage: BOXEN_S3_BUCKET / BOXEN_S3_ENDPOINT (environment or gitignored .env)
 // opt into external S3/R2; otherwise the local RustFS dev store on :9000.
-// `--storage-env` prints the resolved settings as shell exports for start.sh.
+// `--storage-env` prints the resolved settings as shell exports for infra/start.sh.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { parseEnv } from 'node:util';
