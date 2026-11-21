@@ -426,8 +426,11 @@ export class Session extends DurableObject {
   async setStatus(id, status) {
     const now = Date.now();
     if (status && status !== this.status) {
-      this.status = status;
+      // Only once the Directory has it: a touch that fails (a run's end
+      // reported after its prompt's event ended) must leave the alarm's
+      // later setStatus(id, "idle") free to retry it.
       await this.env.DIRECTORY.getByName("main").touch({ id, status });
+      this.status = status;
       this.lastTouch = now;
     } else if (now - this.lastTouch > 3000) {
       await this.env.DIRECTORY.getByName("main").touch({ id });
