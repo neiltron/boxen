@@ -42,10 +42,11 @@ jobs:
         run: |
           npm install --global "$PACKAGE_MANAGER"
           pnpm install --frozen-lockfile
-      # shellcheck is preinstalled on the ubuntu-24.04 image. The workspace tests
-      # run headless, so only Chromium's headless shell is needed.
+      # shellcheck is preinstalled on the ubuntu-24.04 image, and so are the
+      # system libraries Chromium needs (the image ships Google Chrome). The
+      # workspace tests run headless, so only Chromium's headless shell is needed.
       - name: Install check tools
-        run: pnpm --dir apps/ui exec playwright install --with-deps --only-shell chromium
+        run: pnpm --dir apps/ui exec playwright install --only-shell chromium
       - name: Release consistency and application checks
         run: pnpm check
       - name: Package the tagged source release
