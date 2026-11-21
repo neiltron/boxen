@@ -10,11 +10,11 @@ import type { Block } from "@boxen/client";
 type ToolBlock = Extract<Block, { kind: "tool" }>;
 
 function ToolIcon({ name, className }: { name: string; className?: string }) {
-  if (name === "artifact") return <ShapesIcon className={className} />;
-  if (name.includes("bash")) return <TerminalIcon className={className} />;
-  if (name.includes("read") || name.includes("grep") || name.includes("find")) return <FileTextIcon className={className} />;
-  if (name.includes("edit") || name.includes("write")) return <PencilSimpleIcon className={className} />;
-  return <WrenchIcon className={className} />;
+  if (name === "artifact") return <ShapesIcon aria-hidden="true" className={className} />;
+  if (name.includes("bash")) return <TerminalIcon aria-hidden="true" className={className} />;
+  if (name.includes("read") || name.includes("grep") || name.includes("find")) return <FileTextIcon aria-hidden="true" className={className} />;
+  if (name.includes("edit") || name.includes("write")) return <PencilSimpleIcon aria-hidden="true" className={className} />;
+  return <WrenchIcon aria-hidden="true" className={className} />;
 }
 
 function argsPreview(block: ToolBlock): string {
@@ -31,6 +31,9 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
   const panel = useContext(SessionContext);
   const { artifactId } = block;
   const preview = argsPreview(block);
+  const statusLabel = block.state === "done"
+    ? (block.isError ? "Failed" : "Done")
+    : "Running";
 
   return (
     <div className="relative my-1 w-full max-w-full overflow-hidden rounded-lg border border-border bg-muted/40 text-sm">
@@ -42,16 +45,17 @@ export function ToolCallBlock({ block }: { block: ToolBlock }) {
           "flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left hover:bg-muted",
           artifactId && "pr-21",
         )}>
-          <CaretRightIcon className="size-3 shrink-0 text-muted-foreground group-open:rotate-90 motion-safe:transition-transform" />
+          <CaretRightIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground group-open:rotate-90 motion-safe:transition-transform" />
           <ToolIcon name={block.name} className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">{block.name}</span>
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{preview}</span>
+          <span className="sr-only">{statusLabel}</span>
           {block.state === "done" ? (
             block.isError
-              ? <XIcon className="size-3.5 shrink-0 text-destructive" />
-              : <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              ? <XIcon aria-hidden="true" className="size-3.5 shrink-0 text-destructive" />
+              : <CheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
           ) : (
-            <CircleNotchIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+            <CircleNotchIcon aria-hidden="true" className="spinner-icon size-3.5 shrink-0 text-muted-foreground" />
           )}
         </summary>
         {(block.args != null || block.output) && (

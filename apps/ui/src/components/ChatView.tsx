@@ -47,7 +47,7 @@ function AssistantItem({ item }: { item: Extract<ChatItem, { kind: "assistant" }
                   return (
                     <div key={i}>
                       <Markdown text={b.text} />
-                      {b.streaming && <span className="inline-block h-4 w-2 animate-pulse bg-foreground/60 align-text-bottom" />}
+                      {b.streaming && <span aria-hidden="true" className="inline-block h-4 w-2 motion-safe:animate-pulse bg-foreground/60 align-text-bottom" />}
                     </div>
                   );
                 }
@@ -98,11 +98,16 @@ export function ChatView({ session, onTogglePanel }: { session: SessionHandle; o
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-2 border-b border-border px-2 py-2.5 sm:gap-3">
         <SidebarTrigger className="shrink-0" />
-        <span className={cn(
-          "size-2 shrink-0 rounded-full",
-          model.running ? "animate-pulse bg-green-500" : "bg-muted-foreground/40",
-        )} />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            model.running ? "motion-safe:animate-pulse bg-green-500" : "bg-muted-foreground/40",
+          )}
+        />
         <div className="min-w-0 truncate text-sm font-medium">{meta?.name ?? "…"}</div>
+        {/* Persistent live region: announced when the text changes. */}
+        <span role="status" className="sr-only">{model.running ? "Agent working" : ""}</span>
         {meta?.archivedAt != null && <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">Archived</span>}
         {meta && <SessionActions session={meta} />}
         <Button

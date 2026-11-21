@@ -147,11 +147,16 @@
 
 /* Reserve clock space so hover never shifts the bubble or scroll position.
    Touch has no hover; keyboard focus reveals the same timestamp. */
-.transcript-prompt-time { opacity: 0; transition: opacity 120ms; }
+.transcript-prompt-time {
+  opacity: 0;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: opacity 120ms;
+  }
+}
 .transcript-prompt:hover .transcript-prompt-time,
 .transcript-prompt:focus-within .transcript-prompt-time { opacity: 1; }
 @media (hover: none) { .transcript-prompt-time { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .transcript-prompt-time { transition: none; } }
 
 /* Minimum interactive target size (WCAG 2.5.8 desktop, 2.5.5 touch). */
 :root {
@@ -223,7 +228,35 @@
 }
 
 .shimmer {
-  animation: shimmer 1.6s ease-in-out infinite;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+/* Slow spinners under reduced motion rather than stopping them completely,
+   so active work remains visually distinguishable. */
+@keyframes spinner-spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner-icon {
+  animation: spinner-spin 1s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation-duration: 6s;
+  }
+}
+
+/* Vendored shadcn/Radix enter/exit animations (tw-animate-css animate-in/out:
+   slide, zoom, fade). One global override instead of editing each component.
+   A near-zero duration still fires animationend, so Radix Presence unmounts. */
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-in"], [class*="animate-out"] {
+    animation-duration: 0.01ms !important;
+  }
+  /* Variant forms like group-data-[state=…]/attachment:shimmer miss the
+     vendored `.shimmer` reduced-motion rule. */
+  [class*=":shimmer"] { animation: none !important; }
 }
 
 /* Opt-in native <details> disclosures (keeps markdown <details> in typeset.css untouched). */
