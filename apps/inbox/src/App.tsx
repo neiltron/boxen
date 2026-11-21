@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { reconnecting, system, webSocketTransport, type Issue, type Session, type SessionClient } from "@boxen/client";
 import {
   ago, cloneUrl, currentStep, firstPrompt, foldersOf, issueKey, lastWord, laneOf, marksOf, sessionFor, sessionName,
@@ -356,7 +358,14 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
             {lane === "waiting" && word && (
               <>
                 <h2>{failed ? "The turn failed" : "The agent says"}</h2>
-                <p className={`said ${failed ? "failed" : ""}`}>{word.text}</p>
+                {failed ? <p className="said failed">{word.text}</p> : (
+                  // react-markdown builds a React tree (no innerHTML), so agent output can't inject markup.
+                  <div className="said md">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
+                      {word.text}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </>
             )}
             <label htmlFor="reply">{lane === "running" ? "Steer" : "Reply"}</label>
