@@ -233,15 +233,25 @@ export class Directory extends DurableObject {
     return { defaultBranch: repo.default_branch, branches: [repo.default_branch, ...names] };
   }
 
-  // A repo's open issues, newest first; the issues API lists pull requests too.
+  // Open issues and same-repo PRs, newest first. PR details supply review branches.
   async githubIssues(fullName, label) {
     const labels = label ? `&labels=${encodeURIComponent(label)}` : "";
     const issues = await this.github(`/repos/${fullName}/issues?state=open&per_page=100${labels}`);
-    return issues.filter((i) => !i.pull_request).map((i) => ({
-      number: i.number, title: i.title, body: i.body ?? "", url: i.html_url,
-      labels: i.labels.map((l) => (typeof l === "string" ? l : l.name)),
-      createdAt: i.created_at, author: i.user?.login ?? null,
-    }));
+    return (await Promise.all(issues.map(async (i) => {
+      let pullRequest;
+      if (i.pull_request) {
+        const pr = await this.github(`/repos/${fullName}/pulls/${i.number}`);
+        // Fork (or deleted-head-repo) PRs cannot use the normal workspace clone.
+        if (!pr.head.repo || pr.head.repo.id !== pr.base.repo.id) return null;
+        pullRequest = { headBranch: pr.head.ref, baseBranch: pr.base.ref, draft: !!pr.draft };
+      }
+      return {
+        number: i.number, title: i.title, body: i.body ?? "", url: i.html_url,
+        labels: i.labels.map((l) => (typeof l === "string" ? l : l.name)),
+        createdAt: i.created_at, author: i.user?.login ?? null,
+        ...(pullRequest ? { pullRequest } : {}),
+      };
+    }))).filter(Boolean);
   }
 
   // Every file on the default branch, for drawing the repo's shape.
