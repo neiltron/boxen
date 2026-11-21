@@ -233,15 +233,26 @@ export class Directory extends DurableObject {
     return { defaultBranch: repo.default_branch, branches: [repo.default_branch, ...names] };
   }
 
-  // A repo's open issues, newest first; the issues API lists pull requests too.
+  // Open issues and same-repo PRs, newest first. PR details supply review branches.
   async githubIssues(fullName, label) {
     const labels = label ? `&labels=${encodeURIComponent(label)}` : "";
-    const issues = await this.github(`/repos/${fullName}/issues?state=open&per_page=100${labels}`);
-    return issues.filter((i) => !i.pull_request).map((i) => ({
-      number: i.number, title: i.title, body: i.body ?? "", url: i.html_url,
-      labels: i.labels.map((l) => (typeof l === "string" ? l : l.name)),
-      createdAt: i.created_at, author: i.user?.login ?? null,
-    }));
+    // ponytail: first 100 open PRs only; a labelled PR beyond that is dropped, page /pulls if that bites.
+    const [issues, pulls] = await Promise.all([
+      this.github(`/repos/${fullName}/issues?state=open&per_page=100${labels}`),
+      this.github(`/repos/${fullName}/pulls?state=open&per_page=100`),
+    ]);
+    const prs = new Map(pulls.map((p) => [p.number, p]));
+    return issues.flatMap((i) => {
+      const pr = i.pull_request && prs.get(i.number);
+      // Fork (or deleted-head-repo) PRs cannot use the normal workspace clone.
+      if (i.pull_request && (!pr || !pr.head.repo || pr.head.repo.id !== pr.base.repo.id)) return [];
+      return [{
+        number: i.number, title: i.title, body: i.body ?? "", url: i.html_url,
+        labels: i.labels.map((l) => (typeof l === "string" ? l : l.name)),
+        createdAt: i.created_at, author: i.user?.login ?? null,
+        ...(pr ? { pullRequest: { headBranch: pr.head.ref, baseBranch: pr.base.ref, draft: !!pr.draft } } : {}),
+      }];
+    });
   }
 
   // Every file on the default branch, for drawing the repo's shape.

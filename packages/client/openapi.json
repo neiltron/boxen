@@ -314,11 +314,11 @@
     "/api/github/issues": {
       "get": {
         "operationId": "listIssues",
-        "summary": "A repo's open issues, newest first",
-        "description": "Pull requests are left out. At most 100. Public repos work without a GitHub token.",
+        "summary": "A repo's open issues and same-repo pull requests, newest first",
+        "description": "Fork pull requests are left out. At most 100 items. Public repos work without a GitHub token.",
         "parameters": [
           { "name": "repo", "in": "query", "required": true, "description": "owner/name", "schema": { "type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$" } },
-          { "name": "label", "in": "query", "required": false, "description": "Only issues with this label", "schema": { "type": "string" } }
+          { "name": "label", "in": "query", "required": false, "description": "Only issues and pull requests with this label", "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -561,7 +561,18 @@
           "url": { "type": "string", "description": "The issue on github.com" },
           "labels": { "type": "array", "items": { "type": "string" } },
           "createdAt": { "type": "string", "format": "date-time" },
-          "author": { "type": ["string", "null"], "description": "The login that opened it" }
+          "author": { "type": ["string", "null"], "description": "The login that opened it" },
+          "pullRequest": {
+            "type": "object",
+            "description": "Present only for same-repo pull requests; absent for issues",
+            "required": ["headBranch", "baseBranch", "draft"],
+            "additionalProperties": false,
+            "properties": {
+              "headBranch": { "type": "string" },
+              "baseBranch": { "type": "string" },
+              "draft": { "type": "boolean" }
+            }
+          }
         }
       },
       "SandboxToken": {

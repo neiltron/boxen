@@ -3,21 +3,21 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { reconnecting, system, webSocketTransport, type Issue, type Session, type SessionClient } from "@boxen/client";
 import {
-  ago, cloneUrl, currentStep, firstPrompt, foldersOf, issueKey, lastWord, laneOf, marksOf, sessionFor, sessionName,
-  touchedFolders, type Folder, type Lane, type Mark,
+  ago, currentStep, defaultBrief, firstPrompt, foldersOf, issueKey, itemLabel, lastWord, laneOf, marksOf, matchesKind, sessionFor, sessionOptions,
+  touchedFolders, type Folder, type Kind, type Lane, type Mark,
 } from "./inbox.ts";
 
 // Same origin: vite proxies /api, REST and WebSockets, to the boxen node.
 const boxen = system(location.origin, { transport: webSocketTransport });
 const HOUR = 60 * 60 * 1000;
-const DEFAULT_BRIEF = "Fix this issue. Keep the change small, and say what you tested.";
 
 type Item = { key: string; repo: string; issue: Issue; session?: Session; lane: Lane };
 
 // The repos and label to read, kept in the address so a reload or a bookmark keeps them.
 function readConfig() {
   const q = new URLSearchParams(location.search);
-  return { repos: (q.get("repos") ?? "").split(",").map((r) => r.trim()).filter(Boolean), label: q.get("label") ?? "" };
+  const kind: Kind = q.get("kind") === "prs" ? "prs" : q.get("kind") === "issues" ? "issues" : "all";
+  return { kind, repos: (q.get("repos") ?? "").split(",").map((r) => r.trim()).filter(Boolean), label: q.get("label") ?? "" };
 }
 
 // The Directory's live session list: the same feed boxen's own sidebar reads.
@@ -86,14 +86,14 @@ export function App() {
     void load();
     window.addEventListener("focus", load);
     return () => { live = false; window.removeEventListener("focus", load); };
-  }, [config]);
+  }, [config.repos, config.label]);
 
   useEffect(() => { history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : location.pathname + location.search); }, [selected]);
 
-  const items = useMemo(() => issues.map(({ repo, issue }): Item => {
+  const items = useMemo(() => issues.filter(({ issue }) => matchesKind(issue, config.kind)).map(({ repo, issue }): Item => {
     const session = sessionFor(repo, issue.number, sessions);
     return { key: issueKey(repo, issue.number), repo, issue, session, lane: laneOf(session) };
-  }), [issues, sessions]);
+  }), [issues, sessions, config.kind]);
   const clients = useSessionClients(items.flatMap((i) => (i.session ? [i.session.id] : [])));
 
   const lanes: { lane: Lane; label: string; items: Item[] }[] = [
@@ -132,12 +132,13 @@ export function App() {
         const q = new URLSearchParams();
         if (next.repos.length) q.set("repos", next.repos.join(","));
         if (next.label) q.set("label", next.label);
+        if (next.kind !== "all") q.set("kind", next.kind);
         history.replaceState(null, "", `?${q}${location.hash}`);
         setConfig(next);
       }} />
       {errors.map((e) => <p key={e} className="banner">{e}</p>)}
       {!config.repos.length ? (
-        <main className="empty"><p>Add a repo above, as <code>owner/name</code>, to see its open issues.</p></main>
+        <main className="empty"><p>Add a repo above, as <code>owner/name</code>, to see its open issues and same-repo PRs.</p></main>
       ) : !current ? (
         <main className="list">
           <div className="list-inner">
@@ -149,6 +150,7 @@ export function App() {
                   const v = view(item);
                   return (
                     <button key={item.key} className="row" onClick={() => setSelected(item.key)}>
+                      <Indicator issue={item.issue} />
                       <span className="num">#{item.issue.number}</span>
                       <span className="row-text">
                         <span className="title">{item.issue.title}</span>
@@ -160,13 +162,13 @@ export function App() {
                 })}
               </section>
             ))}
-            {!items.length && !loading && <p className="quiet">No open issues{config.label ? ` labelled ${config.label}` : ""}.</p>}
+            {!items.length && !loading && <p className="quiet">No open {config.kind === "prs" ? "same-repo PRs" : config.kind === "issues" ? "issues" : "issues or same-repo PRs"}{config.label ? ` labelled ${config.label}` : ""}.</p>}
             <Legend />
           </div>
         </main>
       ) : (
         <div className="split">
-          <nav className="side" aria-label="Issues">
+          <nav className="side" aria-label="Issues and pull requests">
             {lanes.filter((l) => l.items.length).map((l) => (
               <section key={l.lane}>
                 <h2 className="lane">{l.label} · {l.items.length}</h2>
@@ -174,7 +176,7 @@ export function App() {
                   const v = view(item);
                   return (
                     <button key={item.key} className="side-row" aria-current={item.key === selected} onClick={() => setSelected(item.key)}>
-                      <span className="title">{item.issue.title}</span>
+                      <span className="title"><Indicator issue={item.issue} /> {item.issue.title}</span>
                       <span className="side-meta">
                         <span className={`meta ${item.lane === "waiting" ? "warn" : ""}`}>#{item.issue.number} · {v.meta}</span>
                         <Strip marks={v.marks} waitingSince={v.waitingSince} now={now} className={`strip-side ${item.session ? "" : "none"}`} />
@@ -200,7 +202,7 @@ function Header({ config, loading, onApply }: { config: ReturnType<typeof readCo
       <span className="brand">Inbox</span>
       <form className="filters" onSubmit={(e) => {
         e.preventDefault();
-        onApply({ repos: repos.split(",").map((r) => r.trim()).filter(Boolean), label: label.trim() });
+        onApply({ kind: config.kind, repos: repos.split(",").map((r) => r.trim()).filter(Boolean), label: label.trim() });
       }}>
         <label>
           <span className="sr">Repos</span>
@@ -210,10 +212,24 @@ function Header({ config, loading, onApply }: { config: ReturnType<typeof readCo
           <span className="sr">Label</span>
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="any label" spellCheck={false} className="label-input" />
         </label>
+        <label>
+          <span className="sr">Item type</span>
+          <select className="ghost" value={config.kind} onChange={(e) => onApply({ ...config, kind: e.target.value as Kind })}>
+            <option value="all">All</option>
+            <option value="issues">Issues</option>
+            <option value="prs">PRs</option>
+          </select>
+        </label>
         <button type="submit" className="ghost">{loading ? "Loading…" : "Show"}</button>
       </form>
     </header>
   );
+}
+
+function Indicator({ issue }: { issue: Issue }) {
+  return <span className={`item-kind ${issue.pullRequest && !issue.pullRequest.draft ? "review-ready" : ""}`} title={itemLabel(issue)} aria-label={itemLabel(issue)}>
+    {issue.pullRequest ? issue.pullRequest.draft ? "Draft PR" : "PR" : "Issue"}
+  </span>;
 }
 
 function Strip({ marks, waitingSince, now, className }: { marks: Mark[]; waitingSince: number | null; now: number; className: string }) {
@@ -255,7 +271,7 @@ type DetailProps = {
 
 function Detail({ item, client, marks, waitingSince, meta, failed, now, folders, onClose }: DetailProps) {
   const { issue, repo, session, lane } = item;
-  const [brief, setBrief] = useState(DEFAULT_BRIEF);
+  const [brief, setBrief] = useState(() => defaultBrief(issue));
   const [scope, setScope] = useState<string[]>([]);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -271,7 +287,7 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
     setBusy(true);
     setError(null);
     try {
-      const created = await boxen.api.createSession({ name: sessionName(issue), repo: cloneUrl(repo) });
+      const created = await boxen.api.createSession(sessionOptions(repo, issue));
       // Its own connection for the first turn; the list picks the Session up from the Directory.
       // ponytail: a tab closed before the socket joins leaves the Session without its first message.
       const first = boxen.session(created.id);
@@ -304,7 +320,7 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
         <header className="issue-head">
           <h1>{issue.title}</h1>
           <p className="meta">
-            <span className="mono">#{issue.number}</span> · {repo} · opened {ago(now - Date.parse(issue.createdAt))}
+            <Indicator issue={issue} /> <span className="mono">#{issue.number}</span> · {repo} · opened {ago(now - Date.parse(issue.createdAt))}
             {issue.author ? ` by ${issue.author}` : ""}{issue.labels.length ? ` · ${issue.labels.join(", ")}` : ""} · <a href={issue.url} target="_blank" rel="noreferrer">GitHub ↗</a>
           </p>
         </header>
@@ -356,8 +372,8 @@ function Detail({ item, client, marks, waitingSince, meta, failed, now, folders,
             <label htmlFor="brief">Brief for the agent</label>
             <textarea id="brief" rows={3} value={brief} onChange={(e) => setBrief(e.target.value)} />
             <div className="action-row">
-              <span className="meta">{scope.length ? `Stays inside ${scope.join(", ")}` : "No scope set"} · issue text attached</span>
-              <button className="primary" onClick={start} disabled={busy}>{busy ? "Starting…" : "Start session"}</button>
+              <span className="meta">{scope.length ? `Stays inside ${scope.join(", ")}` : "No scope set"} · {issue.pullRequest ? "PR description" : "issue text"} attached</span>
+              <button className="primary" onClick={start} disabled={busy}>{busy ? "Starting…" : issue.pullRequest ? "Start review" : "Start session"}</button>
             </div>
           </section>
         ) : (

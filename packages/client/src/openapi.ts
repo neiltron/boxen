@@ -344,8 +344,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A repo's open issues, newest first
-         * @description Pull requests are left out. At most 100. Public repos work without a GitHub token.
+         * A repo's open issues and same-repo pull requests, newest first
+         * @description Fork pull requests are left out. At most 100 items. Public repos work without a GitHub token.
          */
         get: operations["listIssues"];
         put?: never;
@@ -548,6 +548,12 @@ export interface components {
             createdAt: string;
             /** @description The login that opened it */
             author: string | null;
+            /** @description Present only for same-repo pull requests; absent for issues */
+            pullRequest?: {
+                headBranch: string;
+                baseBranch: string;
+                draft: boolean;
+            };
         };
         /**
          * @description A token every sandbox command gets in its environment. The web app and the worker both read the list from here.
@@ -1064,7 +1070,7 @@ export interface operations {
             query: {
                 /** @description owner/name */
                 repo: string;
-                /** @description Only issues with this label */
+                /** @description Only issues and pull requests with this label */
                 label?: string;
             };
             header?: never;
