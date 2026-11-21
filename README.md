@@ -62,9 +62,9 @@ For remote curl installs, `boxenctl` operations, networking, backups, and migrat
 boxen separates the **application** from the **infrastructure** that hosts it:
 
 - **The Application (`apps/`, `packages/`):** Built entirely on the standard Cloudflare Workers, SQLite Durable Objects, R2 (`BACKUP_BUCKET`), Static Assets (`ASSETS`), and `@cloudflare/sandbox` container APIs. The application code has no dependency on any specific host runtime or storage implementation.
-- **The Infrastructure (`ops/`, `install.sh`, `start.sh`):** Convenience runners that execute the Workers + Containers application on your own machines using [celld](https://github.com/denoland/celld) backed by any S3-compatible object store:
+- **The Infrastructure (`infra/`, `install.sh`):** Convenience runners that execute the Workers + Containers application on your own machines using [celld](https://github.com/denoland/celld) backed by any S3-compatible object store:
   - **Single-machine Linux installer (`install.sh` / `boxenctl`):** Bundles `celld` and a local RustFS container under `systemd` for a zero-external-dependency server setup.
-  - **Local development (`./start.sh`):** Runs `celld` against either your own **Cloudflare R2 / AWS S3** bucket (configured in `.env`) or a zero-config local `rustfs` process.
+  - **Local development (`pnpm start`, `infra/start.sh`):** Runs `celld` against either your own **Cloudflare R2 / AWS S3** bucket (configured in `.env`) or a zero-config local `rustfs` process.
   - **Cloud VM / Container hosts (EC2, ECS, Hetzner):** Run `celld` with Docker pointed at an S3 or R2 bucket (`celld --bucket s3://...`).
   - **Cloudflare Workers & Containers (`cf`):** Because boxen targets the native Cloudflare platform APIs (`wrangler.jsonc` / the unified [Cloudflare `cf` CLI](https://developers.cloudflare.com/cf/reference/wrangler-to-cf/)), it is designed to map directly to Cloudflare's managed runtime (direct `cf deploy` instructions and tests are a follow-up).
 

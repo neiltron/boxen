@@ -1,15 +1,16 @@
 #!/bin/bash
-# Stop the boxen celld node (and optionally rustfs). Usage: ./stop.sh [rustfs]
+# Stop the boxen celld node (and optionally rustfs). Usage: pnpm stop [rustfs]
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 case "${1:-}" in
   ""|rustfs) ;;
   -h|--help)
-    echo "Usage: ./stop.sh [rustfs]"
+    echo "Usage: pnpm stop [rustfs]"
     exit 0
     ;;
   *)
-    echo "Usage: ./stop.sh [rustfs]" >&2
+    echo "Usage: pnpm stop [rustfs]" >&2
     exit 2
     ;;
 esac
@@ -28,7 +29,8 @@ else
 fi
 
 if [[ "${1:-}" == "rustfs" ]]; then
-  if pkill -f "rustfs server" 2>/dev/null; then
+  # Only this checkout's rustfs, not one another checkout started.
+  if pkill -f "rustfs server .*$PWD/.data/rustfs" 2>/dev/null; then
     echo "rustfs stopped"
   else
     echo "rustfs was not running"

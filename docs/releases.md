@@ -11,29 +11,29 @@ The current candidate is **`0.1.0-rc.3`**, which upgrades `pi-durable`, `pi-ai`,
 | `package.json` | Application version and exact `pnpm` version (`packageManager`) |
 | `apps/worker/package.json` | Exact direct pins for `@earendil-works/pi-durable`, `@earendil-works/pi-ai`, `@earendil-works/chord`, and `@cloudflare/sandbox` |
 | `pnpm-lock.yaml` | Full resolved dependency graph and package integrity hashes |
-| `ops/runtime.json` | `celld` and Node versions, download URLs, and SHA-256 checksums; RustFS, probe, and Sandbox base image digests |
-| `ops/compatibility.json` | State/API generations, supported upgrade paths, restart policy, and rollback caveats |
+| `infra/runtime.json` | `celld` and Node versions, download URLs, and SHA-256 checksums; RustFS, probe, and Sandbox base image digests |
+| `infra/compatibility.json` | State/API generations, supported upgrade paths, restart policy, and rollback caveats |
 | `CHANGELOG.md` | Human-readable changes and migration notes |
 
-## Release tooling (`ops/release.mjs`)
+## Release tooling (`infra/release.mjs`)
 
 | Command | Purpose |
 |---|---|
-| `node ops/release.mjs sync` | Propagates pins from `package.json` and `ops/runtime.json` to `ops/boxenctl.ts`, `install.sh` (bootstrap pins and default `BOXEN_REF`), workspace `package.json` versions, root `engines.node`, `apps/worker/Dockerfile`, and `start.sh`/`stop.sh` `celld` references |
-| `node ops/release.mjs check` | Verifies zero drift in generated files, exact critical dependency pins, lockfile integrity and `pnpm` pin, and Sandbox SDK/image version parity (read-only; also run via `pnpm run check:release`) |
-| `node ops/release.mjs manifest` | Prints JSON release metadata (exact dependency versions/integrities, runtime pins, Git commit, version, lockfile SHA-256, compatibility declarations, dirty-checkout status) |
-| `node ops/release.mjs pack` | Packages `dist/release/` from the tagged `HEAD` commit; refuses dirty checkouts or tags not pointing to `HEAD` |
+| `node infra/release.mjs sync` | Propagates pins from `package.json` and `infra/runtime.json` to `infra/boxenctl.ts`, `install.sh` (bootstrap pins and default `BOXEN_REF`), workspace `package.json` versions, root `engines.node`, `apps/worker/Dockerfile`, and `infra/start.sh`/`infra/stop.sh` `celld` references |
+| `node infra/release.mjs check` | Verifies zero drift in generated files, exact critical dependency pins, lockfile integrity and `pnpm` pin, and Sandbox SDK/image version parity (read-only; also run via `pnpm run check:release`) |
+| `node infra/release.mjs manifest` | Prints JSON release metadata (exact dependency versions/integrities, runtime pins, Git commit, version, lockfile SHA-256, compatibility declarations, dirty-checkout status) |
+| `node infra/release.mjs pack` | Packages `dist/release/` from the tagged `HEAD` commit; refuses dirty checkouts or tags not pointing to `HEAD` |
 
-Run release verification using the Node version from `ops/runtime.json` and the `pnpm` version in `package.json`:
+Run release verification using the Node version from `infra/runtime.json` and the `pnpm` version in `package.json`:
 
 ```sh
 cd boxen
 pnpm install --frozen-lockfile
 pnpm run check:release
-node ops/release.mjs manifest
+node infra/release.mjs manifest
 ```
 
-`ops/release.mjs` uses the `yaml` package during development and CI; the host manager (`ops/boxenctl.ts`) remains Node-standard-library-only per [ADR-0001](adr/0001-installer-stays-standalone.md).
+`infra/release.mjs` uses the `yaml` package during development and CI; the host manager (`infra/boxenctl.ts`) remains Node-standard-library-only per [ADR-0001](adr/0001-installer-stays-standalone.md).
 
 ## Version policy
 
@@ -42,24 +42,24 @@ Release Git tags use the format `v<VERSION>` (for example, `v0.1.0-rc.3`).
 - **`0.x.y` (patch)**: Compatible fixes, including compatible dependency updates.
 - **`0.x.0` (minor)**: New features or breaking changes (document breaking behavior explicitly in [CHANGELOG.md](../CHANGELOG.md)).
 - **`-rc.N`**: Release candidate; not a production-readiness claim.
-- **State and API generations**: Change `stateGeneration` or `apiGeneration` in `ops/compatibility.json` only when their compatibility contract changes. They are declarations, not an automated migration mechanism.
+- **State and API generations**: Change `stateGeneration` or `apiGeneration` in `infra/compatibility.json` only when their compatibility contract changes. They are declarations, not an automated migration mechanism.
 - **Immutable tags and assets**: Never move a published tag or replace published release assets—ship a new version to correct mistakes. Restrict release-tag creation and forbid updates/deletions through GitHub repository rulesets (a repository-admin action outside this checkout).
 
 ## Preparing a release candidate
 
 1. **Scope the change**: Keep one intentional dependency or runtime change per PR where practical, and separate runtime upgrades from release-tooling changes.
-2. **Update inputs**: Edit the version in `package.json`, relevant pins in `apps/worker/package.json` and `ops/runtime.json`, `CHANGELOG.md`, and `ops/compatibility.json`. List only tested upgrade paths in `supportedUpgradeFrom`—an empty array means none are certified.
+2. **Update inputs**: Edit the version in `package.json`, relevant pins in `apps/worker/package.json` and `infra/runtime.json`, `CHANGELOG.md`, and `infra/compatibility.json`. List only tested upgrade paths in `supportedUpgradeFrom`—an empty array means none are certified.
 3. **Update the lockfile**: Run pinned `pnpm` without opportunistically upgrading unrelated packages. Keep the `@cloudflare/sandbox` SDK version and `sandboxImage` tag identical, and resolve/review the image digest.
 4. **Sync and run checks**:
    ```sh
-   node ops/release.mjs sync
+   node infra/release.mjs sync
    pnpm install --frozen-lockfile
    pnpm check
    ```
    Commit generated files alongside their inputs.
 5. **Run the isolated live smoke test** with the exact pinned `celld` binary:
    ```sh
-   node ops/smoke.ts --celld /path/to/celld-0.6.2
+   node infra/smoke.ts --celld /path/to/celld-0.6.2
    ```
 6. **Tag the merged commit** when ready to create a release draft:
    ```sh
@@ -83,11 +83,11 @@ Before publishing a draft release, record the candidate commit, tested platform,
 - [ ] Verify release artifact checksums, version/tag/commit, and migration notes.
 
 > [!IMPORTANT]
-> **Automated smoke test limits:** `ops/smoke.ts` exercises deployment, UI HTML/JS assets, API, API 404 handling, storage, and the real Sandbox SDK reader/argv/stream-label path (using a temporary smoke-only worker entry). It does **not** test model execution, PTY transport, upgrade adoption, host services, Tailscale, or workspace recovery. Do not publish a stable release based solely on automated smoke. Early RCs may be published for testing with incomplete checks explicitly disclosed, provided they do not claim certified upgrade paths.
+> **Automated smoke test limits:** `infra/smoke.ts` exercises deployment, UI HTML/JS assets, API, API 404 handling, storage, and the real Sandbox SDK reader/argv/stream-label path (using a temporary smoke-only worker entry). It does **not** test model execution, PTY transport, upgrade adoption, host services, Tailscale, or workspace recovery. Do not publish a stable release based solely on automated smoke. Early RCs may be published for testing with incomplete checks explicitly disclosed, provided they do not claim certified upgrade paths.
 
 ## Release artifacts and verification
 
-`node ops/release.mjs pack` writes `dist/release/`:
+`node infra/release.mjs pack` writes `dist/release/`:
 
 | Artifact | Contents |
 |---|---|

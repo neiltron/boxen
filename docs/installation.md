@@ -103,8 +103,8 @@ A pipe-to-bash invocation also works (`curl -fsSL ... | BOXEN_REF=<COMMIT_OR_TAG
 ```sh
 # Read-only inspection and dry-run planning (requires any Node 24+; works on macOS too,
 # reporting supported_host: false without making any changes):
-node ops/boxenctl.ts inspect --json
-node ops/boxenctl.ts setup --access tailscale --dry-run --no-input --json
+node infra/boxenctl.ts inspect --json
+node infra/boxenctl.ts setup --access tailscale --dry-run --no-input --json
 
 # Non-interactive install (requires root or passwordless/preauthorized sudo):
 ./install.sh --access tailscale --yes --no-input --json
@@ -179,7 +179,7 @@ sudo boxenctl uninstall --yes --no-input
    ./install.sh --yes --no-input
    ```
 
-**Why you must run the new release's `./install.sh`:** An installed `boxenctl` verifies that the target source's `package.json` version and `ops/runtime.json` pins match its own embedded pins, rejecting mismatches before changing anything. Running `./install.sh` from the new release updates `boxenctl`, replaces mismatched `celld` or Node binaries (recording restart intent before replacement so failed retries still restart), and deploys the new build.
+**Why you must run the new release's `./install.sh`:** An installed `boxenctl` verifies that the target source's `package.json` version and `infra/runtime.json` pins match its own embedded pins, rejecting mismatches before changing anything. Running `./install.sh` from the new release updates `boxenctl`, replaces mismatched `celld` or Node binaries (recording restart intent before replacement so failed retries still restart), and deploys the new build.
 
 Ordinary worker and UI updates without runtime or unit changes hot-adopt without restarting `celld`. Updates that change runtime binaries or systemd units restart the affected service(s), which clears live sandbox container disks.
 
@@ -266,20 +266,20 @@ The application itself only talks to `celld`'s Durable Object SQLite storage and
 From a repository checkout after `pnpm install`:
 
 ```sh
-pnpm run check:ops                     # ops/boxenctl.test.ts, tsc -p ops, shellcheck install.sh (requires shellcheck)
+pnpm run check:infra                     # infra/boxenctl.test.ts, tsc -p infra, shellcheck install.sh (requires shellcheck)
 pnpm --filter @boxen/worker run check  # worker, assets, workspace, contract, and protocol checks
 pnpm --filter @boxen/client run check  # client checks including session.check.ts
 pnpm check                             # all of the above plus every other workspace check
 ```
 
-`ops/boxenctl.ts` imports nothing outside the Node standard library (see [ADR-0001](adr/0001-installer-stays-standalone.md)); the root `package.json` only supplies TypeScript and `@types/node` for type-checking.
+`infra/boxenctl.ts` imports nothing outside the Node standard library (see [ADR-0001](adr/0001-installer-stays-standalone.md)); the root `package.json` only supplies TypeScript and `@types/node` for type-checking.
 
 ### Isolated live smoke test
 
 Requires local Docker, `celld` `0.6.2`, `pnpm install`, and `pnpm build`:
 
 ```sh
-node ops/smoke.ts --celld /path/to/celld-0.6.2
+node infra/smoke.ts --celld /path/to/celld-0.6.2
 ```
 
 This starts a disposable RustFS container, deploys the worker, sandbox image, and built UI assets to an isolated `celld` process, verifies storage, UI HTML/JS assets, API responses, API 404 handling, and Sandbox SDK reader/argv/stream-label paths, and cleans up automatically. It does not exercise model calls, sandbox terminals, Tailscale, or systemd.

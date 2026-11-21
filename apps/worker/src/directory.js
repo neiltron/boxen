@@ -178,7 +178,7 @@ export class Directory extends DurableObject {
   }
 
   // Tokens every sandbox command gets (GH_TOKEN, LINEAR_API_KEY), posted by
-  // start.sh. Empty values remove a key.
+  // infra/start.sh. Empty values remove a key.
   async setSecrets(secrets) {
     const unknown = Object.keys(secrets).filter((k) => !SECRET_KEYS.includes(k));
     if (unknown.length) throw new Error(`unknown token ${unknown.join(", ")}; expected ${SECRET_KEYS.join(" or ")}`);
