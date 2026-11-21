@@ -40,7 +40,7 @@ export function dependencySnapshot(pkg, graph) {
 }
 
 function generatedFiles() {
-  const runtime = json('ops/runtime.json');
+  const runtime = json('infra/runtime.json');
   const pkg = json('package.json');
   assert.match(pkg.version, /^0\.\d+\.\d+(?:-rc\.\d+)?$/, 'Use a documented pre-1.0 release version');
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
@@ -66,8 +66,8 @@ function generatedFiles() {
   files.set('package.json', JSON.stringify({ ...pkg, engines: {
     ...pkg.engines, node: `>=${runtime.node.version} <${Number(runtime.node.version.split('.')[0]) + 1}`,
   } }, null, 2) + '\n');
-  files.set('ops/boxenctl.ts', replaceBlock(read('ops/boxenctl.ts'), /\/\/ BEGIN GENERATED RUNTIME PINS[^]*?\/\/ END GENERATED RUNTIME PINS/,
-    '// BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)\n' +
+  files.set('infra/boxenctl.ts', replaceBlock(read('infra/boxenctl.ts'), /\/\/ BEGIN GENERATED RUNTIME PINS[^]*?\/\/ END GENERATED RUNTIME PINS/,
+    '// BEGIN GENERATED RUNTIME PINS (node infra/release.mjs sync)\n' +
     Object.entries(constants).map(([key, value]) => `export const ${key} = '${value}';`).join('\n') +
     '\n// END GENERATED RUNTIME PINS'));
   let installer = replaceBlock(read('install.sh'), /# BEGIN GENERATED BOOTSTRAP PINS[^]*?# END GENERATED BOOTSTRAP PINS/,
@@ -75,7 +75,7 @@ function generatedFiles() {
   installer = replaceBlock(installer, /ref="\$\{BOXEN_REF:-[^}]+\}"/, `ref="\${BOXEN_REF:-v${pkg.version}}"`);
   files.set('install.sh', installer);
   files.set('apps/worker/Dockerfile', replaceBlock(read('apps/worker/Dockerfile'), /^FROM .+$/m, `FROM ${runtime.sandboxImage}`));
-  for (const name of ['start.sh', 'stop.sh']) {
+  for (const name of ['infra/start.sh', 'infra/stop.sh']) {
     files.set(name, read(name).replace(/celld-\d+\.\d+\.\d+/g, `celld-${runtime.celld.version}`));
   }
   for (const directory of ['apps', 'packages']) {
@@ -91,9 +91,9 @@ function generatedFiles() {
 export function check({ sync = false } = {}) {
   for (const [name, content] of generatedFiles()) {
     if (sync) fs.writeFileSync(path.join(root, name), content);
-    else assert.equal(read(name), content, `${name} is stale; run node ops/release.mjs sync`);
+    else assert.equal(read(name), content, `${name} is stale; run node infra/release.mjs sync`);
   }
-  const runtime = json('ops/runtime.json');
+  const runtime = json('infra/runtime.json');
   const lock = read('pnpm-lock.yaml');
   const dependencies = dependencySnapshot(json('apps/worker/package.json'), lockGraph(lock));
   const manager = parseAllDocuments(lock).map((d) => d.toJS())
@@ -111,11 +111,11 @@ export function manifest() {
     tag: `v${pkg.version}`, gitCommit: git('rev-parse', 'HEAD'),
     dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
     lockfileSha256: sha256(read('pnpm-lock.yaml')), packageManager: pkg.packageManager,
-    runtime: json('ops/runtime.json'), dependencies,
+    runtime: json('infra/runtime.json'), dependencies,
     distribution: 'source',
     // Do not imply byte-reproducible builds: apt packages are resolved at image build time.
     reproducibleContainerBuild: false,
-    compatibility: json('ops/compatibility.json'),
+    compatibility: json('infra/compatibility.json'),
   };
 }
 
@@ -145,5 +145,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   else if (command === 'check') check();
   else if (command === 'manifest') console.log(JSON.stringify(manifest(), null, 2));
   else if (command === 'pack') pack();
-  else throw new Error('Usage: node ops/release.mjs check|sync|manifest|pack');
+  else throw new Error('Usage: node infra/release.mjs check|sync|manifest|pack');
 }

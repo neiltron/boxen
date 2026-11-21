@@ -1,6 +1,6 @@
 {
   // Type-check only: the manager runs as-is on Node through type stripping.
-  // pnpm run check:ops (the workspace root supplies typescript and @types/node)
+  // pnpm run check:infra (the workspace root supplies typescript and @types/node)
   "compilerOptions": {
     "target": "es2023",
     "lib": ["ES2023"],

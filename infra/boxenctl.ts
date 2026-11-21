@@ -44,7 +44,7 @@ export const legacy = {
 };
 const LEGACY_USER = 'pids';
 const LEGACY_SERVICES = ['pi-durable-sessions', 'pi-durable-sessions-storage'];
-// BEGIN GENERATED RUNTIME PINS (node ops/release.mjs sync)
+// BEGIN GENERATED RUNTIME PINS (node infra/release.mjs sync)
 export const APPLICATION_VERSION = '0.1.0-rc.3';
 export const CELLD_VERSION = '0.6.2';
 export const CELLD_URL = 'https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz';
@@ -59,7 +59,7 @@ export const SANDBOX_NETWORK = 'celld'; // Created by celld; its nftables policy
 // The pnpm workspace root, then the directories its globs (pnpm-workspace.yaml)
 // cover, whole, so a new package needs no edit here; then the installer.
 export const SOURCE_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'];
-export const SOURCE_DIRS = ['apps', 'packages', 'ops'];
+export const SOURCE_DIRS = ['apps', 'packages', 'infra'];
 const OPTIONAL_DIRS = new Set(['packages']); // Absent until the first library package lands.
 // Also what prepareSource writes into apps/worker/, so a retained release hashes as its source.
 const SKIP = new Set(['node_modules', 'dist', '.git', '__pycache__', '.env', '.DS_Store',
@@ -1041,7 +1041,7 @@ function installManager(): void {
 /** A retained manager must never install a different release's source with its own old pins. */
 function validateSourceRelease(source: string): void {
   const pkg = boxenctl.readJson(path.join(source, 'package.json'), {}) as Obj;
-  const runtime = boxenctl.readJson(path.join(source, 'ops/runtime.json'), {}) as Obj;
+  const runtime = boxenctl.readJson(path.join(source, 'infra/runtime.json'), {}) as Obj;
   const matches = pkg.version === APPLICATION_VERSION &&
     runtime.celld?.version === CELLD_VERSION && runtime.celld?.url === CELLD_URL && runtime.celld?.sha256 === CELLD_SHA &&
     runtime.node?.version === NODE_VERSION.slice(1) && runtime.node?.url === NODE_URL && runtime.node?.sha256 === NODE_SHA &&

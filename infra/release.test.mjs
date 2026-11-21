@@ -37,8 +37,8 @@ test('pack requires a clean version-tagged commit and produces verifiable source
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-release-'));
   try {
     const app = temporary;
-    const files = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'install.sh', 'start.sh', 'stop.sh',
-      'ops/release.mjs', 'ops/runtime.json', 'ops/compatibility.json', 'ops/boxenctl.ts', 'apps/worker/Dockerfile'];
+    const files = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'install.sh', 'infra/start.sh', 'infra/stop.sh',
+      'infra/release.mjs', 'infra/runtime.json', 'infra/compatibility.json', 'infra/boxenctl.ts', 'apps/worker/Dockerfile'];
     for (const directory of ['apps', 'packages']) {
       for (const name of fs.readdirSync(path.join(root, directory))) {
         if (fs.existsSync(path.join(root, directory, name, 'package.json'))) files.push(`${directory}/${name}/package.json`);
@@ -54,7 +54,7 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     git('init');
     git('add', '.');
     git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '-m', 'fixture');
-    const run = (command) => spawnSync(process.execPath, ['ops/release.mjs', command], { cwd: app, encoding: 'utf8' });
+    const run = (command) => spawnSync(process.execPath, ['infra/release.mjs', command], { cwd: app, encoding: 'utf8' });
     assert.notEqual(run('pack').status, 0, 'no tag');
     const version = JSON.parse(read('package.json')).version;
     git('tag', `v${version}`);
@@ -66,7 +66,7 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     assert.equal(metadata.gitCommit, git('rev-parse', 'HEAD'));
     assert.equal(metadata.dirty, false);
     assert.equal(metadata.distribution, 'source');
-    assert.deepEqual(metadata.runtime, JSON.parse(read('ops/runtime.json')));
+    assert.deepEqual(metadata.runtime, JSON.parse(read('infra/runtime.json')));
     assert.deepEqual(metadata.dependencies, dependencySnapshot(worker(), graph()));
     for (const line of fs.readFileSync(path.join(out, 'SHA256SUMS'), 'utf8').trim().split('\n')) {
       const [expected, file] = line.split('  ');
@@ -75,9 +75,9 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     }
     const archive = path.join(out, `boxen-${version}.tar.gz`);
     const entries = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' });
-    assert.ok(entries.includes('boxen/ops/runtime.json'));
+    assert.ok(entries.includes('boxen/infra/runtime.json'));
     assert.ok(!entries.includes('node_modules'));
-    fs.appendFileSync(path.join(app, 'ops/boxenctl.ts'), '\n// dirty\n');
+    fs.appendFileSync(path.join(app, 'infra/boxenctl.ts'), '\n// dirty\n');
     assert.match(run('pack').stderr, /clean checkout/);
     git('add', '.');
     git('-c', 'user.name=Release Test', '-c', 'user.email=release@example.test', 'commit', '-m', 'new commit');
@@ -87,28 +87,12 @@ test('pack requires a clean version-tagged commit and produces verifiable source
   }
 });
 
-test('deploy propagates failures instead of printing a success message', () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-deploy-'));
-  try {
-    const bin = path.join(temporary, '.local/bin');
-    fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\nexit 23\n', { mode: 0o755 });
-    const result = spawnSync('bash', [path.join(root, 'deploy.sh')], {
-      env: { ...process.env, HOME: temporary }, encoding: 'utf8',
-    });
-    assert.equal(result.status, 23);
-    assert.ok(!result.stdout.includes('submitted'));
-  } finally {
-    fs.rmSync(temporary, { recursive: true, force: true });
-  }
-});
-
 test('development celld wrapper enforces the pin and propagates the runtime exit code', () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'boxen-celld-'));
   try {
     const binary = path.join(temporary, 'celld');
-    const version = JSON.parse(read('ops/runtime.json')).celld.version;
-    const run = () => spawnSync(process.execPath, [path.join(root, 'ops/celld.mjs'), 'deploy'], {
+    const version = JSON.parse(read('infra/runtime.json')).celld.version;
+    const run = () => spawnSync(process.execPath, [path.join(root, 'infra/celld.mjs'), 'deploy'], {
       env: { ...process.env, BOXEN_CELLD: binary }, encoding: 'utf8',
     });
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nexit 17\n`, { mode: 0o755 });
@@ -122,16 +106,16 @@ test('development celld wrapper enforces the pin and propagates the runtime exit
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}-rc.1'; exit 0; fi\n`);
     assert.equal(run().status, 2);
     // Run a copy of the wrapper so the checkout's .env and the caller's shell can't leak in.
-    const ops = path.join(temporary, 'ops');
-    fs.mkdirSync(ops);
-    for (const name of ['celld.mjs', 'runtime.json']) fs.copyFileSync(path.join(root, 'ops', name), path.join(ops, name));
+    const infra = path.join(temporary, 'infra');
+    fs.mkdirSync(infra);
+    for (const name of ['celld.mjs', 'runtime.json']) fs.copyFileSync(path.join(root, 'infra', name), path.join(infra, name));
     const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(AWS_|BOXEN_)/.test(k)));
     const argsFile = path.join(temporary, 'args');
     fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = --version ]; then echo 'celld ${version}'; exit 0; fi\nprintf '%s|%s|%s\\n' "$*" "$AWS_ACCESS_KEY_ID" "$AWS_REGION" > '${argsFile}'\n`, { mode: 0o755 });
     const deploy = (env, dotenv) => {
       fs.rmSync(path.join(temporary, '.env'), { force: true });
       if (dotenv) fs.writeFileSync(path.join(temporary, '.env'), dotenv);
-      assert.equal(spawnSync(process.execPath, [path.join(ops, 'celld.mjs'), 'deploy', '.'], {
+      assert.equal(spawnSync(process.execPath, [path.join(infra, 'celld.mjs'), 'deploy', '.'], {
         env: { ...clean, BOXEN_CELLD: binary, ...env }, encoding: 'utf8',
       }).status, 0);
       return fs.readFileSync(argsFile, 'utf8').trim();

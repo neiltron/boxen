@@ -2,7 +2,7 @@
 /**
  * Isolated live storage + deployment + HTTP + sandbox adapter smoke. Never installs host services.
  * Requires local Docker, celld 0.6.2, pnpm install, and pnpm build.
- * Usage: node ops/smoke.ts --celld /path/to/celld-0.6.2
+ * Usage: node infra/smoke.ts --celld /path/to/celld-0.6.2
  * Does not start a model turn or test a sandbox PTY/systemd/Tailscale.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -60,7 +60,7 @@ async function smoke(binary: string): Promise<void> {
     const config = wranglerWithAssets(fs.readFileSync(wrangler, 'utf8'));
     if (!config.includes('"main": "src/index.js"')) throw new Error('Unexpected worker main');
     fs.writeFileSync(wrangler, config.replace('"main": "src/index.js"', '"main": "smoke.js"'));
-    fs.copyFileSync(path.join(source, 'ops/sandbox-smoke.js'), path.join(project, 'apps/worker/smoke.js'));
+    fs.copyFileSync(path.join(source, 'infra/sandbox-smoke.js'), path.join(project, 'apps/worker/smoke.js'));
     fs.writeFileSync(path.join(project, 'apps/worker/.dockerignore'), 'node_modules\nui-dist\n');
     const keys = { access_key: hex(), secret_key: hex() + hex() };
     const envFile = path.join(project, 'storage.env');

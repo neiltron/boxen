@@ -24,7 +24,7 @@ jobs:
         run: |
           node <<'JS'
           const fs = require('node:fs');
-          const r = require('./ops/runtime.json');
+          const r = require('./infra/runtime.json');
           const p = require('./package.json');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `node=${r.node.version}\npnpm=${p.packageManager}\n`);
           JS
@@ -51,7 +51,7 @@ jobs:
           import { execFileSync } from 'node:child_process';
           import { createHash } from 'node:crypto';
           import { gunzipSync } from 'node:zlib';
-          const { celld } = JSON.parse(fs.readFileSync('ops/runtime.json', 'utf8'));
+          const { celld } = JSON.parse(fs.readFileSync('infra/runtime.json', 'utf8'));
           const archive = `${process.env.RUNNER_TEMP}/celld.gz`;
           execFileSync('curl', ['--fail', '--location', '--retry', '3', '--proto', '=https', '--tlsv1.2', celld.url, '-o', archive]);
           const bytes = fs.readFileSync(archive);
@@ -59,7 +59,7 @@ jobs:
           fs.writeFileSync(`${process.env.RUNNER_TEMP}/celld`, gunzipSync(bytes), { mode: 0o755 });
           JS
       - name: Isolated live deployment, storage, UI and API smoke
-        run: node ops/smoke.ts --celld "$RUNNER_TEMP/celld"
+        run: node infra/smoke.ts --celld "$RUNNER_TEMP/celld"
       - name: Package the tagged source release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -68,7 +68,7 @@ jobs:
           node <<'JS'
           if (process.env.RELEASE_TAG !== `v${require('./package.json').version}`) throw new Error('Tag/version mismatch');
           JS
-          node ops/release.mjs pack
+          node infra/release.mjs pack
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
