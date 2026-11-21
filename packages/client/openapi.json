@@ -626,23 +626,6 @@
         "description": "The request was not a WebSocket upgrade",
         "content": { "text/plain": { "schema": { "type": "string" } } }
       },
-      "DefaultAgent": {
-        "type": "object",
-        "required": ["model"],
-        "additionalProperties": false,
-        "properties": {
-          "model": {
-            "type": "object",
-            "required": ["provider", "modelId"],
-            "additionalProperties": false,
-            "properties": {
-              "provider": { "type": "string", "minLength": 1 },
-              "modelId": { "type": "string", "minLength": 1 }
-            }
-          },
-          "thinkingLevel": { "type": "string", "description": "Must be supported by the selected model. Omit to use the runtime default." }
-        }
-      },
       "AuthStatus": {
         "description": "The connected providers and what new Sessions start on",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthStatus" } } }

@@ -630,12 +630,6 @@ export interface components {
                 "text/plain": string;
             };
         };
-        DefaultAgent: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content?: never;
-        };
         /** @description The connected providers and what new Sessions start on */
         AuthStatus: {
             headers: {
