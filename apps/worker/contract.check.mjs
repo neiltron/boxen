@@ -51,12 +51,11 @@ async function github(url) {
     const label = new URL(url).searchParams.get("labels");
     return Response.json(all.filter((i) => !label || i.labels.some((l) => l.name === label)));
   }
-  if (/^\/repos\/neiltron\/celld-test\/pulls\/(9|10|11|12)$/.test(pathname)) {
-    const number = Number(pathname.split("/").at(-1));
-    return Response.json({ draft: number === 10,
+  if (pathname === "/repos/neiltron/celld-test/pulls") {
+    return Response.json([9, 10, 11, 12].map((number) => ({ number, draft: number === 10,
       head: { ref: `review/${number}`, repo: number === 12 ? null : { id: number === 11 ? 2 : 1 } },
       base: { ref: "release", repo: { id: 1 } },
-    });
+    })));
   }
   if (pathname === "/repos/neiltron/celld-test/git/trees/main") {
     return Response.json({ truncated: false, tree: [{ path: "src", type: "tree" }, { path: "src/a.js", type: "blob" }, { path: "README.md", type: "blob" }] });
