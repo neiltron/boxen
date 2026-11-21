@@ -38,7 +38,6 @@ window.harness = {
   get workspace() { return workspace; },
   toggle: () => togglePanels(workspace, sidebar),
   restore: () => restorePanels(workspace, sidebar),
-  unbind: () => unbind?.(),
 };
 setup();
 
@@ -50,7 +49,6 @@ declare global {
       workspace: WorkspaceHandle;
       toggle(): void;
       restore(): boolean;
-      unbind(): void;
     };
   }
 }

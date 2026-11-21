@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels its older run; main and tag runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -37,29 +42,13 @@ jobs:
         run: |
           npm install --global "$PACKAGE_MANAGER"
           pnpm install --frozen-lockfile
+      # shellcheck is preinstalled on the ubuntu-24.04 image, and so are the
+      # system libraries Chromium needs (the image ships Google Chrome). The
+      # workspace tests run headless, so only Chromium's headless shell is needed.
       - name: Install check tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-          pnpm --dir apps/ui exec playwright install --with-deps chromium
+        run: pnpm --dir apps/ui exec playwright install --only-shell chromium
       - name: Release consistency and application checks
         run: pnpm check
-      - name: Download checksum-pinned celld
-        run: |
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          import { execFileSync } from 'node:child_process';
-          import { createHash } from 'node:crypto';
-          import { gunzipSync } from 'node:zlib';
-          const { celld } = JSON.parse(fs.readFileSync('infra/runtime.json', 'utf8'));
-          const archive = `${process.env.RUNNER_TEMP}/celld.gz`;
-          execFileSync('curl', ['--fail', '--location', '--retry', '3', '--proto', '=https', '--tlsv1.2', celld.url, '-o', archive]);
-          const bytes = fs.readFileSync(archive);
-          if (createHash('sha256').update(bytes).digest('hex') !== celld.sha256) throw new Error('celld checksum mismatch');
-          fs.writeFileSync(`${process.env.RUNNER_TEMP}/celld`, gunzipSync(bytes), { mode: 0o755 });
-          JS
-      - name: Isolated live deployment, storage, UI and API smoke
-        run: node infra/smoke.ts --celld "$RUNNER_TEMP/celld"
       - name: Package the tagged source release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -76,9 +65,54 @@ jobs:
           path: dist/release/
           if-no-files-found: error
 
+  # Runs alongside validate: it needs only an install and the UI build.
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Read toolchain pins
+        id: pins
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = require('./infra/runtime.json');
+          const p = require('./package.json');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `node=${r.node.version}\npnpm=${p.packageManager}\n`);
+          JS
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+      - name: Install pinned package manager and dependencies
+        env:
+          PACKAGE_MANAGER: ${{ steps.pins.outputs.pnpm }}
+        run: |
+          npm install --global "$PACKAGE_MANAGER"
+          pnpm install --frozen-lockfile
+      - name: Build the UI the worker serves
+        run: pnpm build
+      - name: Download checksum-pinned celld
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { gunzipSync } from 'node:zlib';
+          const { celld } = JSON.parse(fs.readFileSync('infra/runtime.json', 'utf8'));
+          const archive = `${process.env.RUNNER_TEMP}/celld.gz`;
+          execFileSync('curl', ['--fail', '--location', '--retry', '3', '--proto', '=https', '--tlsv1.2', celld.url, '-o', archive]);
+          const bytes = fs.readFileSync(archive);
+          if (createHash('sha256').update(bytes).digest('hex') !== celld.sha256) throw new Error('celld checksum mismatch');
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/celld`, gunzipSync(bytes), { mode: 0o755 });
+          JS
+      - name: Isolated live deployment, storage, UI and API smoke
+        run: node infra/smoke.ts --celld "$RUNNER_TEMP/celld"
+
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: validate
+    needs: [validate, smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

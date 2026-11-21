@@ -12,9 +12,10 @@ import { apiClient, validPreviewPort } from "@boxen/client";
 import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { load } from "./check-harness.mjs";
 
-// Every method an OpenAPI path item can declare, except OPTIONS: the router
-// answers every OPTIONS preflight with CORS headers, before any route.
-const METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD", "PATCH", "TRACE"];
+// Every method an OpenAPI path item can declare, except OPTIONS (the router
+// answers every preflight with CORS headers, before any route) and TRACE
+// (fetch can't send it; a trace operation in the spec fails the coverage check).
+const METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD", "PATCH"];
 const base = "http://localhost:8093";
 
 // The boundaries past the cells: model providers and their sign-in, GitHub,
@@ -46,9 +47,17 @@ async function github(url) {
   if (pathname === "/repos/neiltron/celld-test/issues") {
     const issue = { number: 7, title: "Fix it", body: null, html_url: "https://github.com/neiltron/celld-test/issues/7",
       labels: [{ name: "ready-for-agent" }], created_at: "2026-10-02T12:00:00Z", user: { login: "neiltron" } };
-    const all = [issue, { ...issue, number: 8, labels: [] }, { ...issue, number: 9, pull_request: {} }];
+    const all = [issue, { ...issue, number: 8, labels: [] }, ...[9, 10, 11, 12].map((number) => ({
+      ...issue, number, html_url: `https://github.com/neiltron/celld-test/pull/${number}`, pull_request: {},
+    }))];
     const label = new URL(url).searchParams.get("labels");
     return Response.json(all.filter((i) => !label || i.labels.some((l) => l.name === label)));
+  }
+  if (pathname === "/repos/neiltron/celld-test/pulls") {
+    return Response.json([9, 10, 11, 12].map((number) => ({ number, draft: number === 10,
+      head: { ref: `review/${number}`, repo: number === 12 ? null : { id: number === 11 ? 2 : 1 } },
+      base: { ref: "release", repo: { id: 1 } },
+    })));
   }
   if (pathname === "/repos/neiltron/celld-test/git/trees/main") {
     return Response.json({ truncated: false, tree: [{ path: "src", type: "tree" }, { path: "src/a.js", type: "blob" }, { path: "README.md", type: "blob" }] });
@@ -249,9 +258,16 @@ assert.deepEqual((await client.listRepos()).map((r) => r.fullName), ["neiltron/c
 assert.deepEqual(await client.listBranches("neiltron/celld-test"), { defaultBranch: "main", branches: ["main", "dev"] });
 await assert.rejects(client.listBranches("not a repo"), /owner\/name/);
 await assert.rejects(client.listBranches("neiltron/missing"), /GitHub 404: Not Found/);
-assert.deepEqual((await client.listIssues("neiltron/celld-test")).map((i) => i.number), [7, 8]);
-assert.deepEqual(await client.listIssues("neiltron/celld-test", "ready-for-agent"), [{ number: 7, title: "Fix it", body: "",
-  url: "https://github.com/neiltron/celld-test/issues/7", labels: ["ready-for-agent"], createdAt: "2026-10-02T12:00:00Z", author: "neiltron" }]);
+const inbox = await client.listIssues("neiltron/celld-test");
+assert.deepEqual(inbox.map((i) => i.number), [7, 8, 9, 10], "same-repo PRs included; fork and deleted-head-repo PRs excluded");
+assert.deepEqual(inbox[0], { number: 7, title: "Fix it", body: "",
+  url: "https://github.com/neiltron/celld-test/issues/7", labels: ["ready-for-agent"], createdAt: "2026-10-02T12:00:00Z", author: "neiltron" });
+assert.deepEqual(inbox.slice(2).map((i) => i.pullRequest), [
+  { headBranch: "review/9", baseBranch: "release", draft: false },
+  { headBranch: "review/10", baseBranch: "release", draft: true },
+]);
+assert.equal(inbox[2].url, "https://github.com/neiltron/celld-test/pull/9");
+assert.deepEqual(await client.listIssues("neiltron/celld-test", "ready-for-agent"), inbox.filter((i) => i.number !== 8));
 await assert.rejects(client.listIssues("not a repo"), /owner\/name/);
 assert.deepEqual(await client.listRepoFiles("neiltron/celld-test"), { defaultBranch: "main", paths: ["src/a.js", "README.md"], truncated: false });
 
@@ -285,11 +301,6 @@ const sample = { id: repo.id, provider: "anthropic", artifactId: plan.id };
 for (const path of Object.keys(spec.paths)) {
   const url = `${base}${path.replace(/\{(\w+)\}/g, (_, name) => sample[name])}`;
   for (const method of METHODS) {
-    // fetch forbids TRACE, so no client can send one and no worker receives one.
-    if (method === "TRACE") {
-      assert.ok(!spec.paths[path].trace, `TRACE ${path} is in openapi.json but fetch can't send it`);
-      continue;
-    }
     const body = method === "GET" || method === "HEAD" ? undefined : "{}";
     const response = await call(new Request(url, { method, body }), { probe: true });
     const listed = !!spec.paths[path][method.toLowerCase()];

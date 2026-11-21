@@ -24,7 +24,7 @@ body {
   color: var(--ink);
   font: 14px/1.45 "Inter Variable", Inter, system-ui, -apple-system, sans-serif;
 }
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: 0.5; }
 a { color: var(--accent); }
@@ -58,6 +58,8 @@ code, .mono, .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font
 .row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { font-size: 12.5px; color: var(--muted); margin: 0; }
+.item-kind { display: inline-block; flex: none; font-size: 11px; font-weight: 500; color: var(--muted); background: var(--line-soft); border-radius: 4px; padding: 2px 5px; }
+.item-kind.review-ready { color: #176c35; background: #e5f5e9; }
 .meta.warn { color: var(--wait-ink); }
 
 /* Activity strips: one tick per message or tool call over the last hour, and
@@ -124,6 +126,22 @@ button.cell:hover { border-color: var(--field); }
 .secondary { min-height: 40px; padding: 0 16px; border: 1px solid var(--field); border-radius: 8px; background: #fff; }
 .said { margin: 0; padding: 14px 16px; border-radius: 8px; background: var(--side); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .said.failed { background: #fdf0e6; color: var(--wait-ink); }
+/* Issue bodies and agent replies as markdown: block spacing from one rule, wide blocks scroll on their own. */
+.md { white-space: normal; }
+.md > * { margin: 0; }
+.md > * + * { margin-top: 0.75em; }
+.md :is(h1, h2, h3, h4, h5, h6) { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.md :is(ul, ol) { padding-left: 1.4em; }
+.md :is(ul, ol) :is(ul, ol), .md li > p { margin: 0.2em 0; }
+.md pre { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; overflow-x: auto; line-height: 1.5; }
+.md :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: var(--line); }
+.md blockquote { padding-left: 12px; border-left: 2px solid var(--field); color: var(--muted); }
+.md table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 13px; }
+.md :is(th, td) { padding: 4px 10px; border: 1px solid var(--line); text-align: left; }
+.md hr { border: 0; border-top: 1px solid var(--line); }
+.md img { max-width: 100%; }
+/* GitHub keeps single line breaks in issue text; standard markdown would fold them. */
+.body.md p { white-space: pre-line; }
 
 @media (max-width: 640px) {
   .side { display: none; }

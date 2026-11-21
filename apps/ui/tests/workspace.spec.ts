@@ -124,7 +124,7 @@ test("partially hidden panels restore; chat is never hidden or resurrects sideba
 });
 
 test("typing, IME and dialogs keep their keys; handled shortcuts don't reach terminal-like controls", async ({ page }) => {
-  await page.locator(composer).fill("jk");
+  await page.locator(composer).pressSequentially("jk");
   expect(await page.locator(composer).inputValue()).toBe("jk");
   const imeHandled = await page.locator(composer).evaluate((el) => {
     el.focus();

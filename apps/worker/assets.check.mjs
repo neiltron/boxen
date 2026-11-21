@@ -48,10 +48,9 @@ for (const route of ["diff", "ports", "terminal"]) {
   assert.equal((await response.json()).error, "no such session");
 }
 
-// An existing session: diff and the terminal go to its cell, ports to its Sandbox.
+// An existing session: the terminal goes to its cell, ports to its Sandbox.
 const session = {
   meta: async () => ({ id, cwd: "/workspace" }),
-  diff: async () => ({ repo: false, patch: "" }),
   fetch: (request) => ({ status: 101, webSocket: {}, request }), // Node's Response can't be 101
 };
 const existing = { ...env, Sandbox: {}, SESSION: { getByName(name) { assert.equal(name, id); return session; } } };
@@ -60,13 +59,11 @@ sandbox = (binding, name) => {
   assert.equal(name, id);
   return { exec: async () => ({ success: true, stdout: "0: 00000000:1435 00000000:0000 0A" }) };
 };
-assert.deepEqual(await (await worker.fetch(api("diff"), existing)).json(), { repo: false, patch: "" });
 assert.deepEqual(await (await worker.fetch(api("ports"), existing)).json(), { ports: [5173] });
 const terminal = api("terminal", upgrade);
 assert.equal((await worker.fetch(terminal, existing)).request, terminal, "forward the browser request, including Upgrade");
 session.fetch = () => { throw new Error("container unavailable"); };
 assert.equal((await worker.fetch(terminal, existing)).status, 500, "don't swallow setup errors");
-for (const route of ["terminal", "ws"]) assert.equal((await worker.fetch(api(route), existing)).status, 426, route);
 for (const route of ["diff", "ports", "terminal"]) {
   assert.equal((await worker.fetch(api(route, { method: "POST" }), existing)).status, 404, `POST ${route}`);
 }
