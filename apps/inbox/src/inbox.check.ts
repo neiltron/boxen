@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { emptySession, type Session } from "@boxen/client";
-import { firstPrompt, folderOf, foldersOf, lastWord, laneOf, marksOf, sessionFor, sessionName, touchedFolders } from "./inbox.ts";
+import { firstPrompt, foldersOf, lastWord, laneOf, marksOf, sessionFor, sessionName, touchedFolders } from "./inbox.ts";
 
 // Linking: same repo in any URL form, named by sessionName, newest active wins.
 const s = (o: Partial<Session>): Session => ({ id: "x", name: "", cwd: "/workspace/boxen", createdAt: 0, ...o });
@@ -31,8 +31,6 @@ assert.deepEqual(marksOf(log), [{ at: 20, kind: "you" }, { at: 21, kind: "tool" 
 const folders = foldersOf(["README.md", "apps/ui/a.ts", "apps/ui/b.ts", "apps/cli/c.ts", "docs/x.md", "docs/adr/1.md"]);
 assert.deepEqual(folders, [{ name: "apps/ui", files: 2 }, { name: "docs", files: 2 }, { name: "root", files: 1 }, { name: "apps/cli", files: 1 }]);
 assert.deepEqual(foldersOf(["a/1", "a/2", "b/1", "c/1"], 2), [{ name: "a", files: 2 }, { name: "other", files: 2 }]);
-assert.deepEqual(["apps/ui/z.ts", "docs/adr/2.md", "package.json", "apps/mcp/m.ts"].map((p) => folderOf(p, folders)),
-  ["apps/ui", "docs", "root", "other"]);
 
 // Touched folders and the last word come from the transcript.
 const model = emptySession().model;
@@ -42,10 +40,11 @@ model.items.push(
   { kind: "assistant", seq: 1, streaming: false, blocks: [
     tool("edit", { path: "/workspace/boxen/apps/ui/a.ts" }), tool("write", { path: "apps/ui/b.ts" }),
     tool("write", { path: "/tmp/scratch" }), tool("bash", { command: "ls" }), tool("edit", { file_path: "./docs/x.md" }),
+    tool("write", { path: "package.json" }), tool("edit", { path: "apps/mcp/m.ts" }),
     { kind: "text", text: "Done. Should I also fix Providers?", streaming: false },
   ] },
 );
-assert.deepEqual(touchedFolders(model, "/workspace/boxen", folders), { "apps/ui": 2, docs: 1 });
+assert.deepEqual(touchedFolders(model, "/workspace/boxen", folders), { "apps/ui": 2, docs: 1, root: 1, other: 1 });
 assert.deepEqual(lastWord(model), { text: "Done. Should I also fix Providers?", error: false });
 model.items.push({ kind: "system", seq: 2, level: "error", text: "model_error" });
 assert.deepEqual(lastWord(model), { text: "model_error", error: true });

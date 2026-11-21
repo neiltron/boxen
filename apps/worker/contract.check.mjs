@@ -12,9 +12,10 @@ import { apiClient, validPreviewPort } from "@boxen/client";
 import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { load } from "./check-harness.mjs";
 
-// Every method an OpenAPI path item can declare, except OPTIONS: the router
-// answers every OPTIONS preflight with CORS headers, before any route.
-const METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD", "PATCH", "TRACE"];
+// Every method an OpenAPI path item can declare, except OPTIONS (the router
+// answers every preflight with CORS headers, before any route) and TRACE
+// (fetch can't send it; a trace operation in the spec fails the coverage check).
+const METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD", "PATCH"];
 const base = "http://localhost:8093";
 
 // The boundaries past the cells: model providers and their sign-in, GitHub,
@@ -266,11 +267,6 @@ const sample = { id: repo.id, provider: "anthropic", artifactId: plan.id };
 for (const path of Object.keys(spec.paths)) {
   const url = `${base}${path.replace(/\{(\w+)\}/g, (_, name) => sample[name])}`;
   for (const method of METHODS) {
-    // fetch forbids TRACE, so no client can send one and no worker receives one.
-    if (method === "TRACE") {
-      assert.ok(!spec.paths[path].trace, `TRACE ${path} is in openapi.json but fetch can't send it`);
-      continue;
-    }
     const body = method === "GET" || method === "HEAD" ? undefined : "{}";
     const response = await call(new Request(url, { method, body }), { probe: true });
     const listed = !!spec.paths[path][method.toLowerCase()];

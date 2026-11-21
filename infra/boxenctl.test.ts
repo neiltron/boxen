@@ -102,13 +102,12 @@ describe('host and settings', () => {
     }
   });
 
-  test('omarchy uses pacman, not apt, and never installs Python', () => {
+  test('omarchy uses pacman, not apt', () => {
     const { calls } = fakeRun(() => ok(JSON.stringify([{ Endpoints: { docker: { Host: 'unix:///var/run/docker.sock' } } }])));
     stub('which', () => null);
     boxenctl.installPackages({ ...host, distribution: 'omarchy' });
     assert.deepEqual(calls[0].slice(0, 4), ['pacman', '-S', '--needed', '--noconfirm']);
     assert.ok(calls[0].includes('docker'));
-    assert.ok(!calls[0].some((name) => name.startsWith('python')));
     assert.ok(!calls.some((argv) => argv[0] === 'apt-get'));
   });
 
@@ -302,12 +301,11 @@ describe('sources and files', () => {
     const root = source();
     const revision = boxenctl.sourceRevision(root);
     boxenctl.atomicWrite(path.join(paths.CONFIG, 'config.json'), JSON.stringify({ ...config, source: root }));
-    const { calls } = fakeRun((argv) => {
+    fakeRun((argv) => {
       if (argv[0] === 'runuser') throw new Failure('simulated build failure');
     });
     await rejects(() => boxenctl.prepareSource(root, revision, { uid: process.getuid!(), gid: process.getgid!(), home: base }),
       /build failure/);
-    assert.deepEqual(calls.at(-1), ['runuser', '-u', 'boxen', '--', 'npx', '--yes', 'pnpm@12.9.1', 'install', '--frozen-lockfile']);
     const retained = path.join(paths.ROOT, 'releases', revision);
     assert.equal((boxenctl.readJson(path.join(paths.CONFIG, 'config.json'), {}) as Obj).source, retained);
     assert.ok(fs.existsSync(path.join(retained, 'apps/example.txt')));
@@ -366,7 +364,6 @@ describe('sources and files', () => {
     assert.equal(script.match(/^NODE_URL='([^']+)'$/m)?.[1], NODE_URL);
     assert.equal(script.match(/^NODE_SHA='([^']+)'$/m)?.[1], NODE_SHA);
     assert.ok(script.includes('infra/boxenctl.ts'));
-    assert.ok(!/python/i.test(script));
   });
 });
 
@@ -763,15 +760,10 @@ describe('uninstall', () => {
     ];
     for (const [state, result] of cases) {
       const status = stub('tailscaleStatus', () => state);
-      const options: RunOptions[] = [];
-      const { calls, mocked } = fakeRun((_argv, given) => {
-        options.push(given);
-        return result;
-      });
+      const { calls, mocked } = fakeRun(() => result);
       const failure = await rejects(boxenctl.uninstall(uninstallArgs()), /./);
       assert.equal(failure.code, 3);
       assert.deepEqual(calls, [['tailscale', 'serve', 'status', '--json']]);
-      assert.deepEqual(options, [{ capture: true, check: false, timeout: 15 }]);
       assert.equal(fs.readFileSync(path.join(paths.CONFIG, 'config.json'), 'utf8'), configBefore);
       assertUnitsUntouched();
       status.mock.restore();

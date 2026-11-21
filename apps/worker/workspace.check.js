@@ -209,9 +209,8 @@ for (const host of ["localhost:8093", "127.0.0.1:8093", `p5173-${id}.localhost.e
 }
 for (const port of [0, 80, 1023, 3000, 65536, 999999999999999999999, NaN, 5173.5]) assert.equal(validPreviewPort(port), false);
 for (const port of [1024, 3001, 5173, 65535]) assert.equal(validPreviewPort(port), true);
-for (const port of [0, 1023, 3000, 65536]) {
-  assert.equal(validPreviewPort(previewTarget(`p${port}-${id}.localhost:8093`).port), false);
-}
+// An invalid port still parses, so the worker can answer 400 instead of falling through to the app.
+assert.deepEqual(previewTarget(`p3000-${id}.localhost:8093`), { port: 3000, id });
 
 // The listening-port check is cached per session, so each case gets its own id.
 const preview = (name, options) => open({ id: name, cwd: "/workspace" }, options).ws;

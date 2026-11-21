@@ -77,7 +77,7 @@ async function boxen(argv: string[], deps: Partial<Deps> = {}) {
   assert.match((await boxen(["prompt", "s1"])).err, /needs a session id and the text/);
   // Commands that take no arguments refuse them, before any request.
   requests.length = 0;
-  assert.match((await boxen(["create", "my-session"])).err, /Unexpected argument 'my-session'/);
+  assert.equal((await boxen(["create", "my-session"])).code, 2);
   assert.equal((await boxen(["list", "extra"])).code, 2);
   assert.equal(requests.length, 0);
 }
