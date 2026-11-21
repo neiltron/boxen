@@ -25,6 +25,7 @@ export const listArtifacts = (session: string) => api.listArtifacts({ session })
 export const searchArtifacts = (q: string) => api.listArtifacts({ q });
 export const getArtifact = api.getArtifact;
 
+export const setDefaultAgent = api.setDefaultAgent;
 export const listProviders = api.listProviders;
 export const setApiKey = api.setApiKey;
 

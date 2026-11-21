@@ -5,6 +5,7 @@
 // through it. The login is the fleet's own, never copied from the host's pi.
 import { DurableObject } from "cloudflare:workers";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import spec from "@boxen/client/openapi.json" with { type: "json" };
 import { directoryCredentials } from "./credentials.js";
 
@@ -140,8 +141,17 @@ export class Directory extends DurableObject {
   async connected(models, provider) {
     if (!(await this.state.storage.get("agent"))) {
       const available = await models.getAvailable(provider);
-      const modelId = DEFAULT_MODELS[provider] ?? available[0]?.id;
-      if (modelId) await this.state.storage.put("agent", { model: { provider, modelId }, thinkingLevel: "high" });
+      const model = available.find((m) => m.id === DEFAULT_MODELS[provider]) ?? available[0];
+      if (model) {
+        const levels = getSupportedThinkingLevels(model);
+        const thinkingLevel = levels.includes("high") ? "high" : levels[0];
+        // A choice saved while catalog I/O was pending must beat bootstrap.
+        await this.state.storage.transaction(async () => {
+          if (!(await this.state.storage.get("agent"))) {
+            await this.state.storage.put("agent", { model: { provider, modelId: model.id }, ...(thinkingLevel ? { thinkingLevel } : {}) });
+          }
+        });
+      }
     }
     this.notify();
   }
@@ -257,6 +267,33 @@ export class Directory extends DurableObject {
 
   async defaultAgent() {
     return (await this.state.storage.get("agent")) ?? {};
+  }
+
+  // Validation failures are data: custom Error properties (like HTTP status)
+  // need not survive the cell RPC boundary. Unexpected failures still throw.
+  async setDefaultAgent(agent) {
+    const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+    if (!object(agent) || Object.keys(agent).some((k) => k !== "model" && k !== "thinkingLevel") ||
+        !object(agent.model) || Object.keys(agent.model).some((k) => k !== "provider" && k !== "modelId") ||
+        typeof agent.model.provider !== "string" || !agent.model.provider.trim() ||
+        typeof agent.model.modelId !== "string" || !agent.model.modelId.trim() ||
+        (agent.thinkingLevel !== undefined && typeof agent.thinkingLevel !== "string")) {
+      return { error: "expected model { provider, modelId } and an optional thinkingLevel string" };
+    }
+    const { provider, modelId } = agent.model;
+    const models = builtinModels({ credentials: directoryCredentials(this) });
+    const model = (await models.getAvailable(provider)).find((m) => m.id === modelId);
+    if (!model) return { error: `model ${provider}/${modelId} is not available; connect its provider and choose an available model` };
+    if (agent.thinkingLevel !== undefined && !getSupportedThinkingLevels(model).includes(agent.thinkingLevel)) {
+      return { error: `thinking level ${agent.thinkingLevel} is not supported by ${provider}/${modelId}` };
+    }
+    // Omission clears the old fleet thinking choice, leaving runtime defaults.
+    await this.state.storage.put("agent", {
+      model: { provider, modelId },
+      ...(agent.thinkingLevel !== undefined ? { thinkingLevel: agent.thinkingLevel } : {}),
+    });
+    this.notify();
+    return this.authStatus();
   }
 
   async credential(provider) {

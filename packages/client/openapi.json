@@ -133,6 +133,22 @@
         }
       }
     },
+    "/api/default-agent": {
+      "post": {
+        "operationId": "setDefaultAgent",
+        "summary": "Set the fleet default agent for new Sessions",
+        "description": "Works with any connected provider. Validates the provider/model against pi-ai's available chat models and any thinking level against that model's supported levels; availability is not a guarantee of account entitlement. Persists the choice without reconfiguring existing Sessions. Omitting thinkingLevel clears the previous fleet thinking choice and uses the runtime default. Existing model-less Sessions may acquire this default on initialization.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DefaultAgent" } } }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/AuthStatus" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/providers": {
       "get": {
         "operationId": "listProviders",
@@ -467,6 +483,23 @@
           "connected": { "enum": ["api_key", "oauth", null], "description": "How this fleet is connected to it, if at all" }
         }
       },
+      "DefaultAgent": {
+        "type": "object",
+        "required": ["model"],
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "object",
+            "required": ["provider", "modelId"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": { "type": "string", "minLength": 1 },
+              "modelId": { "type": "string", "minLength": 1 }
+            }
+          },
+          "thinkingLevel": { "type": "string", "description": "Must be supported by the selected model. Omit to use the runtime default." }
+        }
+      },
       "AuthStatus": {
         "type": "object",
         "required": ["providers", "agent"],
@@ -592,6 +625,23 @@
       "UpgradeRequired": {
         "description": "The request was not a WebSocket upgrade",
         "content": { "text/plain": { "schema": { "type": "string" } } }
+      },
+      "DefaultAgent": {
+        "type": "object",
+        "required": ["model"],
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "object",
+            "required": ["provider", "modelId"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": { "type": "string", "minLength": 1 },
+              "modelId": { "type": "string", "minLength": 1 }
+            }
+          },
+          "thinkingLevel": { "type": "string", "description": "Must be supported by the selected model. Omit to use the runtime default." }
+        }
       },
       "AuthStatus": {
         "description": "The connected providers and what new Sessions start on",

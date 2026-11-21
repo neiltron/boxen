@@ -20,6 +20,7 @@ export type CreateSession = Schemas["CreateSession"];
 export type SessionPatch = Schemas["SessionPatch"];
 export type ProviderInfo = Schemas["ProviderInfo"];
 export type AuthStatus = Schemas["AuthStatus"];
+export type DefaultAgent = Schemas["DefaultAgent"];
 export type LoginStep = Schemas["LoginStep"];
 export type ArtifactKind = Schemas["ArtifactKind"];
 export type ArtifactSummary = Schemas["ArtifactSummary"];
@@ -48,6 +49,7 @@ export function apiClient(baseUrl: string, fetch?: (request: Request) => Promise
     getDiff: async (id: string) => ok(await api.GET("/api/session/{id}/diff", session(id))),
     listPorts: async (id: string) => ok(await api.GET("/api/session/{id}/ports", session(id))),
 
+    setDefaultAgent: async (body: DefaultAgent) => ok(await api.POST("/api/default-agent", { body })),
     listProviders: async () => ok(await api.GET("/api/providers")),
     setApiKey: async (provider: string, key: string) =>
       ok(await api.POST("/api/providers/{provider}/key", { params: { path: { provider } }, body: { key } })),

@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import type { ModelInfo } from "@/lib/api";
+import { setDefaultAgent, type ModelInfo } from "@/lib/api";
 import type { SessionHandle } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,8 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
   const { model, models, ready } = session;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ error?: boolean; text: string } | null>(null);
 
   const current = model.agent.model;
   const currentInfo = models?.find((m) => m.provider === current?.provider && m.id === current?.modelId);
@@ -35,8 +37,23 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
     setOpen(false);
   };
 
+  const makeDefault = async () => {
+    if (!current || saving) return;
+    const agent = { model: { ...current }, thinkingLevel: model.agent.thinkingLevel };
+    setSaving(true);
+    setNotice(null);
+    try {
+      await setDefaultAgent(agent);
+      setNotice({ text: `Default for new sessions: ${agent.model.provider}/${agent.model.modelId}${agent.thinkingLevel ? ` · ${agent.thinkingLevel}` : ""}. Existing sessions are unchanged.` });
+    } catch (e) {
+      setNotice({ error: true, text: e instanceof Error ? e.message : "Could not save the default" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) { setQuery(""); session.listModels(); } }}>
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) { setQuery(""); setNotice(null); session.listModels(); } }}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -69,6 +86,18 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
             ))}
           </div>
         )}
+        <div className="space-y-1 border-b border-border pb-2">
+          <button
+            type="button"
+            disabled={!ready || !currentInfo || saving}
+            onClick={() => void makeDefault()}
+            className="touch-target rounded-sm px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+          >
+            {saving ? "Saving default…" : "Make default for new sessions"}
+          </button>
+          <p className="px-2 text-xs text-muted-foreground">Saves this model and thinking level for the fleet.</p>
+          {notice && <p role={notice.error ? "alert" : "status"} className={cn("px-2 text-xs", notice.error ? "text-destructive" : "text-muted-foreground")}>{notice.text}</p>}
+        </div>
         <div className="scroll-shadows max-h-64 overflow-y-auto">
           {shown.map((m, i) => (
             <Fragment key={`${m.provider}/${m.id}`}>

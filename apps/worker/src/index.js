@@ -69,6 +69,12 @@ const handlers = {
   sessionSocket: (request, env, { id }) => upgrade(request, () => env.SESSION.getByName(id).fetch(request)),
   directorySocket: (request, env) => env.DIRECTORY.getByName("main").fetch(request),
 
+  async setDefaultAgent(request, env) {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+    const result = await env.DIRECTORY.getByName("main").setDefaultAgent(body);
+    return json(result, result.error ? 400 : 200);
+  },
   listProviders: async (request, env) => json(await env.DIRECTORY.getByName("main").providers()),
   setApiKey: async (request, env, { provider }) =>
     json(await env.DIRECTORY.getByName("main").setApiKey(provider, (await request.json()).key)),
