@@ -24,7 +24,9 @@ const models = (credentials) => ({
     { id: "anthropic", name: "Anthropic", auth: { apiKey: { name: "ANTHROPIC_API_KEY" }, oauth: { name: "Claude Pro/Max" } } },
     { id: "openai", name: "OpenAI", auth: { apiKey: { name: "OPENAI_API_KEY" } } },
   ],
-  getAvailable: async (provider) => [{ id: `${provider}-model` }],
+  getAvailable: async (provider) => (await credentials.read(provider))
+    ? [{ id: `${provider}-model`, provider, reasoning: false }]
+    : [],
   async login(provider, method, interaction) {
     if (provider !== "anthropic") throw new Error(`${provider} has no sign-in`);
     interaction.notify({ type: "auth_url", url: "https://example.test/authorize" });
@@ -195,7 +197,7 @@ for (const path of [`/api/session/${repo.id}/ws`, `/api/session/${repo.id}/termi
 let providers = await client.listProviders();
 assert.deepEqual(providers.map((p) => [p.id, p.oauth?.label ?? null, p.connected]), [["anthropic", "Sign in", null], ["openai", null, null]]);
 let auth = await client.setApiKey("openai", "sk-test");
-assert.deepEqual(auth, { providers: ["openai"], agent: { model: { provider: "openai", modelId: "gpt-6-astra" }, thinkingLevel: "high" } });
+assert.deepEqual(auth, { providers: ["openai"], agent: { model: { provider: "openai", modelId: "openai-model" }, thinkingLevel: "off" } });
 const ends = [];
 const step = await client.startLogin("anthropic", (end) => ends.push(end));
 assert.deepEqual(step, { url: "https://example.test/authorize" });
@@ -203,7 +205,24 @@ auth = await client.finishLogin("http://localhost:53692/callback?code=abc&state=
 assert.deepEqual(auth.providers.sort(), ["anthropic", "openai"]);
 providers = await client.listProviders();
 assert.deepEqual(providers.map((p) => p.connected), ["oauth", "api_key"]);
+// Non-OpenAI default, validated over the actual shared-client/API boundary.
+const chosen = { model: { provider: "anthropic", modelId: "anthropic-model" }, thinkingLevel: "off" };
+auth = await client.setDefaultAgent(chosen);
+assert.deepEqual(auth.agent, chosen);
+assert.deepEqual(JSON.parse(JSON.stringify(await directory.defaultAgent())), chosen);
+for (const body of [null, [], {}, { model: null }, { ...chosen, thinkingLevel: "high" },
+  { model: { provider: "unconnected", modelId: "anthropic-model" } },
+  { model: { provider: "openai", modelId: "anthropic-model" } }, { ...chosen, extra: true }]) {
+  const response = await call(new Request(`${base}/api/default-agent`, { method: "POST", body: JSON.stringify(body) }));
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  assert.deepEqual(JSON.parse(JSON.stringify(await directory.defaultAgent())), chosen);
+}
+assert.equal((await call(new Request(`${base}/api/default-agent`, { method: "POST", body: "{" }))).status, 400);
+await assert.rejects(client.setDefaultAgent({ ...chosen, thinkingLevel: "high" }), /not supported/);
+assert.deepEqual((await client.setDefaultAgent({ model: chosen.model })).agent, { model: chosen.model });
 auth = await client.logout("anthropic");
+assert.deepEqual(auth.agent, {});
 assert.deepEqual(auth.providers, ["openai"]);
 // The same sign-in finished from the dev server's loopback redirect, then failed ones.
 await client.startLogin("anthropic", (end) => ends.push(end));
