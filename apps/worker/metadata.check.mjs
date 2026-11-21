@@ -128,20 +128,16 @@ assert.equal((await directory.list()).find((s) => s.id === "abc-123").name, "Web
 
 // Malformed frames are ignored: no handler runs, nothing is sent, no throw.
 {
-  const sent = [], open = cell.open;
-  let opened = 0;
-  cell.open = () => { opened++; return open.call(cell); };
+  const sent = []; // cell.open throws, and a throwing handler sends an error frame
   for (const raw of ['{"type":["abort"]}', '{"type":["rename"],"name":"Changed"}', "null", '{"type":"nope"}',
     '{"type":"constructor"}', '{"type":"toString"}', '{}', "[]", "not json"]) {
     await cell.webSocketMessage({ send: (m) => sent.push(m) }, raw);
   }
-  cell.open = open;
   assert.deepEqual(sent, []);
-  assert.equal(opened, 0);
   assert.equal((await cell.meta()).name, "WebSocket name");
 }
 
-// HTTP contract: validation, not-found, canonical response, and CORS.
+// HTTP contract: validation and CORS (contract.check drives the rest).
 const httpEnv = { SESSION: { getByName: (id) => id === "abc-123" ? cell : new Session({ storage: storage() }, env) } };
 const request = (body, id = "abc-123") => new Request(`https://example.test/api/session/${id}`, {
   method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -150,10 +146,6 @@ for (const body of [null, [], {}, { name: "   " }, { name: 42 }, { name: "x".rep
   assert.equal((await worker.fetch(request(body), httpEnv)).status, 400, JSON.stringify(body));
 }
 assert.equal((await worker.fetch(new Request(request({}).url, { method: "PATCH", body: "{" }), httpEnv)).status, 400);
-assert.equal((await worker.fetch(request({ archived: true }, "0000"), httpEnv)).status, 404);
-const response = await worker.fetch(request({ name: "  HTTP title ", archived: true }), httpEnv);
-assert.equal(response.status, 200);
-assert.equal((await response.json()).name, "HTTP title");
 const options = await worker.fetch(new Request(request({}).url, { method: "OPTIONS" }), httpEnv);
 assert.match(options.headers.get("access-control-allow-methods"), /PATCH/);
 assert.deepEqual(plain(await cell.meta()), plain(await new Session(cell.state, env).meta()));

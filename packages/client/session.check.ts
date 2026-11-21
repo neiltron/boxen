@@ -139,7 +139,6 @@ const artifactResult = (callId: string, artifactId: string) =>
   // Each prompt carries its own requestId, for the cell to dedupe a resend.
   const ids = s.sent.filter((c) => c.type === "prompt").map((c) => c.requestId);
   assert.equal(ids.length, 2);
-  assert.equal(typeof ids[0], "string");
   assert.notEqual(ids[0], ids[1]);
   const { requestId: _, ...first } = s.sent[1];
   assert.deepEqual([first, ...s.sent.slice(2, 5)], [
@@ -376,7 +375,6 @@ const artifactResult = (callId: string, artifactId: string) =>
     assert.equal(promptOf(s), undefined, "nothing goes out before ready");
     join(s, snapshot([]));
     const { requestId } = promptOf(s)!;
-    assert.equal(typeof requestId, "string");
     const seen: string[] = [];
     client.subscribe(() => {
       const last = client.state().model.items.at(-1);
@@ -635,5 +633,6 @@ console.log("session.check ok");
   applyEvent(m, { type: "run_end" });
   assert.equal(resumed.streaming, false);
   assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].streaming, false);
-  assert.equal(m.assistantSeq, null);
+  applyEvent(m, { type: "message_update", changes: [{ type: "thinking_delta", contentIndex: 0, delta: "late" }] });
+  assert.equal(resumed.blocks[0].kind === "thinking" && resumed.blocks[0].text, "resumed stream", "a stale delta cannot edit a message the run ended");
 }

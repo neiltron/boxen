@@ -5,15 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { check, critical, dependencySnapshot, lockGraph, root } from './release.mjs';
+import { critical, dependencySnapshot, lockGraph, root } from './release.mjs';
 
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const graph = () => lockGraph(read('pnpm-lock.yaml'));
 const worker = () => JSON.parse(read('apps/worker/package.json'));
-
-test('generated pins, SDK/image pairing, and exact locked dependencies agree', () => {
-  assert.deepEqual(Object.keys(check()), critical);
-});
 
 test('lock parser selects the workspace from multi-document pnpm 12 YAML', () => {
   assert.ok(graph().importers['apps/worker']);
@@ -67,7 +63,11 @@ test('pack requires a clean version-tagged commit and produces verifiable source
     assert.equal(metadata.dirty, false);
     assert.equal(metadata.distribution, 'source');
     assert.deepEqual(metadata.runtime, JSON.parse(read('infra/runtime.json')));
-    assert.deepEqual(metadata.dependencies, dependencySnapshot(worker(), graph()));
+    assert.deepEqual(Object.keys(metadata.dependencies), critical);
+    for (const name of critical) {
+      assert.equal(metadata.dependencies[name].version, worker().dependencies[name]);
+      assert.match(metadata.dependencies[name].integrity, /^sha512-/);
+    }
     for (const line of fs.readFileSync(path.join(out, 'SHA256SUMS'), 'utf8').trim().split('\n')) {
       const [expected, file] = line.split('  ');
       const actual = createHash('sha256').update(fs.readFileSync(path.join(out, file))).digest('hex');

@@ -64,7 +64,7 @@ export function foldersOf(paths: string[], max = 12): Folder[] {
   return [...all.slice(0, max - 1), { name: "other", files: rest }];
 }
 
-export function folderOf(path: string, folders: Folder[]): string {
+function folderOf(path: string, folders: Folder[]): string {
   const p = path.split("/");
   const names = new Set(folders.map((f) => f.name));
   if (p.length === 1) return "root";
