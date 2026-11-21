@@ -69,7 +69,7 @@ export function ModelPicker({ session }: { session: SessionHandle }) {
             ))}
           </div>
         )}
-        <div className="max-h-64 overflow-y-auto">
+        <div className="scroll-shadows max-h-64 overflow-y-auto">
           {shown.map((m, i) => (
             <Fragment key={`${m.provider}/${m.id}`}>
               {shown[i - 1]?.provider !== m.provider && (

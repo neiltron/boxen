@@ -13,6 +13,11 @@ const components: Components = {
       {children}
     </a>
   ),
+  table: ({ children }) => (
+    <div className="typeset-scroll" tabIndex={0} role="region" aria-label="Table">
+      <table>{children}</table>
+    </div>
+  ),
 };
 
 // Compare the string, not mutable reducer blocks: completed prose should not

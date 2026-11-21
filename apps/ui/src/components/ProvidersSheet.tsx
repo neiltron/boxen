@@ -200,7 +200,7 @@ export function ProvidersSheet({ auth }: { auth: AuthStatus | null }) {
           <Input aria-label="Search providers" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search providers…" className="mt-2 text-base sm:text-xs" />
         </SheetHeader>
         {error && <p className="border-b border-border px-4 py-2 text-xs text-destructive">{error}</p>}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="scroll-shadows min-h-0 flex-1 overflow-y-auto">
           {shown.map((p) => (
             <ProviderRow
               key={p.id}

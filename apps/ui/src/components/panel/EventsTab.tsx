@@ -30,7 +30,7 @@ const EventRow = memo(function EventRow({ row }: { row: LoggedEvent }) {
 
   return (
     <details
-      className="boxen-details group border-b border-border/50"
+      className="boxen-details event-row group border-b border-border/50"
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary className="flex w-full cursor-pointer items-baseline gap-2 px-3 py-1 text-left hover:bg-muted group-open:bg-muted">
