@@ -9,7 +9,7 @@ The local dev scripts (`start.sh`, `stop.sh`, `deploy.sh`) work on both macOS (u
 | Requirement | Details |
 | --- | --- |
 | **Node.js** | `>=24.5.0 <25` (enforced by `package.json` `engines`; `ops/runtime.json` pins `24.5.0`). |
-| **pnpm** | `package.json` pins `pnpm@12.9.1` (enable via `corepack enable` or install pnpm v10+/12). |
+| **pnpm** | Any pnpm 10+ (`brew install pnpm` or `npm i -g pnpm`); in the repo it switches itself to the `pnpm@12.9.1` pinned in `package.json`. Not corepack: it fails on pnpm 12 with `Cannot find module .../bin/pnpm.cjs`; run `corepack disable pnpm` if an old shim is on `PATH`. |
 | **Docker daemon** | Running locally for per-session Sandbox containers (e.g. OrbStack via `orbctl start` on macOS, or Docker Engine on Linux). |
 | **Object storage** | **Either** an external S3 / Cloudflare R2 bucket (`BOXEN_S3_BUCKET` and/or `BOXEN_S3_ENDPOINT`, plus credentials, in `.env` or environment) **or** the `rustfs` binary on `PATH` / `~/.local/bin/rustfs` (zero-config local S3 fallback on `:9000` storing data in `../.rustfs-data`). |
 | **Pinned `celld`** | `celld-0.6.2` on `PATH` or at `~/.local/bin/celld-0.6.2` (or set `BOXEN_CELLD` to a `0.6.2` binary). `ops/celld.mjs` enforces the exact version pinned in `ops/runtime.json`. |
