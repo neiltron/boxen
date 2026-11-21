@@ -128,12 +128,18 @@ if [[ -f .env ]]; then
   '
 fi
 
+rustfs_log="" rustfs_stop=""
+if [[ "$BOXEN_STORAGE" == local ]]; then
+  rustfs_log=", .data/rustfs.log"
+  rustfs_stop="    (or pnpm stop rustfs to stop local storage too)"
+fi
+
 echo
 echo "boxen is up:"
 echo "  api      http://127.0.0.1:8093/api/sessions"
 echo "  storage  ${BOXEN_S3_BUCKET}${BOXEN_S3_ENDPOINT:+ ($BOXEN_S3_ENDPOINT)}"
 echo "  ui       pnpm ui     ->  http://localhost:5176"
 echo "  inbox    pnpm inbox  ->  http://localhost:5177"
-echo "  logs     .data/celld.log$([[ "$BOXEN_STORAGE" == local ]] && echo ", .data/rustfs.log" || true)"
+echo "  logs     .data/celld.log$rustfs_log"
 echo "  deploy   pnpm run deploy  (after editing apps/worker/src/; adopted within ~15s, no restart)"
-echo "  stop     pnpm stop$([[ "$BOXEN_STORAGE" == local ]] && echo "    (or pnpm stop rustfs to stop local storage too)" || true)"
+echo "  stop     pnpm stop$rustfs_stop"
