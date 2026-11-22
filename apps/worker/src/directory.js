@@ -145,9 +145,9 @@ export class Directory extends DurableObject {
       if (model) {
         const levels = getSupportedThinkingLevels(model);
         const thinkingLevel = levels.includes("high") ? "high" : levels[0];
-        // A choice saved while catalog I/O was pending must beat bootstrap.
+        // A choice saved, or a logout, while catalog I/O was pending must beat bootstrap.
         await this.state.storage.transaction(async () => {
-          if (!(await this.state.storage.get("agent"))) {
+          if (!(await this.state.storage.get("agent")) && (await this.credential(provider))) {
             await this.state.storage.put("agent", { model: { provider, modelId: model.id }, ...(thinkingLevel ? { thinkingLevel } : {}) });
           }
         });
@@ -293,16 +293,23 @@ export class Directory extends DurableObject {
     }
     const { provider, modelId } = agent.model;
     const models = builtinModels({ credentials: directoryCredentials(this) });
+    const signedIn = Boolean(await this.credential(provider));
     const model = (await models.getAvailable(provider)).find((m) => m.id === modelId);
     if (!model) return { error: `model ${provider}/${modelId} is not available; connect its provider and choose an available model` };
     if (agent.thinkingLevel !== undefined && !getSupportedThinkingLevels(model).includes(agent.thinkingLevel)) {
       return { error: `thinking level ${agent.thinkingLevel} is not supported by ${provider}/${modelId}` };
     }
-    // Omission clears the old fleet thinking choice, leaving runtime defaults.
-    await this.state.storage.put("agent", {
-      model: { provider, modelId },
-      ...(agent.thinkingLevel !== undefined ? { thinkingLevel: agent.thinkingLevel } : {}),
+    // A logout during catalog I/O must not leave a default for a disconnected provider.
+    const saved = await this.state.storage.transaction(async () => {
+      if (signedIn && !(await this.credential(provider))) return false;
+      // Omission clears the old fleet thinking choice, leaving runtime defaults.
+      await this.state.storage.put("agent", {
+        model: { provider, modelId },
+        ...(agent.thinkingLevel !== undefined ? { thinkingLevel: agent.thinkingLevel } : {}),
+      });
+      return true;
     });
+    if (!saved) return { error: `provider ${provider} was disconnected; connect it and try again` };
     this.notify();
     return this.authStatus();
   }

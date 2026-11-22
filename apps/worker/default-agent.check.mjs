@@ -96,6 +96,7 @@ for (const provider of ["openai", "openai-codex", "anthropic", "openrouter", "gi
   for (const available of [[], [{ id: "first", reasoning: false }],
     [{ id: "first", reasoning: true }, { id: "gpt-6-astra", reasoning: true }]]) {
     const cell = new Directory(state(), {});
+    await cell.setCredential(provider, { type: "api_key", key: "test" });
     await cell.connected({ getAvailable: async (id) => { assert.equal(id, provider); return available; } }, provider);
     const preferred = provider === "openai" || provider === "openai-codex";
     const selected = (preferred && available.find((m) => m.id === "gpt-6-astra")) || available[0];
@@ -116,6 +117,27 @@ for (const provider of ["openai", "openai-codex", "anthropic", "openrouter", "gi
   pending.resolve([{ id: "gpt-6-astra", reasoning: true }]);
   await connecting;
   assert.deepEqual(plain(await cell.defaultAgent()), selected, "user choice wins over a pending bootstrap");
+}
+{
+  const cell = new Directory(state(), {}), pending = Promise.withResolvers();
+  cell.notify = () => {};
+  await cell.setCredential("openai", { type: "api_key", key: "test" });
+  const connecting = cell.connected({ getAvailable: () => pending.promise }, "openai");
+  await cell.logout("openai");
+  pending.resolve([{ id: "gpt-6-astra", reasoning: true }]);
+  await connecting;
+  assert.deepEqual(plain(await cell.defaultAgent()), {}, "logout wins over a pending bootstrap");
+}
+{
+  const cell = new Directory(state(), {});
+  cell.notify = () => {};
+  await cell.setCredential("anthropic", { type: "api_key", key: "test" });
+  // Sign out after the catalog lookup validated the model, before the write.
+  const storage = cell.state.storage, transaction = storage.transaction;
+  storage.transaction = async (fn) => { storage.transaction = transaction; await cell.logout("anthropic"); return transaction(fn); };
+  const result = await cell.setDefaultAgent({ model: { provider: "anthropic", modelId: models.getModels("anthropic")[0].id } });
+  assert.match(result.error, /disconnected/);
+  assert.deepEqual(plain(await cell.defaultAgent()), {}, "logout wins over a pending save");
 }
 
 // Real Session initialization: inherit once, preserve a local choice on
