@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/default-agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the fleet default agent for new Sessions
+         * @description Works with any connected provider. Validates the provider/model against pi-ai's available chat models and any thinking level against that model's supported levels; availability is not a guarantee of account entitlement. Persists the choice without reconfiguring existing Sessions. Omitting thinkingLevel clears the previous fleet thinking choice and uses the runtime default. Existing model-less Sessions may acquire this default on initialization.
+         */
+        post: operations["setDefaultAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers": {
         parameters: {
             query?: never;
@@ -469,6 +489,14 @@ export interface components {
              * @enum {unknown}
              */
             connected: "api_key" | "oauth" | null;
+        };
+        DefaultAgent: {
+            model: {
+                provider: string;
+                modelId: string;
+            };
+            /** @description Must be supported by the selected model. Omit to use the runtime default. */
+            thinkingLevel?: string;
         };
         AuthStatus: {
             /** @description The connected providers' ids */
@@ -810,6 +838,24 @@ export interface operations {
         responses: {
             101: components["responses"]["SwitchingProtocols"];
             426: components["responses"]["UpgradeRequired"];
+            500: components["responses"]["Error"];
+        };
+    };
+    setDefaultAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultAgent"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AuthStatus"];
+            400: components["responses"]["BadRequest"];
             500: components["responses"]["Error"];
         };
     };

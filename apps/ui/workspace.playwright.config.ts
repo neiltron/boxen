@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "workspace.spec.ts",
+  testMatch: ["workspace.spec.ts", "model-picker.spec.ts"],
   workers: 1,
   timeout: 60_000,
   use: { baseURL: "http://127.0.0.1:5187", browserName: "chromium" },

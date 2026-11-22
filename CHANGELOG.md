@@ -4,6 +4,8 @@
 
 Pi runtime upgrade candidate. Not yet published or production-certified.
 
+- Fix **#37**: save a fleet-wide default model and thinking level from the model picker, across all connected providers. New Sessions inherit it; existing Sessions retain their own configuration. Validate model availability and supported thinking levels, and only use the preferred OpenAI bootstrap model when it appears in the available list.
+
 - Pin pi-durable, pi-ai, and Chord **1.0.0 → 1.3.0** together. Retain celld **0.6.2**, Sandbox SDK/image **0.12.9**, Node **24.5.0**, pnpm **12.9.1**, and existing native/container pins. Lockfile changes are confined to the new runtime dependency graph.
 - Add bounded Sandbox binary readers, upstream UTF-8 line scanning, literal argv execution, and stdout/stderr labels. Readers retain the opened file across renames and replacement. Directory readers and watches remain explicitly unsupported. Keep SDK process handles inside the Sandbox cell, and consume command event streams in the caller rather than forwarding output callback RPCs.
 - Return artifact tool data in `output`; transcript messages still use `content`. Nonzero bash exits now produce the upstream error result and `exit_code` diagnostic.

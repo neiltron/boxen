@@ -1,10 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-// An isolated real-Trellis fixture: no cell backend, OAuth listeners, or app
-// dependency scan needed to exercise docking and browser keyboard focus.
+// Isolated real-component fixtures: no cell backend or OAuth listeners.
 export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
-  optimizeDeps: { entries: ["tests/workspace.html"] },
+  plugins: [react()],
+  resolve: { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } },
+  optimizeDeps: { entries: ["tests/workspace.html", "tests/model-picker.html"] },
   server: { host: "127.0.0.1", port: 5187, strictPort: true },
 });
