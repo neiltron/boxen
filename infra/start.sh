@@ -74,19 +74,41 @@ if ! port_open 8093; then
   # A missed lease renewal (the Mac sleeping) makes celld halt on purpose
   # ("SELF-FENCE" in .data/celld.log), so a loop restarts it. caffeinate -i holds
   # off idle sleep on macOS while it runs; a closed lid still sleeps.
+  #
+  # celld restores sessions into $TMPDIR/celld-<pid> and never removes it, so
+  # every restart used to leak a full copy (GBs). Each run gets its own TMPDIR,
+  # removed when it exits; dirs left by killed runs (pnpm stop) or by older
+  # versions of this script are swept here, before any celld is running.
+  # Restarts back off when celld dies quickly, so a crash loop (e.g. on a full
+  # disk) can't keep restoring every 2s.
   export CELLD_TTL_MS=30000 CELLD_FETCH_TIMEOUT_S=3600
+  export BOXEN_CELLD_TMP_ROOT="${TMPDIR:-/tmp}"
   # shellcheck disable=SC2016
-  nohup bash -c 'while :; do
+  nohup bash -c 'root=${BOXEN_CELLD_TMP_ROOT%/}
+  for stale in "$root"/boxen-celld-run.* "$root"/celld-[0-9]*; do
+    [[ -d "$stale" ]] || continue
+    pid=${stale##*/celld-}
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then continue; fi
+    rm -rf "$stale" && echo "boxen-celld-supervisor: removed stale $stale"
+  done
+  delay=2
+  while :; do
     args=(--bucket "$BOXEN_S3_BUCKET" --listen 127.0.0.1:8093)
     if [[ -n "${BOXEN_S3_ENDPOINT:-}" ]]; then
       args+=(--endpoint "$BOXEN_S3_ENDPOINT")
     fi
+    run_tmp=$(mktemp -d "$root/boxen-celld-run.XXXXXX")
+    started=$SECONDS
     if command -v caffeinate >/dev/null 2>&1; then
-      caffeinate -i celld-0.6.2 "${args[@]}"
+      TMPDIR=$run_tmp caffeinate -i celld-0.6.2 "${args[@]}"
     else
-      celld-0.6.2 "${args[@]}"
+      TMPDIR=$run_tmp celld-0.6.2 "${args[@]}"
     fi
-    echo "boxen-celld-supervisor: celld exited ($?), restarting"; sleep 2
+    status=$?
+    rm -rf "$run_tmp"
+    if (( SECONDS - started >= 60 )); then delay=2; else delay=$(( delay * 2 > 60 ? 60 : delay * 2 )); fi
+    echo "boxen-celld-supervisor: celld exited ($status), restarting in ${delay}s"
+    sleep "$delay"
   done' boxen-celld-supervisor >> .data/celld.log 2>&1 &
   echo "celld starting (supervisor pid $!)"
 else
