@@ -74,15 +74,16 @@ export async function openSandboxReader(sandbox, path, options, context) {
   if (aborted(context)) return abort();
   try {
     processId = await sandbox.startReaderProcess(command(SERVER, { path, noFollow: !!options?.noFollow }));
-    let stdout = "";
-    const deadline = Date.now() + 10_000;
+    let stdout = "", stderr = "";
+    // A busy container can take several seconds to start node; 10s was not enough in CI.
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       if (aborted(context)) throw new Error("File operation aborted");
-      ({ stdout } = await sandbox.getProcessLogs(processId));
+      ({ stdout, stderr = "" } = await sandbox.getProcessLogs(processId));
       if (stdout.includes("\n")) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    if (!stdout.trim()) throw new Error("Reader did not start");
+    if (!stdout.trim()) throw new Error(`Reader did not start${stderr.trim() ? `: ${stderr.trim().slice(-500)}` : ""}`);
     const ready = JSON.parse(stdout.trim());
     if (!ready.ok) { await sandbox.killProcess(processId).catch(() => {}); return fail(ready.code, ready.message, path); }
     let closed = false;
